@@ -1,44 +1,47 @@
+import torch
+import pandas as pd
+from torch.utils.data import Dataset, DataLoader
 
-import datasets
-from torch.utils.data import DataLoader
-from transformers import CLIPProcessor
 
-
+class Flickr_dataset(Dataset):
+    def __init__(self, config, dataset, processor ):  
+        self.device = torch.device(config['device'])
+        self.dataset = dataset
+        self.processor = processor
+        self.dataset_len = len(dataset)
+        self.cap_per_img = 5
+            
+    def __len__(self):
+        return len(self.dataset)  * self.cap_per_img
     
+    def __getitem__(self, index): 
+        data = self.dataset[int(index / self.cap_per_img)]
+        out = {
+            'img_id': data['img_id'],
+            'input_ids': data['input_ids'][int(index % self.cap_per_img)],
+            'attention_mask': data['attention_mask'][(index % self.cap_per_img)],
+            'pixel_values': data['pixel_values'],
+            'image': data['image'],
+            'caption': data['caption'][int(index % self.cap_per_img)],
+            'sent_id': data['sentids'][int(index % self.cap_per_img)]
+        }
+        return out
 
-
-def get_data_loader(dataset, data_collator,  processor_ckt, batch_size=8,  ):
-    processor = CLIPProcessor.from_pretrained(processor_ckt)
-    def process_data(sample):
-        output = processor(text=sample['caption'], images=sample['image'], return_tensors="pt", padding=True)
-        sample['']
-
-    dataset = dataset.map(process_data)
-    
-    
-    data_loader = DataLoader(
-        dataset = dataset,
-        shuffle=True,
-        collate_fn=data_collator,
-        batch_size=batch_size,
-    )
         
+def get_dataloader(dataset:Flickr_dataset, batch_size, processor):
 
-        
-if __name__ == '__main__':
-    from datasets import load_dataset
-    processor_ckt= 'openai/clip-vit-base-patch32'
-    dataset_name = 'nlphuji/flickr30k'
-    processor = CLIPProcessor.from_pretrained(processor_ckt)
+    def collate_func(batch, processor):
+        df = pd.DataFrame(batch)
+        return processor(
+            text=list(df['caption']), 
+            images=list(df['image']),
+            padding=True, 
+            return_tensors='pt'
+        )
 
-    ds = load_dataset(dataset_name)
-    train_set = ds['test'].filter(lambda x: x['split']=='train')
-    test_set = ds['test'].filter(lambda x: x['split']=='test')
-    val_set= ds['test'].filter(lambda x: x['split']=='val')
-
-    print(train_set)
-
-    
-    
-        
-    
+    return DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        collate_fn = lambda batch: collate_func(batch, processor),
+        shuffle=True
+    ) 

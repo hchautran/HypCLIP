@@ -93,7 +93,8 @@ config_args = {
         'local-agg': (0, 'whether to local tangent space aggregation or not')
     },
     'data_config': {
-        'dataset': ('flickr30k', 'which dataset to use'),
+        'dataset': ('EddieChen372/flickr30k', 'which dataset to use'),
+        'cache_dir': ('/Volumes/ExtraSpace/.cache', 'which dataset to use'),
         'val-prop': (0.05, 'proportion of validation edges for link prediction'),
         'test-prop': (0.1, 'proportion of test edges for link prediction'),
         'use-feats': (1, 'whether to use node features or not'),
