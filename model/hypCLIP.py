@@ -80,12 +80,12 @@ class HypCLIP(nn.Module):
             image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
             text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
             # cosine similarity as logits
-            return torch.matmul(text_embeds, image_embeds.t()) * logit_scale
+            return torch.matmul(text_embeds, image_embeds.t()) * self.logit_scale
         else:
             text_embeds = self._to_manifold(text_embeds)
             image_embeds = self._to_manifold(image_embeds)
             # square distance on the manifold
-            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * logit_scale
+            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * self.logit_scale
 
 
         

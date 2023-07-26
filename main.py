@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
 
     processor = CLIPProcessor.from_pretrained(config.model_ckt)
-    flickr30k = load_dataset(config.dataset)
+    flickr30k = load_dataset(config.dataset).with_format('numpy')
 
     train_loader = get_dataloader(flickr30k['train'], config.batch_size, processor=processor)
     val_loader = get_dataloader(flickr30k['val'], config.batch_size, processor=processor)
@@ -25,20 +25,21 @@ if __name__ == '__main__':
 
     model.eval()
     with torch.no_grad():
-        for data in tqdm(test_loader):
+        for img_ids, data in tqdm(val_loader):
+            print(img_ids)
             print(data['input_ids'].shape)
             print(data['attention_mask'].shape)
             print(data['pixel_values'].shape)
-            output = model(
-                input_ids=data['input_ids'],
-                attention_mask=data['attention_mask'],
-                pixel_values=data['pixel_values'],
-            )
-            print(output['text_embeds'].shape)
-            print(output['image_embeds'].shape)
+            # output = model(
+            #     input_ids=data['input_ids'],
+            #     attention_mask=data['attention_mask'],
+            #     pixel_values=data['pixel_values'],
+            # )
+            # print(output['text_embeds'].shape)
+            # print(output['image_embeds'].shape)
 
-            print(output['sim_per_image'].shapes)
-            print(output['sim_per_text'].shape)
+            # print(output['sim_per_image'].shape)
+            # print(output['sim_per_text'].shape)
 
 
         
