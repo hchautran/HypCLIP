@@ -103,8 +103,8 @@ class HypCLIP(nn.Module):
         
     def criterion(self, text_embeds , image_embeds):
         bsize = text_embeds.shape[0]
-        target = torch.arange(bsize).cuda()
-        eye_mask = torch.eye(bsize).cuda() * 1e9
+        target = torch.arange(bsize).to(text_embeds.get_device())
+        eye_mask = torch.eye(bsize).to(text_embeds.get_device()) * 1e9
         sims_t2t= self.dist_func(text_embeds, text_embeds) / self.temp - eye_mask
         sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
         logits = torch.cat([sims_t2i, sims_t2t], dim=1)

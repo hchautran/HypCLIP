@@ -74,7 +74,7 @@ class Manifold(object):
 
     def sqdist_batch(self, p1_list, p2_list, c):
         import torch
-        dists = torch.tensor([]) 
+        dists = torch.tensor([]).to(p1_list.get_device())
         for idx in range(p1_list.shape[0]):
             cur_dist = self.sqdist(p1_list[idx], p2_list, c).unsqueeze(0)
             dists = torch.cat([dists, cur_dist], dim=0)

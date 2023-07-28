@@ -31,7 +31,7 @@ if __name__ == '__main__':
 
     trainer = HypCLIPTrainer(config=config, processor=processor)
     # trainer.evaluate()
-    # trainer.train()
+    trainer.train()
     
 
 
