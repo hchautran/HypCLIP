@@ -65,7 +65,7 @@ config_args = {
         'save': (0, '1 to save model and logs and 0 otherwise'),
         'save_dir': (None, 'path to save training logs and model weights (defaults to logs/task/date/run/)'),
         'sweep_c': (0, ''),
-        'lr_reduce_freq': (None, 'reduce lr every lr-reduce-freq or None to keep lr constant'),
+        'lr_reduce_freq': (5000, 'reduce lr every lr-reduce-freq or None to keep lr constant'),
         'gamma': (0.5, 'gamma for lr scheduler'),
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
         'min_epochs': (10, 'do not early stop before min-epochs'),
