@@ -9,14 +9,12 @@ class Flickr_dataset(Dataset):
     def __init__(self, dataset):  
         self.dataset = dataset
         self.dataset_len = len(dataset)
-        # self.pixel_values = dataset['pixel_values']
         self.cap_per_img = 5
 
     def __len__(self):
         return self.dataset_len  * self.cap_per_img
     
     def __getitem__(self, index): 
-        # start = time.time()
         data = self.dataset[int(index / self.cap_per_img)]
         out = {
             'img_id': data['img_id'],
@@ -24,7 +22,6 @@ class Flickr_dataset(Dataset):
             'caption': data['caption'][int(index % self.cap_per_img)],
             'sent_id': data['sentids'][int(index % self.cap_per_img)]
         }
-        # print(time.time() - start)
         return out
 
 class UniqueClassSampler(Sampler):
@@ -68,22 +65,32 @@ def collate_func(batch, processor):
     data = processor(
         text=list(df['caption']), 
         padding=True, 
-        return_tensors='pt'
+        return_tensors='pt',
+        truncation=True
     )
     data['pixel_values'] = torch.from_numpy(np.concatenate(list(df['pixel_values']), 0))
     return list(df['img_id']), data
         
 
-def get_dataloader(dataset, batch_size, processor):
+def get_dataloader(dataset, batch_size, processor, mode='train'):
 
     flickr_dataset = Flickr_dataset(dataset) 
     custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
-    return DataLoader(
-        flickr_dataset, 
-        batch_size=batch_size, 
-        collate_fn = lambda batch: collate_func(batch, processor),
-        sampler=custom_sampler,
-    ) 
+    if mode == 'train':
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn = lambda batch: collate_func(batch, processor),
+            sampler=custom_sampler,
+        ) 
+    else:
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn = lambda batch: collate_func(batch, processor),
+            shuffle=False
+        )
+
 
 
     

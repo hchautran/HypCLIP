@@ -6,10 +6,10 @@ from typing import Optional
 
 
 class CLIPText(nn.Module): 
-    def __init__(self, body, head, num_trainable_blocks=0) -> None:
+    def __init__(self, body, head, num_trainable_blocks=0, freeze_embeddings=True) -> None:
         super().__init__()
 
-        freeze_clip(text_model=body, num_trainable_blocks=num_trainable_blocks)
+        freeze_clip(text_model=body, num_trainable_blocks=num_trainable_blocks, freeze_embeddings=freeze_embeddings)
         self.body = body
         self.head = head 
 

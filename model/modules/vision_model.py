@@ -6,10 +6,10 @@ from typing import Optional
 
 
 class CLIPVision(nn.Module): 
-    def __init__(self, body, head, num_trainable_blocks=0) -> None:
+    def __init__(self, body, head, num_trainable_blocks=0, freeze_embedding=True) -> None:
         super().__init__()
 
-        freeze_clip(vision_model=body, num_trainable_blocks=num_trainable_blocks)
+        freeze_clip(vision_model=body, num_trainable_blocks=num_trainable_blocks, freeze_embeddings=freeze_embedding)
         self.body = body
         self.head = head 
 

@@ -6,6 +6,10 @@ from datasets import load_dataset
 from transformers import CLIPProcessor
 from tqdm.auto import tqdm
 from utils.data_utils import get_dataloader
+from trainer import HypCLIPTrainer
+
+
+
 
 
 if __name__ == '__main__':
@@ -14,32 +18,21 @@ if __name__ == '__main__':
 
 
     processor = CLIPProcessor.from_pretrained(config.model_ckt)
-    flickr30k = load_dataset(config.dataset).with_format('numpy')
+    # flickr30k = load_dataset(config.dataset).with_format('numpy')
 
-    train_loader = get_dataloader(flickr30k['train'], config.batch_size, processor=processor)
-    val_loader = get_dataloader(flickr30k['val'], config.batch_size, processor=processor)
-    test_loader = get_dataloader(flickr30k['test'], config.batch_size, processor=processor)
+    # train_loader = get_dataloader(flickr30k['train'], config.batch_size, processor=processor)
+    # val_loader = get_dataloader(flickr30k['val'], 5, processor=processor, mode='val')
+    # test_loader = get_dataloader(flickr30k['test'], 5, processor=processor, mode='test')
 
-    model = HypCLIP(config) 
-    print('number of params', model.num_parameters())
+    # model = HypCLIP(config) 
+    # # print(vars(config))
+    # print('number of params', model.num_parameters())
+    # print(sum(p.numel() for p in model.parameters() if p.requires_grad))
 
-    model.eval()
-    with torch.no_grad():
-        for img_ids, data in tqdm(val_loader):
-            print(img_ids)
-            print(data['input_ids'].shape)
-            print(data['attention_mask'].shape)
-            print(data['pixel_values'].shape)
-            # output = model(
-            #     input_ids=data['input_ids'],
-            #     attention_mask=data['attention_mask'],
-            #     pixel_values=data['pixel_values'],
-            # )
-            # print(output['text_embeds'].shape)
-            # print(output['image_embeds'].shape)
-
-            # print(output['sim_per_image'].shape)
-            # print(output['sim_per_text'].shape)
+    trainer = HypCLIPTrainer(config=config, processor=processor)
+    # trainer.evaluate()
+    # trainer.train()
+    
 
 
         

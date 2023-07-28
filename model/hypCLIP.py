@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from .text_model import CLIPText
-from .vision_model import CLIPVision 
+from .modules.text_model import CLIPText
+from .modules.vision_model import CLIPVision 
 from .manifolds.euclidean import Euclidean 
 from .manifolds.hyperboloid import Hyperboloid 
 from .manifolds.lorentz import Lorentz 
@@ -9,12 +9,13 @@ from .manifolds.poincare import PoincareBall
 from transformers import CLIPTextModel, CLIPVisionModel, CLIPModel
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
+import torch.nn.functional as F
 
 
 
 
 class HypCLIP(nn.Module):
-    def __init__(self, config, logit_scale_init_value=2.6592, curv_learnable=False) -> None:
+    def __init__(self, config, logit_scale_init_value=2.6592) -> None:
         super().__init__()
         
 
@@ -22,70 +23,81 @@ class HypCLIP(nn.Module):
         self.ft_out = config.ft_out
         self.clip_r = config.clip_radius
 
-        self.text_body = CLIPTextModel.from_pretrained(self.model_ckt) 
-        self.vision_body = CLIPVisionModel.from_pretrained(self.model_ckt) 
-        self.text_head = nn.Linear(self.text_body.config.hidden_size, self.ft_out, bias=False)
-        self.vision_head = nn.Linear(self.vision_body.config.hidden_size, self.ft_out, bias=False)
-        self.vision_model = CLIPVision(body=self.vision_body, head=self.vision_head, num_trainable_blocks=config.vision_trainable_blocks)
-        self.text_model = CLIPText(body=self.text_body, head=self.text_head, num_trainable_blocks=config.text_trainable_blocks)
+        text_body = CLIPTextModel.from_pretrained(self.model_ckt) 
+        vision_body = CLIPVisionModel.from_pretrained(self.model_ckt) 
+        text_head = nn.Linear(text_body.config.hidden_size, self.ft_out, bias=False)
+        vision_head = nn.Linear(vision_body.config.hidden_size, self.ft_out, bias=False)
 
-        self.logit_scale = nn.Parameter(torch.ones([]) * logit_scale_init_value)
+        self.vision_model = CLIPVision(body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
+        self.text_model = CLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
+
+        self.logit_scale = nn.Parameter(torch.ones([]) * logit_scale_init_value, requires_grad=True)
         self.manifold = config.manifold
 
-        
-        curv_learnable = config.curv_learnable
         assert self.manifold in ['poincare', 'hyperboloid', 'lorentz', 'euclidean']
 
-        self.curv = torch.as_tensor(config.curvature if self.manifold != 'euclidean' else 0)
+        self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
+
+        self.curv = torch.as_tensor(config.curv if self.manifold != 'euclidean' else 0.0)
         if not torch.is_floating_point(self.curv):
-            self.curv = curv.to(torch.get_default_dtype())
+            self.curv = self.curv.to(torch.get_default_dtype())
     
 
         if self.manifold == 'euclidean':
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.manifold = Euclidean()
         elif self.manifold == 'poincare':
-            self.curv = torch.nn.Parameter(self.curv, requires_grad=curv_learnable)
+            self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = PoincareBall()
         elif self.manifold  == 'hyperboloid':
-            self.curv = torch.nn.Parameter(self.curv, requires_grad=curv_learnable)
+            self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Hyperboloid()
         else: 
-            self.manifold = Lorentz(k=self.curv, learnable=curv_learnable )
+            self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
-        num_params += self.vision_body.num_parameters(only_trainable=only_trainable)
-        num_params += self.text_body.num_parameters(only_trainable=only_trainable)
-
+        num_params += self.vision_model.body.num_parameters(only_trainable=only_trainable)
+        num_params += self.text_model.body.num_parameters(only_trainable=only_trainable)
+        vision_head = self.vision_model.head
+        text_head = self.text_model.head
         if only_trainable:
-            num_params += sum(p.numel() for p in self.text_head.parameters() if p.requires_grad)
-            num_params += sum(p.numel() for p in self.vision_head.parameters() if p.requires_grad)
+            num_params += sum(p.numel() for p in text_head.parameters() if p.requires_grad)
+            num_params += sum(p.numel() for p in vision_head.parameters() if p.requires_grad)
             num_params += int(self.curv.requires_grad)
+            num_params += int(self.temp.requires_grad)
+            num_params += int(self.logit_scale.requires_grad) 
         else:
-            num_params += sum(p.numel() for p in self.text_head.parameters())
-            num_params += sum(p.numel() for p in self.vision_head.parameters())
-            num_params += 1 
+            num_params += sum(p.numel() for p in text_head.parameters())
+            num_params += sum(p.numel() for p in vision_head.parameters())
+            num_params += 3 
         return num_params
 
     def eval(self):
-        self.text_body.eval()
-        self.vision_head.eval()
-        self.text_head.eval()
-        self.vision_head.eval()
+        self.vision_model.body.eval()
+        self.vision_model.head.eval()
+        self.text_model.body.eval()
+        self.text_model.head.eval()
+
+    def train(self):
+        self.vision_model.body.train()
+        self.vision_model.head.train()
+        self.text_model.body.train()
+        self.text_model.head.train()
 
         
     def dist_func(self, text_embeds, image_embeds):
+        logit_scale = self.logit_scale.exp()
         if self.curv == 0:
             image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
             text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
             # cosine similarity as logits
-            return torch.matmul(text_embeds, image_embeds.t()) * self.logit_scale
+            return torch.matmul(text_embeds, image_embeds.t()) * logit_scale
         else:
             text_embeds = self._to_manifold(text_embeds)
             image_embeds = self._to_manifold(image_embeds)
             # square distance on the manifold
-            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * self.logit_scale
+            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * logit_scale
 
 
         
@@ -93,16 +105,16 @@ class HypCLIP(nn.Module):
         bsize = text_embeds.shape[0]
         target = torch.arange(bsize).cuda()
         eye_mask = torch.eye(bsize).cuda() * 1e9
-        logits00 = self.dist_func(text_embeds, text_embeds) / tau - eye_mask
-        logits01 = self.dist_func(text_embeds, image_embeds)/ tau
-        logits = torch.cat([logits01, logits00], dim=1)
+        sims_t2t= self.dist_func(text_embeds, text_embeds) / self.temp - eye_mask
+        sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
+        logits = torch.cat([sims_t2i, sims_t2t], dim=1)
         logits -= logits.max(1, keepdim=True)[0].detach()
         loss = F.cross_entropy(logits, target)
         stats = {
-            "logits/min": logits01.min().item(),
-            "logits/mean": logits01.mean().item(),
-            "logits/max": logits01.max().item(),
-            "logits/acc": (logits01.argmax(-1) == target).float().mean().item(),
+            "logits/min": sims_t2i.min().item(),
+            "logits/mean": sims_t2i.mean().item(),
+            "logits/max": sims_t2i.max().item(),
+            "logits/acc": (sims_t2i.argmax(-1) == target).float().mean().item(),
         }
         return loss, stats
 
@@ -122,7 +134,7 @@ class HypCLIP(nn.Module):
         pixel_values: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        return_loss: Optional[bool] = None,
+        return_loss: Optional[bool] = True,
     ) -> Union[Tuple, CLIPOutput]:
 
         vision_outputs = self.vision_model(
@@ -137,25 +149,42 @@ class HypCLIP(nn.Module):
 
         image_embeds = vision_outputs[1]
         text_embeds = text_outputs[1]
-        logit_scale = self.logit_scale.exp()
-
-        sim_per_text = self.dist_func(text_embeds, image_embeds)
-        sim_per_image = sim_per_text.t()
-        
 
         loss = None
         if return_loss:
-            loss = self.criterion(sim_per_text)
+            loss, stat = self.criterion(text_embeds, image_embeds)
 
         return dict(
+            stat=stat,
             loss=loss,
-            sim_per_image=sim_per_image,
-            sim_per_text=sim_per_text,
             text_embeds=text_embeds,
             image_embeds=image_embeds,
             text_model_output=text_outputs,
             vision_model_output=vision_outputs,
         )
+
+    def get_text_features(
+        self,
+        input_ids: torch.Tensor, 
+        attention_mask: torch.Tensor,
+        position_ids: Optional[torch.Tensor] = None,
+    ):
+        text_outputs = self.text_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+        )
+        text_embeds = text_outputs[1]
+        return text_embeds
+
+
+    def get_vision_features(self, pixel_values:torch.Tensor):
+        vision_outputs = self.vision_model(
+            pixel_values=pixel_values,
+        )
+        return vision_outputs[1] 
+
+
         
     
 if __name__ == '__main__':

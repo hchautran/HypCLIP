@@ -1,31 +1,33 @@
 import numpy as np
 
-def evaluate_recall(sims, mode='i2t'):
-    if mode == 'i2t':
-        recall, _ = i2t(sims, return_ranks=False)
-        r1i, r5i, r10i, _, _ = recall
-        r1t, r5t, r10t = None, None, None
-    if mode == 't2i':
-        recall, _ = t2i(sims, return_ranks=False)
-        r1t, r5t, r10t, _, _ = recall
-        r1i, r5i, r10i = None, None, None
-    if mode == 'both':
-        recall_i2t, _ = i2t(sims, return_ranks=False)
-        recall_t2i, _ = t2i(sims, return_ranks=False)
-        r1i, r5i, r10i, _, _ = recall_i2t
-        r1t, r5t, r10t, _, _ = recall_t2i
-    return r1i, r5i, r10i, r1t, r5t, r10t
+def evaluate_recall(sims_t2i):
+    recall_t2i, _ = t2i(sims_t2i, return_ranks=False)
+    recall_i2t, _ = i2t(sims_t2i.T, return_ranks=False)
+    r1i, r5i, r10i, _, _ = recall_i2t
+    r1t, r5t, r10t, _, _ = recall_t2i
+    output = {
+        'r1_i2t': r1i,
+        'r5_i2t': r5i,
+        'r10_i2t': r10i,
+        'r_i2t': r1i + r5i + r10i,
+        'r1_t2i': r1t,
+        'r5_t2i': r5t,
+        'r10_t2i': r10t,
+        'r_t2i': r1t + r5t + r10t,
+        'r_all': r1t + r5t + r10t + r1i + r5i + r10i,
+    }
+    return output 
 
-def i2t(sims, return_ranks=False):
+def i2t(sims_i2t, return_ranks=False):
     # sims (n_imgs, n_caps)
-    n_imgs, n_caps = sims.shape
+    n_imgs, n_caps = sims_i2t.shape
     ranks = np.zeros(n_imgs)
     top1 = np.zeros(n_imgs)
     results = []
     for index in range(n_imgs):
         result = dict()
         result['id'] = index
-        inds = np.argsort(sims[index])[::-1]
+        inds = np.argsort(sims_i2t[index])[::-1]
         result['top5'] = list(inds[:5])
         result['top1'] = inds[0]
         result['top10'] = list(inds[:10])
@@ -62,19 +64,18 @@ def i2t(sims, return_ranks=False):
     else:
         return (r1, r5, r10, medr, meanr), results
 
-def t2i(sims, return_ranks=False):
-    # sims (n_imgs, n_caps)
-    n_imgs, n_caps = sims.shape
+def t2i(sims_t2i, return_ranks=False):
+    # sims (n_caps, n_imgs)
+    n_caps, n_imgs = sims_t2i.shape
     ranks = np.zeros(5*n_imgs)
     top1 = np.zeros(5*n_imgs)
     # --> (5N(caption), N(image))
-    sims = sims.T # ncap, nimg
     results = []
     for index in range(n_imgs):
         for i in range(5):
             result = dict()
             result['id'] = 5*index+i
-            inds = np.argsort(sims[5 * index + i])[::-1]
+            inds = np.argsort(sims_t2i[5 * index + i])[::-1]
             result['top5'] = list(inds[:5])
             result['top10'] = list(inds[:10])
             result['top1'] = inds[0]
