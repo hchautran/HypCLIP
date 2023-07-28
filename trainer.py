@@ -103,6 +103,7 @@ class HypCLIPTrainer():
 
             running_loss = 0.0
             for _, data in tqdm(self.train_loader):
+                
                 current_step += 1
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
@@ -122,7 +123,7 @@ class HypCLIPTrainer():
                 running_loss += loss.item()
 
                 if (current_step+1) % self.log_freq == 0:
-                    self.log({stats})
+                    self.log(stats)
 
                     self.log({
                         'current loss': loss.item(),

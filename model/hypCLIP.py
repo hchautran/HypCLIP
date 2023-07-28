@@ -22,6 +22,7 @@ class HypCLIP(nn.Module):
         self.model_ckt = config.model_ckt
         self.ft_out = config.ft_out
         self.clip_r = config.clip_radius
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         text_body = CLIPTextModel.from_pretrained(self.model_ckt) 
         vision_body = CLIPVisionModel.from_pretrained(self.model_ckt) 
@@ -102,9 +103,10 @@ class HypCLIP(nn.Module):
 
         
     def criterion(self, text_embeds , image_embeds):
+    
         bsize = text_embeds.shape[0]
-        target = torch.arange(bsize).to(text_embeds.get_device())
-        eye_mask = torch.eye(bsize).to(text_embeds.get_device()) * 1e9
+        target = torch.arange(bsize).to(self.device)
+        eye_mask = torch.eye(bsize).to(self.device) * 1e9
         sims_t2t= self.dist_func(text_embeds, text_embeds) / self.temp - eye_mask
         sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
         logits = torch.cat([sims_t2i, sims_t2t], dim=1)
