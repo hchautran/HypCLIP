@@ -149,19 +149,8 @@ class HypCLIP(nn.Module):
 
         image_embeds = vision_outputs[1]
         text_embeds = text_outputs[1]
-
-        loss = None
-        if return_loss:
-            loss, stat = self.criterion(text_embeds, image_embeds)
-
-        return dict(
-            stat=stat,
-            loss=loss,
-            text_embeds=text_embeds,
-            image_embeds=image_embeds,
-            text_model_output=text_outputs,
-            vision_model_output=vision_outputs,
-        )
+        loss, stats = self.criterion(text_embeds, image_embeds)
+        return loss, stats
 
     def get_text_features(
         self,
