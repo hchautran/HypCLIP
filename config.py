@@ -61,7 +61,7 @@ config_args = {
         'patience': (10, 'patience for early stopping'),
         'seed': (42, 'seed for training'),
         'log_freq': (1, 'how often to compute print train/val metrics (in epochs)'),
-        'eval_freq': (1, 'how often to compute val metrics (in epochs)'),
+        'eval_freq': (10, 'how often to compute val metrics (in epochs)'),
         'save': (0, '1 to save model and logs and 0 otherwise'),
         'save_dir': (None, 'path to save training logs and model weights (defaults to logs/task/date/run/)'),
         'sweep_c': (0, ''),
@@ -69,7 +69,7 @@ config_args = {
         'gamma': (0.5, 'gamma for lr scheduler'),
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
         'min_epochs': (10, 'do not early stop before min-epochs'),
-        'batch_size': (40, 'batch size'),
+        'batch_size': (100, 'batch size'),
         'enable_log': (False, 'enable log'),
     },
     'model_config': {

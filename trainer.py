@@ -10,6 +10,7 @@ from utils.retrivial_utils import evaluate_recall
 import numpy as np
 from tqdm.auto import tqdm
 import torch
+import time
 
 
 class HypCLIPTrainer():
@@ -97,12 +98,16 @@ class HypCLIPTrainer():
     def train(self):
         # loop over the dataset multiple times
         current_step = 0
+        best_r_all = 0.0
+        waiting = 0
+        
         for epoch in range(self.epochs):
             self.current_epoch = epoch
             self.model.train()
 
             running_loss = 0.0
             for _, data in tqdm(self.train_loader):
+                start = time.time()
                 
                 current_step += 1
                 # zero the parameter gradients
@@ -124,7 +129,6 @@ class HypCLIPTrainer():
 
                 if (current_step+1) % self.log_freq == 0:
                     self.log(stats)
-
                     self.log({
                         'current loss': loss.item(),
                         'curvature': self.model.curv.item(),
@@ -132,15 +136,23 @@ class HypCLIPTrainer():
                         'logit scale': self.model.logit_scale.item(),
                         
                     })
+                    print(stats)
                     print('Loss: {}'.format(loss.item()))
-            metrics = self.evaluate()
-            metrics['train loss'] = running_loss/len(self.train_loader)
-            self.log(metrics)
-        
-        
+                print('infer time', time.time() - start)
+                if (current_step + 1) % self.eval_freq == 0:
+                    metrics = self.evaluate()
+                    print(metrics)
+                    self.log(metrics)
+            
+            if best_r_all < metrics['r_all']:
+                waiting = 0
+                best_r_all = metrics['r_all']
+            else:
+                waiting += 1
+            if waiting >= self.patience:
+                break
+            
         print('Finished Training')
-        pass
-
 
     def evaluate(self, mode='val'):
         print("Evaluating current epoch", self.current_epoch)
