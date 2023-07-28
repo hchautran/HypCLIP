@@ -107,13 +107,11 @@ class HypCLIPTrainer():
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
         
-                output = self.model(
+                loss, stats = self.model(
                     input_ids=data['input_ids'],
                     attention_mask=data['attention_mask'],
                     pixel_values=data['pixel_values'],
                 )
-                loss = output['loss']
-                loss = output['stat']
 
                 self.accelerator.backward(loss)
                 if self.config.grad_clip is not None:
@@ -124,11 +122,14 @@ class HypCLIPTrainer():
                 running_loss += loss.item()
 
                 if (current_step+1) % self.log_freq == 0:
+                    self.log({stats})
+
                     self.log({
                         'current loss': loss.item(),
                         'curvature': self.model.curv.item(),
                         'temp': self.model.temp.item(),
                         'logit scale': self.model.logit_scale.item(),
+                        
                     })
                     print('Loss: {}'.format(loss.item()))
             metrics = self.evaluate()
