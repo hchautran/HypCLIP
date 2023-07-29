@@ -73,14 +73,14 @@ config_args = {
     },
     'model_config': {
         'model_ckt':('openai/clip-vit-base-patch32', 'model checkpoin on Hugging Face'),
-        'manifold': ('poincare', 'which manifold to use, can be any of [euclidean, hyperboloid, poincareBall, lorentz]'),
+        'manifold': ('lorentz', 'which manifold to use, can be any of [euclidean, hyperboloid, poincare, lorentz]'),
         'curv': (0.1, 'hyperbolic radius, set to None for trainable curvature'),
         'temp': (0.07, 'distance temperature'),
-        'clip_radius': (2.3, 'fermi-dirac decoder parameter for lp'),
+        'clip_radius': (2.5, 'fermi-dirac decoder parameter for lp'),
         'vision_trainable_blocks': (6, 'number of trainable blocks in vision model'),
         'text_trainable_blocks': (6, 'number of trainable blocks in text model'),
         'ft_out': (512, 'final project dimension'),
-        'curv_learnable': (False, 'is curvature learnable') ,
+        'curv_learnable': (True, 'is curvature learnable') ,
         'freeze_embedding': (False, 'freeze embedding layers')
     },
     'data_config': {

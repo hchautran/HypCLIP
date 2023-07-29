@@ -59,8 +59,17 @@ class Lorentz(LorentzOri):
         return math.cdist(x, y, k=self.k)
         # return -(x.matmul(y.transpose(-1, -2))) / self.k
 
-    def sqdist(self, x: torch.Tensor, y: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+    def sqdist(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return -2 - 2 * math.inner(x, y)
+
+    def dist_batch(self, p1_list, p2_list):
+        import torch
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        dists = torch.tensor([]).to(device)
+        for idx in range(p1_list.shape[0]):
+            cur_dist = self.sqdist(p1_list[idx], p2_list).unsqueeze(0)
+            dists = torch.cat([dists, cur_dist], dim=0)
+        return dists
 
     def lorentz_to_klein(self, x):
         dim = x.shape[-1] - 1
@@ -87,7 +96,7 @@ class Lorentz(LorentzOri):
         v = math.project_u(x, v, k=self.k, dim=dim)
         return v
 
-    def proju0(self, v: torch.Tensor) -> torch.Tensor:
+    def proj(self, v: torch.Tensor) -> torch.Tensor:
         v = math.project_u0(v)
         return v
 

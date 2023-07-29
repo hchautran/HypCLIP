@@ -17,6 +17,7 @@ import torch.nn.functional as F
 class HypCLIP(nn.Module):
     def __init__(self, config, logit_scale_init_value=2.6592) -> None:
         super().__init__()
+        self.config = config
         
 
         self.model_ckt = config.model_ckt
@@ -33,24 +34,24 @@ class HypCLIP(nn.Module):
         self.text_model = CLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
 
         self.logit_scale = nn.Parameter(torch.ones([]) * logit_scale_init_value, requires_grad=True)
-        self.manifold = config.manifold
+        manifold = config.manifold
 
-        assert self.manifold in ['poincare', 'hyperboloid', 'lorentz', 'euclidean']
+        assert manifold in ['poincare', 'hyperboloid', 'lorentz', 'euclidean']
 
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
 
-        self.curv = torch.as_tensor(config.curv if self.manifold != 'euclidean' else 0.0)
+        self.curv = torch.as_tensor(config.curv if manifold != 'euclidean' else 0.0)
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
     
 
-        if self.manifold == 'euclidean':
+        if manifold == 'euclidean':
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.manifold = Euclidean()
-        elif self.manifold == 'poincare':
+        elif manifold == 'poincare':
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = PoincareBall()
-        elif self.manifold  == 'hyperboloid':
+        elif manifold  == 'hyperboloid':
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Hyperboloid()
         else: 
@@ -95,9 +96,13 @@ class HypCLIP(nn.Module):
             # cosine similarity as logits
             return torch.matmul(text_embeds, image_embeds.t()) 
         else:
+            image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
+            text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
             text_embeds = self._to_manifold(text_embeds)
             image_embeds = self._to_manifold(image_embeds)
             # square distance on the manifold
+            if self.config.manifold == 'lorentz':
+                return -self.manifold.dist_batch(text_embeds, image_embeds)
             return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv)
 
 
@@ -124,6 +129,8 @@ class HypCLIP(nn.Module):
                 self.clip_r / x_norm
             )
             x = x * fac
+        if self.config.manifold == 'lorentz':
+            return self.manifold.proj(self.manifold.expmap0(x))
         return self.manifold.proj(self.manifold.expmap0(x, c=self.curv), c=self.curv)
 
     def forward(

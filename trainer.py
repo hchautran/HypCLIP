@@ -66,8 +66,8 @@ class HypCLIPTrainer():
             else:
                 self.optimizer == RiemannianSGD(
                     self.model.parameters(),
-                    lr=config.lr,
                     momentum=config.momentum,
+                    lr=config.lr,
                     weight_decay=config.weight_decay,
                     stabilize=10
                 )
