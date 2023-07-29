@@ -93,25 +93,21 @@ class HypCLIP(nn.Module):
             image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
             text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
             # cosine similarity as logits
-            return torch.matmul(text_embeds, image_embeds.t()) * logit_scale
+            return torch.matmul(text_embeds, image_embeds.t()) 
         else:
             text_embeds = self._to_manifold(text_embeds)
             image_embeds = self._to_manifold(image_embeds)
             # square distance on the manifold
-            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * logit_scale
+            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv)
 
 
         
     def criterion(self, text_embeds , image_embeds):
     
         bsize = text_embeds.shape[0]
-        target = torch.arange(bsize).to(self.device)
-        eye_mask = torch.eye(bsize).to(self.device) * 1e9
-        sims_t2t= self.dist_func(text_embeds, text_embeds) / self.temp - eye_mask
         sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
-        logits = torch.cat([sims_t2i, sims_t2t], dim=1)
-        logits -= logits.max(1, keepdim=True)[0].detach()
-        loss = F.cross_entropy(logits, target)
+        target = torch.arange(bsize).to(self.device)
+        loss = F.cross_entropy(sims_t2i, target)
         stats = {
             "logits/min": sims_t2i.min().item(),
             "logits/mean": sims_t2i.mean().item(),

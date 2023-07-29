@@ -1,5 +1,4 @@
-t add import argparse
-
+import argparse
 
 def add_flags_from_config(parser, config_dict):
     """
@@ -51,7 +50,7 @@ def add_flags_from_config(parser, config_dict):
 
 config_args = {
     'training_config': {
-        'lr': (1e-3, 'learning rate'),
+        'lr': (1e-4, 'learning rate'),
         'dropout': (0.0, 'dropout probability'),
         'cuda': (-1, 'which cuda device to use (-1 for cpu training)'),
         'epochs': (100, 'maximum number of epochs to train for'),
@@ -70,11 +69,11 @@ config_args = {
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
         'min_epochs': (20, 'do not early stop before min-epochs'),
         'batch_size': (125, 'batch size'),
-        'enable_log': (True, 'enable log'),
+        'enable_log': (False, 'enable log'),
     },
     'model_config': {
         'model_ckt':('openai/clip-vit-base-patch32', 'model checkpoin on Hugging Face'),
-        'manifold': ('euclidean', 'which manifold to use, can be any of [euclidean, hyperboloid, poincareBall, lorentz]'),
+        'manifold': ('poincare', 'which manifold to use, can be any of [euclidean, hyperboloid, poincareBall, lorentz]'),
         'curv': (0.1, 'hyperbolic radius, set to None for trainable curvature'),
         'temp': (0.07, 'distance temperature'),
         'clip_radius': (2.3, 'fermi-dirac decoder parameter for lp'),
@@ -86,7 +85,7 @@ config_args = {
     },
     'data_config': {
         'dataset': ('EddieChen372/flickr30k', 'which dataset to use'),
-        'cache_dir': ('/mnt/data/.cache', 'cache_dir'),
+        'cache_dir': ('/Volumes/ExtraSpace/.cache', 'cache_dir'),
         'split-seed': (1234, 'seed for data splits (train/test/val)'),
     }
 }
