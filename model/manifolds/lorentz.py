@@ -62,7 +62,7 @@ class Lorentz(LorentzOri):
     def sqdist(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return -2 - 2 * math.inner(x, y)
 
-    def dist_batch(self, p1_list, p2_list):
+    def sqdist_batch(self, p1_list, p2_list):
         import torch
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         dists = torch.tensor([]).to(device)
