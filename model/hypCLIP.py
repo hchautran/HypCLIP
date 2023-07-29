@@ -24,8 +24,8 @@ class HypCLIP(nn.Module):
         self.clip_r = config.clip_radius
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-        text_body = CLIPTextModel.from_pretrained(self.model_ckt) 
-        vision_body = CLIPVisionModel.from_pretrained(self.model_ckt) 
+        text_body = CLIPTextModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
+        vision_body = CLIPVisionModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
         text_head = nn.Linear(text_body.config.hidden_size, self.ft_out, bias=False)
         vision_head = nn.Linear(vision_body.config.hidden_size, self.ft_out, bias=False)
 

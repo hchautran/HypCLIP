@@ -34,7 +34,7 @@ class UniqueClassSampler(Sampler):
         progress = tqdm(range(len(data_source.dataset['img_id'])))
 
         for index, img_id in enumerate(data_source.dataset['img_id']):
-            self.classes[img_id] = [ data_source.cap_per_img * index + i for i in range(data_source.cap_per_img)]
+            self.classes[img_id] = [data_source.cap_per_img * index + i for i in range(data_source.cap_per_img)]
             self.remain_sample += 5
             progress.update(1)
 

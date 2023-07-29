@@ -17,8 +17,6 @@ if __name__ == '__main__':
     config = parser.parse_args()
 
 
-    processor = CLIPProcessor.from_pretrained(config.model_ckt)
-    # flickr30k = load_dataset(config.dataset).with_format('numpy')
 
     # train_loader = get_dataloader(flickr30k['train'], config.batch_size, processor=processor)
     # val_loader = get_dataloader(flickr30k['val'], 5, processor=processor, mode='val')
@@ -29,7 +27,7 @@ if __name__ == '__main__':
     # print('number of params', model.num_parameters())
     # print(sum(p.numel() for p in model.parameters() if p.requires_grad))
 
-    trainer = HypCLIPTrainer(config=config, processor=processor)
+    trainer = HypCLIPTrainer(config=config)
     # trainer.evaluate()
     trainer.train()
     
