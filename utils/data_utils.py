@@ -59,8 +59,6 @@ class UniqueClassSampler(Sampler):
                     self.classes.pop(img_id)
 
 
-
-
 def collate_func(batch, processor):
     # print(batch)
     df = pd.DataFrame(batch)

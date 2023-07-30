@@ -84,7 +84,8 @@ class HypCLIPTrainer():
         self.optimizer, self.train_loader, self.val_loader, self.test_loader, self.scheduler = self.accelerator.prepare(
             self.optimizer, self.train_loader, self.val_loader, self.test_loader ,self.scheduler
         )
-        self.name=f'{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}',
+        self.name=f'{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}'
+        print(self.name)
         print('RUNNING:',self.name)
 
 

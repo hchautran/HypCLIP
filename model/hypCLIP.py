@@ -97,10 +97,8 @@ class HypCLIP(nn.Module):
             image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
             text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
             # cosine similarity as logits
-            return torch.matmul(text_embeds, image_embeds.t()) 
+            return torch.matmul(text_embeds, image_embeds.t()) * logit_scale
         else:
-            # image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
-            # text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
             # square distance on the manifold
             if self.config.manifold == 'lorentz':
                 print('calculating lorentz distance')
@@ -111,12 +109,16 @@ class HypCLIP(nn.Module):
             text_embeds = self._to_manifold(text_embeds)
             image_embeds = self._to_manifold(image_embeds)
             print('calculating poincare distance')
-            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv)
+            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * logit_scale
 
 
+    def itm_loss():
+        pass
+
+    def itc_loss(): 
+        pass
         
     def criterion(self, text_embeds , image_embeds):
-    
         bsize = text_embeds.shape[0]
         sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
         target = torch.arange(bsize).to(self.device)
@@ -137,9 +139,9 @@ class HypCLIP(nn.Module):
                 self.clip_r / x_norm
             )
             x = x * fac
-        if self.config.manifold == 'lorentz':
+        if self.config.manifold == LORENTZ:
             return self.manifold.expmap0(x)
-        return self.manifold.proj(self.manifold.expmap0(x, c=self.curv), c=self.curv)
+        return self.manifold.expmap0(x, c=self.curv)
 
     def forward(
         self,

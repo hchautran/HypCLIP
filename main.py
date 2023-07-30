@@ -7,6 +7,8 @@ from transformers import CLIPProcessor
 from tqdm.auto import tqdm
 from utils.data_utils import get_dataloader
 from trainer import HypCLIPTrainer
+from accelerate import find_executable_batch_size
+
 
 
 if __name__ == '__main__':
@@ -38,10 +40,15 @@ if __name__ == '__main__':
     #     assert len(set(img_ids)) == 1 
     # for img_ids, batch in tqdm(val_loader):
     #     assert len(set(img_ids)) == 1 
-    trainer = HypCLIPTrainer(config=config)
-        
-    # trainer.evaluate()
-    trainer.train()
+    @find_executable_batch_size(starting_batch_size=config.batch_size)
+    def inner_training_loop(batch_size):
+        config.batch_size=batch_size
+        trainer = HypCLIPTrainer(config=config)
+        trainer.train()
+
+    inner_training_loop()
+
+    
     
 
 
