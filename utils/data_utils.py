@@ -4,6 +4,8 @@ from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm.auto import tqdm
 import time
 import numpy as np
+from transformers import CLIPImageProcessor 
+from transformers import CLIPProcessor
 
 class Flickr_dataset(Dataset):
     def __init__(self, dataset):  
@@ -92,28 +94,31 @@ def get_dataloader(dataset, batch_size, processor, mode='train'):
         )
 
 
-
+def preprocess_img(sample, processor:CLIPProcessor):
+    sample['pixel_values'] = processor(images=sample['image'], return_tensors='pt')['pixel_values']
+    return sample
     
+
 
 if __name__ == '__main__':
     from datasets import load_dataset 
-    from transformers import CLIPProcessor
     from tqdm.auto import tqdm
-    processor = CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')
+    processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
 
     batch_size = 128 
     flickr30k = load_dataset('EddieChen372/flickr30k').with_format('numpy')
-    train_loader = get_dataloader(flickr30k['train'], batch_size, processor=processor)
+    ds = flickr30k.map(lambda sample: preprocess_img(sample, processor))
+    # train_loader = get_dataloader(flickr30k['train'], batch_size, processor=processor)
     # val_loader = get_dataloader(flickr30k['val'], batch_size, processor=processor)
     # test_loader = get_dataloader(flickr30k['test'], batch_size, processor=processor)
 
 
-    for img_ids, batch in tqdm(train_loader):
-        assert len(img_ids) == len(set(img_ids))
-        print(img_ids)
-        print(batch['input_ids'].shape)
-        print(batch['attention_mask'].shape)
-        print(batch['pixel_values'].shape)
+    # for img_ids, batch in tqdm(train_loader):
+    #     assert len(img_ids) == len(set(img_ids))
+    #     print(img_ids)
+    #     print(batch['input_ids'].shape)
+    #     print(batch['attention_mask'].shape)
+    #     print(batch['pixel_values'].shape)
         
     
     

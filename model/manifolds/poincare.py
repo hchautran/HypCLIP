@@ -3,7 +3,7 @@
 import torch
 
 from .base import Manifold
-from utils.math_utils import artanh, tanh
+from utils.math_utils import artanh, tanh, arsinh
 
 
 class PoincareBall(Manifold):
@@ -142,3 +142,31 @@ class PoincareBall(Manifold):
         sqrtK = K ** 0.5
         sqnorm = torch.norm(x, p=2, dim=1, keepdim=True) ** 2
         return sqrtK * torch.cat([K + sqnorm, 2 * sqrtK * x], dim=1) / (K - sqnorm)
+
+    def _tensor_dot(self, x, y):
+        res = torch.einsum("ij,kj->ik", (x, y))
+        return res
+
+    
+    def _mobius_addition_batch(self, x, y, c):
+        xy = self._tensor_dot(x, y)  # B x C
+        x2 = x.pow(2).sum(-1, keepdim=True)  # B x 1
+        y2 = y.pow(2).sum(-1, keepdim=True)  # C x 1
+        num = 1 + 2 * c * xy + c * y2.permute(1, 0)  # B x C
+        num = num.unsqueeze(2) * x.unsqueeze(1)
+        num = num + (1 - c * x2).unsqueeze(2) * y  # B x C x D
+        denom_part1 = 1 + 2 * c * xy  # B x C
+        denom_part2 = c ** 2 * x2 * y2.permute(1, 0)
+        denom = denom_part1 + denom_part2
+        res = num / (denom.unsqueeze(2) + 1e-5)
+        return res
+
+
+    def hyperbolic_softmax(self, X, A, P, c):
+        lambda_pkc = 2 / (1 - c * P.pow(2).sum(dim=1))
+        k = lambda_pkc * torch.norm(A, dim=1) / torch.sqrt(c)
+        mob_add = self.mobius_addition_batch(-P, X, c)
+        num = 2 * torch.sqrt(c) * torch.sum(mob_add * A.unsqueeze(1), dim=-1)
+        denom = torch.norm(A, dim=1, keepdim=True) * (1 - c * mob_add.pow(2).sum(dim=2))
+        logit = k.unsqueeze(1) * arsinh(num / denom)
+        return logit.permute(1, 0)

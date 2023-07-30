@@ -17,7 +17,11 @@ class HypCLIPTrainer():
     def __init__(self, config):
         self.config = config 
         self.device = torch.device(f'cuda:{config.cuda}' if (torch.cuda.is_available() and config.cuda >=0) else 'cpu')
-        self.accelerator = Accelerator()
+
+        self.accelerator = Accelerator(
+            mixed_precision=config.mixed_precision, 
+            gradient_accumulation_steps=config.gradient_accumulation_steps
+        )
         self.processor = CLIPProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
         self.dataset = load_dataset(config.dataset, cache_dir=config.cache_dir).with_format('numpy')
         self.enable_log = self.config.enable_log
@@ -34,7 +38,6 @@ class HypCLIPTrainer():
         self.save_dir = config.save_dir
         self.epochs = config.epochs
         self.current_epoch = 0
-        self.name = f'HypCLIP-{self.model_ckt}'
 
 
         self.model = HypCLIP(self.config) 
@@ -81,11 +84,13 @@ class HypCLIPTrainer():
         self.optimizer, self.train_loader, self.val_loader, self.test_loader, self.scheduler = self.accelerator.prepare(
             self.optimizer, self.train_loader, self.val_loader, self.test_loader ,self.scheduler
         )
+        self.name=f'{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}',
+        print('RUNNING:',self.name)
 
 
         if self.enable_log:
             wandb.init(
-                name=f'HypCLIP',
+                name=self.name,
                 config=vars(self.config)
             )
         print('trainable parameters:', self.model.num_parameters())
@@ -103,56 +108,57 @@ class HypCLIPTrainer():
         waiting = 0
         
         for epoch in range(self.epochs):
-            self.current_epoch = epoch
-            self.model.train()
+            with self.accelerator.accumulate(self.model):
+                self.current_epoch = epoch
+                self.model.train()
 
-            running_loss = 0.0
-            for _, data in tqdm(self.train_loader):
-                self.accelerator.free_memory()
-                self.optimizer.zero_grad()
-                current_step += 1
-                # assert len(img_ids) == len(set(img_ids))
-        
-                loss, stats = self.model(
-                    input_ids=data['input_ids'],
-                    attention_mask=data['attention_mask'],
-                    pixel_values=data['pixel_values'],
-                )
+                running_loss = 0.0
+                for _, data in tqdm(self.train_loader):
+                    self.accelerator.free_memory()
+                    self.optimizer.zero_grad()
+                    current_step += 1
+                    # assert len(img_ids) == len(set(img_ids))
+            
+                    loss, stats = self.model(
+                        input_ids=data['input_ids'],
+                        attention_mask=data['attention_mask'],
+                        pixel_values=data['pixel_values'],
+                    )
 
-                self.accelerator.backward(loss)
-                if self.config.grad_clip is not None:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
-                self.optimizer.step()
-                self.scheduler.step()
+                    self.accelerator.backward(loss)
+                    if self.config.grad_clip is not None:
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+                    self.optimizer.step()
+                    self.scheduler.step()
 
-                running_loss += loss.item()
+                    running_loss += loss.item()
 
-                if (current_step+1) % self.log_freq == 0:
-                    self.log(stats)
-                    self.log({
-                        'current loss': loss.item(),
-                        'curvature': self.model.curv.item(),
-                        'temp': self.model.temp.item(),
-                        'logit scale': self.model.logit_scale.item(),
-                        
-                    })
-                    print(stats)
-                    print('Loss: {}'.format(loss.item()))
-                # print('infer time', time.time() - start)
-            metrics = self.evaluate()
-            print(metrics)
-            self.log(metrics)
-            if best_r_all < metrics['r_all']:
-                waiting = 0
-                best_r_all = metrics['r_all']
-                print('best r all', best_r_all)
-            else:
-                waiting += 1
-            if waiting < self.patience:
-                self.train_loader = self.accelerator.prepare(
-                    get_dataloader(self.dataset['train'], self.config.batch_size, processor=self.processor, mode='train')
-                )
-            else: break
+                    if (current_step+1) % self.log_freq == 0:
+                        self.log(stats)
+                        self.log({
+                            'current loss': loss.item(),
+                            'curvature': self.model.curv.item(),
+                            'temp': self.model.temp.item(),
+                            'logit scale': self.model.logit_scale.item(),
+                            
+                        })
+                        print(stats)
+                        print('Loss: {}'.format(loss.item()))
+                    # print('infer time', time.time() - start)
+                metrics = self.evaluate()
+                print(metrics)
+                self.log(metrics)
+                if best_r_all < metrics['r_all']:
+                    waiting = 0
+                    best_r_all = metrics['r_all']
+                    print('best r all', best_r_all)
+                else:
+                    waiting += 1
+                if waiting < self.patience:
+                    self.train_loader = self.accelerator.prepare(
+                        get_dataloader(self.dataset['train'], self.config.batch_size, processor=self.processor, mode='train')
+                    )
+                else: break
             
         print('Finished Training')
 
@@ -178,17 +184,12 @@ class HypCLIPTrainer():
         
             
 
-            
-
-
     def save(self):
-        pass
+        torch.save(self.model ,f'{self.save_dir}/{self.name}.pth')
 
-    def push_to_hub(self):
-        pass
 
     def load(self):
-        pass
+        self.model = torch.load(f'{self.save_dir}/{self.name}.pth')
         
 
     

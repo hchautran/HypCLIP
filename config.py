@@ -70,10 +70,12 @@ config_args = {
         'min_epochs': (20, 'do not early stop before min-epochs'),
         'batch_size': (125, 'batch size'),
         'enable_log': (False, 'enable log'),
+        'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
+        'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
     },
     'model_config': {
         'model_ckt':('openai/clip-vit-base-patch32', 'model checkpoin on Hugging Face'),
-        'manifold': ('lorentz', 'which manifold to use, can be any of [euclidean, hyperboloid, poincare, lorentz]'),
+        'manifold': ('poincare', 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.1, 'hyperbolic radius, set to None for trainable curvature'),
         'temp': (0.07, 'distance temperature'),
         'clip_radius': (2.5, 'fermi-dirac decoder parameter for lp'),

@@ -9,12 +9,16 @@ from utils.data_utils import get_dataloader
 from trainer import HypCLIPTrainer
 
 
-
-
-
 if __name__ == '__main__':
     from config import parser
     config = parser.parse_args()
+    
+    # for batch_size in [125,200, 300]:    
+    #     config.batch_size=batch_size
+    #     for manifold in ['euclidean', 'lorentz', 'poincare']:
+    #         config.manifold = manifold
+    #         for ft_out in [128,256,512,1024]:
+    #             config.ft_out = ft_out 
 
 
     # processor = CLIPProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
