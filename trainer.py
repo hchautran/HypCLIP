@@ -10,6 +10,7 @@ from utils.retrivial_utils import evaluate_recall
 import numpy as np
 from tqdm.auto import tqdm
 import torch
+import torch.nn.functional as F
 import time
 
 
@@ -120,7 +121,7 @@ class HypCLIPTrainer():
                     current_step += 1
                     # assert len(img_ids) == len(set(img_ids))
             
-                    loss, stats = self.model(
+                    loss, stats, loss_itc, loss_itm = self.model(
                         input_ids=data['input_ids'],
                         attention_mask=data['attention_mask'],
                         pixel_values=data['pixel_values'],
@@ -137,6 +138,8 @@ class HypCLIPTrainer():
                     if (current_step+1) % self.log_freq == 0:
                         self.log(stats)
                         self.log({
+                            'current loss itm': loss_itm.item(),
+                            'current loss itc': loss_itc.item(),
                             'current loss': loss.item(),
                             'curvature': self.model.curv.item(),
                             'temp': self.model.temp.item(),
@@ -182,8 +185,7 @@ class HypCLIPTrainer():
             metrics = evaluate_recall(sims_t2i=sims_t2i)
             metrics['epoch'] = self.current_epoch
         return metrics
-        
-            
+
 
     def save(self):
         torch.save(self.model ,f'{self.save_dir}/{self.name}.pth')

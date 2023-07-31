@@ -15,9 +15,11 @@ if __name__ == '__main__':
     from config import parser
     config = parser.parse_args()
     
-    # for batch_size in [125,200, 300]:    
+    # for batch_size in [100,150,200]:    
     #     config.batch_size=batch_size
-    #     for manifold in ['euclidean', 'lorentz', 'poincare']:
+        # for curv in [0.05,0.1]:
+            # config.curvature = curv
+    #     for manifold in ['euclidean', 'lorentz']:
     #         config.manifold = manifold
     #         for ft_out in [128,256,512,1024]:
     #             config.ft_out = ft_out 

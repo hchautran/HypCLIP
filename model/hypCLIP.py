@@ -2,14 +2,16 @@ import torch
 import torch.nn as nn
 from .modules.text_model import CLIPText
 from .modules.vision_model import CLIPVision 
+from .modules.discriminator import Discriminator
 from .manifolds.euclidean import Euclidean 
 from .manifolds.hyperboloid import Hyperboloid 
 from .manifolds.lorentz import Lorentz 
 from .manifolds.poincare import PoincareBall 
-from transformers import CLIPTextModel, CLIPVisionModel, CLIPModel
+from transformers import CLIPTextModel, CLIPVisionModel 
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
+
 
 
 EUCLID = 'euclidean'
@@ -35,6 +37,7 @@ class HypCLIP(nn.Module):
 
         self.vision_model = CLIPVision(body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
         self.text_model = CLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
+        self.discriminator = Discriminator(dim=config.ft_out) 
 
         self.logit_scale = nn.Parameter(torch.ones([]) * logit_scale_init_value, requires_grad=True)
         manifold = config.manifold
@@ -112,25 +115,6 @@ class HypCLIP(nn.Module):
             return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * logit_scale
 
 
-    def itm_loss():
-        pass
-
-    def itc_loss(): 
-        pass
-        
-    def criterion(self, text_embeds , image_embeds):
-        bsize = text_embeds.shape[0]
-        sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
-        target = torch.arange(bsize).to(self.device)
-        loss = F.cross_entropy(sims_t2i, target)
-        stats = {
-            "logits/min": sims_t2i.min().item(),
-            "logits/mean": sims_t2i.mean().item(),
-            "logits/max": sims_t2i.max().item(),
-            "logits/acc": (sims_t2i.argmax(-1) == target).float().mean().item(),
-        }
-        return loss, stats
-
     def _to_manifold(self, x):
         if self.clip_r is not None:
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
@@ -143,13 +127,63 @@ class HypCLIP(nn.Module):
             return self.manifold.expmap0(x)
         return self.manifold.expmap0(x, c=self.curv)
 
+
+    def itm_loss(self, imgs, cap, sim_t2i):
+        bs = imgs.shape[0]
+        weights_i2t = F.softmax(sim_t2i.T, dim=1)
+        weights_t2i = F.softmax(sim_t2i, dim=1)
+        mask = torch.eye(bs)
+
+        weights_i2t.masked_fill_(mask, 0)
+        weights_t2i.masked_fill_(mask, 0) 
+        # select a negative image for each text
+        img_enc_neg = []    
+        for b in range(bs):
+            neg_idx = torch.multinomial(weights_t2i[b], 1).item()
+            img_enc_neg.append(imgs[neg_idx])
+        img_enc_neg = torch.stack(img_enc_neg,dim=0) 
+
+        # select a negative text for each image
+        cap_enc_neg = []
+        for b in range(bs):
+            neg_idx = torch.multinomial(weights_i2t[b], 1).item()
+            cap_enc_neg.append(cap[neg_idx])
+        cap_enc_neg = torch.stack(cap_enc_neg,dim=0)   
+
+        cap_enc_all = torch.cat([cap, cap, cap_enc_neg],dim=0)     
+        img_enc_all = torch.cat([imgs, img_enc_neg, imgs],dim=0)
+        itm_labels = torch.cat(
+            [
+                torch.ones(bs,dtype=torch.float),
+                torch.zeros(2*bs,dtype=torch.float)
+            ],
+        dim=0).view(-1,1).to(imgs.device)
+
+        disc = self.discriminator(img_enc_all, cap_enc_all)
+        loss_itm = F.binary_cross_entropy(disc, itm_labels)
+        return loss_itm
+
+        
+    def criterion(self, text_embeds , image_embeds):
+        bsize = text_embeds.shape[0]
+        sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
+        target = torch.arange(bsize).to(self.device)
+        loss = F.cross_entropy(sims_t2i, target)
+        stats = {
+            "logits/min": sims_t2i.min().item(),
+            "logits/mean": sims_t2i.mean().item(),
+            "logits/max": sims_t2i.max().item(),
+            "logits/acc": (sims_t2i.argmax(-1) == target).float().mean().item(),
+        }
+        return loss, stats, sims_t2i
+
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
         pixel_values: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        return_loss: Optional[bool] = True,
     ) -> Union[Tuple, CLIPOutput]:
 
         vision_outputs = self.vision_model(
@@ -164,8 +198,11 @@ class HypCLIP(nn.Module):
 
         image_embeds = vision_outputs[1]
         text_embeds = text_outputs[1]
-        loss, stats = self.criterion(text_embeds, image_embeds)
-        return loss, stats
+        itc_loss, stats, sims_t2i = self.criterion(text_embeds, image_embeds)
+        itm_loss = self.itm_loss(image_embeds, text_embeds, sim_t2i=sims_t2i)
+        loss = itm_loss + itc_loss
+        
+        return loss, stats, itc_loss, itm_loss
 
     def get_text_features(
         self,
@@ -203,5 +240,6 @@ if __name__ == '__main__':
     
 
     print(hypCLIP)
+
 
     

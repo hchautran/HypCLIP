@@ -26,7 +26,6 @@ class CLIPVision(nn.Module):
         pooled_output = vision_outputs[1]  # pooled_output
         last_hidden_state = vision_outputs[0]
         projected_image_features = self.head(pooled_output)
-
         return last_hidden_state, projected_image_features
     
 
