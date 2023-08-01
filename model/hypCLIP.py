@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 from .modules.text_model import CLIPText
 from .modules.vision_model import CLIPVision 
-from .modules.discriminator import Discriminator
+from .modules.discriminator import Discriminator as DisModel
+from .modules.hyp_discriminator import HypDiscriminator as HypDisModel
+from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .manifolds.euclidean import Euclidean 
 from .manifolds.hyperboloid import Hyperboloid 
 from .manifolds.lorentz import Lorentz 
@@ -35,9 +37,6 @@ class HypCLIP(nn.Module):
         text_head = nn.Linear(text_body.config.hidden_size, self.ft_out, bias=False)
         vision_head = nn.Linear(vision_body.config.hidden_size, self.ft_out, bias=False)
 
-        self.vision_model = CLIPVision(body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
-        self.text_model = CLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
-        self.discriminator = Discriminator(dim=config.ft_out) 
 
         self.logit_scale = nn.Parameter(torch.ones([]) * logit_scale_init_value, requires_grad=True)
         manifold = config.manifold
@@ -54,12 +53,18 @@ class HypCLIP(nn.Module):
         if manifold == EUCLID:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.manifold = Euclidean()
+            self.discriminator = DisModel(dim=config.ft_out)
         elif manifold == POINCARE:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = PoincareBall()
+            self.discriminator = HypDisModel(self.manifold, c=self.curv ,dim=config.ft_out)
         else: 
+            self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
+            self.discriminator = LorentzDisModel(self.manifold, c=self.curv ,dim=config.ft_out)
         self.manifold_name = manifold
+        self.vision_model = CLIPVision(config, manifold=self.manifold , body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding, use_hyp_linear=(config.manifold != EUCLID))
+        self.text_model = CLIPText(config, manifold=self.manifold, body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding, use_hyp_linear=(config.manifold != EUCLID))
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
@@ -70,12 +75,14 @@ class HypCLIP(nn.Module):
         if only_trainable:
             num_params += sum(p.numel() for p in text_head.parameters() if p.requires_grad)
             num_params += sum(p.numel() for p in vision_head.parameters() if p.requires_grad)
+            num_params += sum(p.numel() for p in self.discriminator.parameters() if p.requires_grad)
             num_params += int(self.curv.requires_grad)
             num_params += int(self.temp.requires_grad)
             num_params += int(self.logit_scale.requires_grad) 
         else:
             num_params += sum(p.numel() for p in text_head.parameters())
             num_params += sum(p.numel() for p in vision_head.parameters())
+            num_params += sum(p.numel() for p in self.discriminator.parameters())
             num_params += 3 
         return num_params
 
@@ -100,19 +107,17 @@ class HypCLIP(nn.Module):
             image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
             text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
             # cosine similarity as logits
-            return torch.matmul(text_embeds, image_embeds.t()) * logit_scale
+            return torch.matmul(text_embeds, image_embeds.t()) 
         else:
             # square distance on the manifold
-            if self.config.manifold == 'lorentz':
-                print('calculating lorentz distance')
-                text_embeds = self._to_manifold(text_embeds)
-                image_embeds = self._to_manifold(image_embeds)
-                return -self.manifold.sqdist_batch(text_embeds, image_embeds)
-                
             text_embeds = self._to_manifold(text_embeds)
             image_embeds = self._to_manifold(image_embeds)
+
+            if self.config.manifold == 'lorentz':
+                print('calculating lorentz distance')
+                return -self.manifold.sqdist_batch(text_embeds, image_embeds)
             print('calculating poincare distance')
-            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv) * logit_scale
+            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv)
 
 
     def _to_manifold(self, x):
@@ -123,16 +128,19 @@ class HypCLIP(nn.Module):
                 self.clip_r / x_norm
             )
             x = x * fac
-        if self.config.manifold == LORENTZ:
-            return self.manifold.expmap0(x)
+        # if self.config.manifold == LORENTZ:
+            # return self.manifold.expmap0(x)
         return self.manifold.expmap0(x, c=self.curv)
 
 
-    def itm_loss(self, imgs, cap, sim_t2i):
+    def itm_loss(self, imgs, cap, sims_i2t):
+        if self.manifold_name != EUCLID:
+            imgs = self._to_manifold(imgs)
+            cap = self._to_manifold(cap)
         bs = imgs.shape[0]
-        weights_i2t = F.softmax(sim_t2i.T, dim=1)
-        weights_t2i = F.softmax(sim_t2i, dim=1)
-        mask = torch.eye(bs)
+        weights_i2t = F.softmax(sims_i2t, dim=1)
+        weights_t2i = F.softmax(sims_i2t.T, dim=1)
+        mask = (torch.eye(bs)>1).to(sims_i2t.get_device())
 
         weights_i2t.masked_fill_(mask, 0)
         weights_t2i.masked_fill_(mask, 0) 
@@ -160,22 +168,22 @@ class HypCLIP(nn.Module):
         dim=0).view(-1,1).to(imgs.device)
 
         disc = self.discriminator(img_enc_all, cap_enc_all)
-        loss_itm = F.binary_cross_entropy(disc, itm_labels)
+        loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 
         
     def criterion(self, text_embeds , image_embeds):
         bsize = text_embeds.shape[0]
-        sims_t2i = self.dist_func(text_embeds, image_embeds)/ self.temp 
+        sims_i2t = self.dist_func(image_embeds, text_embeds)/ self.temp 
         target = torch.arange(bsize).to(self.device)
-        loss = F.cross_entropy(sims_t2i, target)
+        loss = F.cross_entropy(sims_i2t, target) 
         stats = {
-            "logits/min": sims_t2i.min().item(),
-            "logits/mean": sims_t2i.mean().item(),
-            "logits/max": sims_t2i.max().item(),
-            "logits/acc": (sims_t2i.argmax(-1) == target).float().mean().item(),
+            "logits/min": sims_i2t.min().item(),
+            "logits/mean": sims_i2t.mean().item(),
+            "logits/max": sims_i2t.max().item(),
+            "logits/acc": (sims_i2t.argmax(-1) == target).float().mean().item(),
         }
-        return loss, stats, sims_t2i
+        return loss, stats, sims_i2t
 
 
     def forward(
@@ -198,8 +206,8 @@ class HypCLIP(nn.Module):
 
         image_embeds = vision_outputs[1]
         text_embeds = text_outputs[1]
-        itc_loss, stats, sims_t2i = self.criterion(text_embeds, image_embeds)
-        itm_loss = self.itm_loss(image_embeds, text_embeds, sim_t2i=sims_t2i)
+        itc_loss, stats, sims_i2t = self.criterion(text_embeds, image_embeds)
+        itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
         loss = itm_loss + itc_loss
         
         return loss, stats, itc_loss, itm_loss

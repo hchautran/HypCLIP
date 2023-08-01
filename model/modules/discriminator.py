@@ -4,14 +4,18 @@ from .seq_linear import SeqLinear
 import torch.nn.functional as F
 
 class Discriminator(nn.Module):
-    def __init__(self, dim=512, ft_out=[512,1], dropout=0.5, act_func='relu'):
+    def __init__(self, dim=512, ft_out=[512,1], dropout=0.5, act_func='relu', fourier=True):
         super(Discriminator, self).__init__()
-        self.disc = SeqLinear(ft_in=dim*4, ft_out=ft_out, dropout=dropout, act_func=act_func)
+        self.fourier = fourier
+        self.disc = SeqLinear(ft_in=(dim*4 if self.fourier else dim*2) , ft_out=ft_out, dropout=dropout, act_func=act_func)
 
     def forward(self, feat1, feat2):
-        dist = torch.abs(feat1-feat2)
-        mul = torch.mul(feat1, feat2)
-        return torch.sigmoid(self.disc(torch.cat([feat1, feat2, dist, mul], dim=1)))
+        if self.fourier:
+            fourier_feat1 = torch.fft.fft(feat1).float()
+            fourier_feat2 = torch.fft.fft(feat2).float()
+            return torch.sigmoid(self.disc(torch.cat([feat1, feat2, fourier_feat1, fourier_feat2], dim=1)))
+        else:
+            return torch.sigmoid(self.disc(torch.cat([feat1, feat2], dim=1)))
 
         
 class CoDiscriminator(nn.Module):
@@ -54,7 +58,7 @@ class CoDiscriminator(nn.Module):
         self.concat_m2.data = torch.randn((1, 1))
         self.concat_b.data = torch.randn((1, self.embedding_dim))
         self.fourier = fourier
-        self.disc = SeqLinear(ft_in=dim*4, ft_out=[512, 1], dropout=0.5, act_func='relu')
+        self.disc = SeqLinear(ft_in=dim*2, ft_out=[512, 1], dropout=0.5, act_func='relu')
 
     def forward(self, img_rep, cap_rep):
         if self.fourier:

@@ -118,6 +118,14 @@ class Lorentz(LorentzOri):
         else:
             return res
 
+    def expmap0(self, u: torch.Tensor, c ,*, project=True, dim=-1) -> torch.Tensor:
+        res = math.expmap0(u, k=c, dim=dim)
+        if project:
+            return math.project(res, k=c, dim=dim)
+        else:
+            return res
+
+
     def logmap(self, x: torch.Tensor, y: torch.Tensor, *, dim=-1) -> torch.Tensor:
         return math.logmap(x, y, k=self.k, dim=dim)
 
@@ -126,6 +134,9 @@ class Lorentz(LorentzOri):
 
     def logmap0(self, y: torch.Tensor, *, dim=-1) -> torch.Tensor:
         return math.logmap0(y, k=self.k, dim=dim)
+
+    def logmap0(self, y: torch.Tensor, c ,*, dim=-1) -> torch.Tensor:
+        return math.logmap0(y, k=c, dim=dim)
 
     def logmap0back(self, x: torch.Tensor, *, dim=-1) -> torch.Tensor:
         return math.logmap0back(x, k=self.k, dim=dim)

@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from model.manifolds.poincare import PoincareBall
+from model.manifolds.nn import HypLinear, HypAct, LorentzLinear
 import math
 import torch
 import torch.nn as nn
@@ -56,6 +57,62 @@ class SeqLinear(nn.Module):
                 x = self.norm[idx](x)
         return x  
 
+
+class HypSeqLinear(nn.Module):
+    def __init__(self, manifold ,ft_in, ft_out, c ,dropout=0.5, act_func='relu'):
+        super(HypSeqLinear, self).__init__()
+        self.linear = []
+        self.norm = []
+        self.dropout = []
+        self.act = []
+        for idx in range(len(ft_out)):
+            if idx == 0:
+                self.linear.append(HypLinear(manifold, ft_in, ft_out[idx], c))
+            else:
+                self.linear.append(HypLinear(manifold, ft_out[idx-1], ft_out[idx], c))
+            if idx != len(ft_out)-1:
+                self.norm.append(nn.LayerNorm([ft_out[idx]]))
+                self.act.append(HypAct(manifold, c, c, get_activate_func(act_func)))
+            self.dropout.append(nn.Dropout(p=dropout))
+            
+        self.linear = nn.ModuleList(self.linear)
+        self.norm = nn.ModuleList(self.norm)
+        self.dropout = nn.ModuleList(self.dropout)
+        self.act = nn.ModuleList(self.act)
+        
+    def forward(self, x):
+        for idx in range(len(self.linear)):
+            x = self.dropout[idx](x)
+            x = self.linear[idx](x)
+            if idx != (len(self.linear)-1): # last layer not use relu
+                x = self.act[idx](x)
+                x = self.norm[idx](x)
+        return x  
+
+
+class LorentzSeqLinear(nn.Module):
+    def __init__(self, manifold ,ft_in, ft_out, dropout=0.1, act_func='relu'):
+        super(LorentzSeqLinear, self).__init__()
+        self.linear = []
+        self.norm = []
+        self.dropout = []
+        self.act = []
+        for idx in range(len(ft_out)):
+            if idx == 0:
+                self.linear.append(LorentzLinear(manifold, ft_in, ft_out[idx], dropout=dropout))
+            else:
+                self.linear.append(LorentzLinear(manifold, ft_out[idx-1], ft_out[idx], dropout=dropout, nonlin=get_activate_func(act_func)))
+            
+        self.linear = nn.ModuleList(self.linear)
+        
+    def forward(self, x):
+        for idx in range(len(self.linear)):
+            x = self.linear[idx](x)
+        return x  
+
+        
+        
+        
         
 
 class PoincareMLR(nn.Module):
