@@ -72,9 +72,9 @@ config_args = {
         'enable_log': (False, 'enable log'),
         'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
         'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
-        'margin': (2.0, 'decision margin (None for no margin)')
-        # 'ft_dist': ([512, 128, 1]),
-        # 'act_dist': ('relu', 'activation for discrimminator'),
+        'pos_margin': (0.0, 'decision margin (0.0 for no margin)'),
+        'neg_margin': (4.0, 'decision margin (0.0 for no margin)'),
+        'use_both_loss': (False, 'decision margin (None for no margin)')
     },
     'model_config': {
         'model_ckt':('openai/clip-vit-base-patch32', 'model checkpoin on Hugging Face'),
