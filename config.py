@@ -67,14 +67,14 @@ config_args = {
         'lr_reduce_freq': (5000, 'reduce lr every lr-reduce-freq or None to keep lr constant'),
         'gamma': (0.5, 'gamma for lr scheduler'),
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
-        'min_epochs': (20, 'do not early stop before min-epochs'),
-        'batch_size': (200, 'batch size'),
-        'enable_log': (False, 'enable log'),
+        'min_epochs': (20,'do not early stop before min-epochs'),
+        'batch_size': (200,'batch size'),
+        'enable_log': (True, 'enable log'),
         'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
         'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
         'pos_margin': (0.0, 'decision margin (0.0 for no margin)'),
         'neg_margin': (4.0, 'decision margin (0.0 for no margin)'),
-        'use_both_loss': (False, 'decision margin (None for no margin)')
+        'use_both_loss': (True, 'decision margin (None for no margin)')
     },
     'model_config': {
         'model_ckt':('openai/clip-vit-base-patch32', 'model checkpoin on Hugging Face'),
@@ -90,8 +90,8 @@ config_args = {
     },
     'data_config': {
         'dataset': ('EddieChen372/flickr30k', 'which dataset to use'),
-        'cache_dir': ('/Volumes/ExtraSpace/.cache', 'cache_dir'),
-        # 'cache_dir': ('/mnt/data/.cache', 'cache_dir'),
+        # 'cache_dir': ('/Volumes/ExtraSpace/.cache', 'cache_dir'),
+        'cache_dir': ('/mnt/data/.cache', 'cache_dir'),
         'split-seed': (1234, 'seed for data splits (train/test/val)'),
     }
 }
