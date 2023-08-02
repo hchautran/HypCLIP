@@ -72,6 +72,7 @@ config_args = {
         'enable_log': (False, 'enable log'),
         'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
         'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
+        'margin': (2.0, 'decision margin (None for no margin)')
         # 'ft_dist': ([512, 128, 1]),
         # 'act_dist': ('relu', 'activation for discrimminator'),
     },
@@ -80,7 +81,7 @@ config_args = {
         'manifold': ('lorentz', 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.1, 'hyperbolic curvature'),
         'temp': (0.07, 'distance temperature'),
-        'clip_radius': (2.5, 'fermi-dirac decoder parameter for lp'),
+        'clip_radius': (2.5, 'clipping radius'),
         'vision_trainable_blocks': (3, 'number of trainable blocks in vision model'),
         'text_trainable_blocks': (3, 'number of trainable blocks in text model'),
         'ft_out': (512, 'final project dimension'),

@@ -171,23 +171,19 @@ class HypCLIP(nn.Module):
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 
+    def itc_loss_with_margin(self, image_embeds, text_embeds):
+        if self.config.margin is not None:
+            margin = 2.0
         
-    def itc_loss(self, text_embeds , image_embeds, margin=1.0):
+    def itc_loss(self, image_embeds , text_embeds):
         bsize = text_embeds.shape[0]
         eye_mask = torch.eye(bsize).to(self.device) * 1e9
-        
-        
+
         sims_i2t = self.dist_func(image_embeds, text_embeds)/ self.temp 
-        sims_t2t = self.dist_func(image_embeds, image_embeds)/ self.temp - eye_mask 
-
-        mask = torch.ne(torch.eye(bsize), torch.ones_like(sims_i2t)).float()
-        sims =  torch.cat([sims_i2t, sims_t2t], dim=1)
-        
-        margin = mask * margin
-
-
+        sims_i2i = self.dist_func(image_embeds, image_embeds)/ self.temp - eye_mask 
+        logits = torch.cat([sims_i2t, sims_i2i], dim=1)
         target = torch.arange(bsize).to(self.device)
-        loss = F.cross_entropy(sims_i2t, target) 
+        loss = F.cross_entropy(logits, target) 
         stats = {
             "logits/min": sims_i2t.min().item(),
             "logits/mean": sims_i2t.mean().item(),
@@ -217,7 +213,7 @@ class HypCLIP(nn.Module):
 
         image_embeds = vision_outputs[1]
         text_embeds = text_outputs[1]
-        itc_loss, stats, sims_i2t = self.itc_loss(text_embeds, image_embeds)
+        itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
         itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
         loss = itm_loss + itc_loss
         
