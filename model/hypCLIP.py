@@ -171,7 +171,7 @@ class HypCLIP(nn.Module):
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 
-    def lorentz_itc_loss_with_margin(self, sims_i2t):
+    def lorentz_contrastive_loss(self, sims_i2t):
         bsize = sims_i2t.shape[0] 
         ones = torch.ones(bsize, bsize).to(self.device)
 
@@ -187,6 +187,23 @@ class HypCLIP(nn.Module):
         loss =  torch.mean(torch.sum(sims_i2t.pow(2),dim=-1), dim=0) 
         return loss
         
+
+    def euclid_contrastive_loss(self, sims_i2t):
+        bsize = sims_i2t.shape[0] 
+        ones = torch.ones(bsize, bsize).to(self.device)
+
+        pos_mask = torch.eye(bsize).to(self.device) 
+        neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
+
+        neg_margin = self.config.neg_margin * neg_mask 
+        pos_margin = self.config.pos_margin * pos_mask 
+
+        sims_i2t = sims_i2t - neg_margin 
+        sims_i2t = (sims_i2t - pos_margin) * ones.masked_fill_(torch.eq(ones, pos_mask), -1.0)
+        sims_i2t = torch.clamp(sims_i2t, min=0.0)
+        loss =  torch.mean(torch.sum(sims_i2t.pow(2),dim=-1), dim=0) 
+        return loss
+        
         
     def itc_loss(self, image_embeds , text_embeds):
         bsize = text_embeds.shape[0]
@@ -196,12 +213,19 @@ class HypCLIP(nn.Module):
         sims_i2i = self.dist_func(image_embeds, image_embeds)/ self.temp - eye_mask 
         logits = torch.cat([sims_i2t, sims_i2i], dim=1)
         target = torch.arange(bsize).to(self.device)
-        if self.config.use_both_loss:
-            loss = F.cross_entropy(logits, target) + self.lorentz_itc_loss_with_margin(sims_i2t)
+        contrastive_loss = 0.0 
+
+        if self.config.manifold == EUCLID and self.config.neg_margin != 0.0:
+            contrastive_loss = self.euclid_contrastive_loss(sims_i2t) 
+            loss = F.cross_entropy(logits, target) + contrastive_loss 
+        elif self.config.manifold == LORENTZ and self.config.neg_margin != 0.0:
+            contrastive_loss = self.lorentz_contrastive_loss(sims_i2t) 
+            loss = F.cross_entropy(logits, target) + contrastive_loss 
         else:
-            loss = F.cross_entropy(logits, target) 
+            loss = F.cross_entropy(logits, target)
         
         stats = {
+            "logits/contrastive_loss": contrastive_loss.item(),
             "logits/min": sims_i2t.min().item(),
             "logits/mean": sims_i2t.mean().item(),
             "logits/max": sims_i2t.max().item(),
