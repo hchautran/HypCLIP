@@ -104,8 +104,8 @@ class HypCLIP(nn.Module):
       
         if self.manifold_name == EUCLID:
             print('calulating dot product')
-            image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
-            text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
+            image_embeds = F.normalize(image_embeds,p=2, dim=-1) 
+            text_embeds = F.normalize(text_embeds,p=2, dim=-1) 
             # cosine similarity as logits
             return torch.matmul(text_embeds, image_embeds.t()) 
         else:
@@ -178,8 +178,8 @@ class HypCLIP(nn.Module):
         pos_mask = torch.eye(bsize).to(self.device) 
         neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
 
-        neg_margin = self.config.neg_margin * neg_mask 
-        pos_margin = self.config.pos_margin * pos_mask 
+        neg_margin = self.config.lorentz_neg_margin * neg_mask 
+        pos_margin = self.config.lorentz_pos_margin * pos_mask 
 
         sims_i2t = sims_i2t + neg_margin 
         sims_i2t = (sims_i2t + pos_margin) * ones.masked_fill_(torch.eq(ones, pos_mask), -1.0)
@@ -195,8 +195,8 @@ class HypCLIP(nn.Module):
         pos_mask = torch.eye(bsize).to(self.device) 
         neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
 
-        neg_margin = self.config.neg_margin * neg_mask 
-        pos_margin = self.config.pos_margin * pos_mask 
+        neg_margin = self.config.euclid_neg_margin * neg_mask 
+        pos_margin = self.config.euclid_pos_margin * pos_mask 
 
         sims_i2t = sims_i2t - neg_margin 
         sims_i2t = (sims_i2t - pos_margin) * ones.masked_fill_(torch.eq(ones, pos_mask), -1.0)
@@ -208,21 +208,19 @@ class HypCLIP(nn.Module):
     def itc_loss(self, image_embeds , text_embeds):
         bsize = text_embeds.shape[0]
         eye_mask = torch.eye(bsize).to(self.device) * 1e9
+        sims_i2t = self.dist_func(image_embeds, text_embeds)
+        sims_i2i = self.dist_func(image_embeds, image_embeds)
 
-        sims_i2t = self.dist_func(image_embeds, text_embeds)/ self.temp 
-        sims_i2i = self.dist_func(image_embeds, image_embeds)/ self.temp - eye_mask 
-        logits = torch.cat([sims_i2t, sims_i2i], dim=1)
         target = torch.arange(bsize).to(self.device)
         contrastive_loss = 0.0 
 
-        if self.config.manifold == EUCLID and self.config.neg_margin != 0.0:
+        if self.config.manifold == EUCLID and self.config.euclid_pos_margin != 0.0:
             contrastive_loss = self.euclid_contrastive_loss(sims_i2t) 
-            loss = F.cross_entropy(logits, target) + contrastive_loss 
-        elif self.config.manifold == LORENTZ and self.config.neg_margin != 0.0:
+        elif self.config.manifold == LORENTZ and self.config.lorentz_neg_margin != 0.0:
             contrastive_loss = self.lorentz_contrastive_loss(sims_i2t) 
-            loss = F.cross_entropy(logits, target) + contrastive_loss 
-        else:
-            loss = F.cross_entropy(logits, target)
+
+        logits = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
+        loss = F.cross_entropy(logits, target) + contrastive_loss 
         
         stats = {
             "logits/contrastive_loss": contrastive_loss.item(),

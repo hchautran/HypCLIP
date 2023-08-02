@@ -4,7 +4,7 @@ from .seq_linear import SeqLinear
 import torch.nn.functional as F
 
 class Discriminator(nn.Module):
-    def __init__(self, dim=512, ft_out=[512,1], dropout=0.5, act_func='relu', fourier=True):
+    def __init__(self, dim=512, ft_out=[512,1], dropout=0.5, act_func='relu', fourier=False):
         super(Discriminator, self).__init__()
         self.fourier = fourier
         self.disc = SeqLinear(ft_in=(dim*4 if self.fourier else dim*2) , ft_out=ft_out, dropout=dropout, act_func=act_func)

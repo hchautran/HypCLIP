@@ -46,6 +46,10 @@ def add_flags_from_config(parser, config_dict):
             )
     return parser
 
+EUCLID = 'euclidean'
+POINCARE = 'poincare'
+LORENTZ = 'lorentz'
+
 
 
 config_args = {
@@ -68,20 +72,22 @@ config_args = {
         'gamma': (0.5, 'gamma for lr scheduler'),
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
         'min_epochs': (20,'do not early stop before min-epochs'),
-        'batch_size': (200,'batch size'),
-        'enable_log': (True, 'enable log'),
+        'batch_size': (100,'batch size'),
+        'enable_log': (False, 'enable log'),
         'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
         'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
-        'pos_margin': (0.0, 'decision margin (0.0 for no margin)'),
-        'neg_margin': (4.0, 'decision margin (0.0 for no margin)'),
+        'lorentz_pos_margin': (0.0, 'decision margin for hyperbolic maninfold (0.0 for no margin)'),
+        'lorentz_neg_margin': (4.0, 'decision margin for hyperbolic manifold (0.0 for no margin)'),
+        'euclid_pos_margin': (1.0, 'decision margin for euclid manifold (0.0 for no margin)'),
+        'euclid_neg_margin': (0.0, 'decision margin for euclid manifold (0.0 for no margin)'),
         'use_both_loss': (True, 'decision margin (None for no margin)')
     },
     'model_config': {
         'model_ckt':('openai/clip-vit-base-patch32', 'model checkpoin on Hugging Face'),
-        'manifold': ('lorentz', 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
+        'manifold': (LORENTZ, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.1, 'hyperbolic curvature'),
         'temp': (0.07, 'distance temperature'),
-        'clip_radius': (2.5, 'clipping radius'),
+        'clip_radius': (None, 'clipping radius'),
         'vision_trainable_blocks': (3, 'number of trainable blocks in vision model'),
         'text_trainable_blocks': (3, 'number of trainable blocks in text model'),
         'ft_out': (512, 'final project dimension'),
@@ -90,8 +96,8 @@ config_args = {
     },
     'data_config': {
         'dataset': ('EddieChen372/flickr30k', 'which dataset to use'),
-        # 'cache_dir': ('/Volumes/ExtraSpace/.cache', 'cache_dir'),
-        'cache_dir': ('/mnt/data/.cache', 'cache_dir'),
+        'cache_dir': ('/Volumes/ExtraSpace/.cache', 'cache_dir'),
+        # 'cache_dir': ('/mnt/data/.cache', 'cache_dir'),
         'split-seed': (1234, 'seed for data splits (train/test/val)'),
     }
 }
