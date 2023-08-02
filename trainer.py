@@ -27,7 +27,7 @@ class HypCLIPTrainer():
         self.dataset = load_dataset(config.dataset, cache_dir=config.cache_dir).with_format('numpy')
         self.enable_log = self.config.enable_log
 
-        self.train_loader = get_dataloader(self.dataset['train'], config.batch_size, processor=self.processor, mode='train')
+        self.train_loader = get_dataloader(self.dataset['test'], config.batch_size, processor=self.processor, mode='train')
         self.test_loader = get_dataloader(self.dataset['test'], 5, processor=self.processor, mode='test')
         self.val_loader = get_dataloader(self.dataset['val'], 5, processor=self.processor, mode='val')
         self.model_ckt = config.model_ckt

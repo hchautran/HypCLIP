@@ -13,6 +13,7 @@ from accelerate import find_executable_batch_size
 
 if __name__ == '__main__':
     from config import parser
+    from config import EUCLID, LORENTZ
     config = parser.parse_args()
     
     # for batch_size in [100,150,200]:    
@@ -48,7 +49,9 @@ if __name__ == '__main__':
         trainer = HypCLIPTrainer(config=config)
         trainer.train()
 
-    inner_training_loop()
+    for manifold in [EUCLID, LORENTZ]:
+        config.manifold = manifold 
+        inner_training_loop()
 
     
     
