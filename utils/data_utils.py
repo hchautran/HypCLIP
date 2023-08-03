@@ -4,7 +4,7 @@ from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm.auto import tqdm
 import time
 import numpy as np
-from transformers import CLIPProcessor
+from transformers import CLIPProcessor 
 from lavis.models import load_model_and_preprocess
 
 class Flickr_dataset(Dataset):
@@ -22,7 +22,6 @@ class Flickr_dataset(Dataset):
             'img_id': data['img_id'],
             'pixel_values': data['pixel_values'],
             'caption': data['caption'][int(index % self.cap_per_img)],
-            'sent_id': data['sentids'][int(index % self.cap_per_img)]
         }
         return out
 
@@ -69,7 +68,20 @@ def collate_func(batch, processor):
         truncation=True
     )
     data['pixel_values'] = torch.from_numpy(np.concatenate(list(df['pixel_values']), 0))
-    return list(df['img_id']), data
+    data['image_id'] = torch.tensor(list(df['img_id'])) 
+    return data
+
+
+def collate_func_lavis(batch):
+    # print(batch)
+    df = pd.DataFrame(batch)
+    sample = {
+        'image':  torch.from_numpy(np.concatenate(list(df['pixel_values']), 0)),
+        'text_input': list(df['caption']),
+        'image_id': torch.tensor(list(df['img_id'])),
+    
+    }
+    return sample
         
 
 def get_dataloader(dataset, batch_size, processor, mode='train'):
@@ -90,12 +102,38 @@ def get_dataloader(dataset, batch_size, processor, mode='train'):
             shuffle=False
         )
 
+        
+def get_lavis_dataloader(dataset, batch_size, mode='train'):
+    flickr_dataset = Flickr_dataset(dataset) 
+    custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
+    if mode == 'train':
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn = collate_func_lavis,
+            sampler=custom_sampler,
+        ) 
+    else:
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn =collate_func_lavis, 
+            shuffle=False
+        )
+
 def preprocess_img(sample, processor:CLIPProcessor):
     sample['pixel_values'] = processor(images=sample['image'])['pixel_values']
     return sample
 
-def preprocess_img_lavis(sample, processor):
-    pass
+def preprocess_img_lavis(sample, lavis_vis_processor):
+    sample['pixel_values'] = lavis_vis_processor['eval'](sample['image']).unsqueeze(0)
+    return sample
+
+def parse_int(sample):
+    sample['img_id'] = int(sample['img_id'])
+    return sample
+    
+
     
 
 
@@ -103,31 +141,27 @@ if __name__ == '__main__':
     from datasets import load_dataset
     from tqdm.auto import tqdm
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-    flickr30k = load_dataset('EddieChen372/flickr30k').remove_columns(['pixel_values', 'input_ids', 'attention_mask'])
-    model, vis_processors, _ = load_model_and_preprocess(name="blip_retrieval", model_type="flickr", is_eval=False, device=device)
-    print(model)
-    print(vis_processors)
-    vis_processors.
-
-
-    # processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
-    # batch_size = 128 
-    # flickr30k = flickr30k.map(preprocess_img).remove_columns(['image'])
+    processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
+    flickr30k = load_dataset('EddieChen372/flickr')
+    model, vis_processor, text_processor = load_model_and_preprocess(name="blip_feature_extractor", model_type="base", is_eval=True, device=device)
+    flickr30k = flickr30k.map(lambda sample: preprocess_img_lavis(sample, lavis_vis_processor=vis_processor), num_proc=4).remove_columns(['image'])
+    # # flickr30k = flickr30k.map(lambda sample: preprocess_img(sample, processor)).remove_columns(['image'])
     # flickr30k.set_format('numpy')
-    # train_loader = get_dataloader(flickr30k['train'], batch_size, processor=processor)
-    # val_loader = get_dataloader(flickr30k['val'], batch_size, processor=processor)
-    # test_loader = get_dataloader(flickr30k['test'], batch_size, processor=processor)
-
-
-    # for img_ids, batch in tqdm(train_loader):
-    #     assert len(img_ids) == len(set(img_ids))
-    #     print(img_ids)
-    #     print(batch['input_ids'].shape)
-    #     print(batch['attention_mask'].shape)
-    #     print(batch['pixel_values'].shape)
-        
+    # print(flickr30k)
     
+    # # print(model)
+    # batch_size=200
+    # # print(flickr30k)
+    # train_loader = get_lavis_dataloader(flickr30k['train'], batch_size=batch_size, mode='train')
+    # # train_loader = get_dataloader(
+    # #     flickr30k['train'], 
+    # #     batch_size=batch_size, 
+    # #     mode='train', 
+    # #     processor=processor
+    # # )
+
+
+
     
     
     
