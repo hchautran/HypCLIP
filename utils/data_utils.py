@@ -6,6 +6,7 @@ import time
 import numpy as np
 from transformers import CLIPProcessor 
 from lavis.models import load_model_and_preprocess
+from datasets import dataset_dict 
 
 class Flickr_dataset(Dataset):
     def __init__(self, dataset):  
@@ -142,7 +143,18 @@ if __name__ == '__main__':
     from tqdm.auto import tqdm
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
-    flickr30k = load_dataset('EddieChen372/flickr')
+    flickr30k = load_dataset('nlphuji/flickr30k').remove_columns(['sentids', 'filename']).map(parse_int)
+
+    
+    ds = dataset_dict.DatasetDict({
+        'train' : flickr30k.filter(lambda x: x['split'] == 'train'), 
+        'test' : flickr30k.filter(lambda x: x['split'] == 'test'), 
+        'val' : flickr30k.filter(lambda x: x['split'] == 'val'), 
+    }) 
+
+
+
+    # flickr30k.push_to_hub('flickr30k')
     model, vis_processor, text_processor = load_model_and_preprocess(name="blip_feature_extractor", model_type="base", is_eval=True, device=device)
     flickr30k = flickr30k.map(lambda sample: preprocess_img_lavis(sample, lavis_vis_processor=vis_processor), num_proc=4).remove_columns(['image'])
     # # flickr30k = flickr30k.map(lambda sample: preprocess_img(sample, processor)).remove_columns(['image'])
