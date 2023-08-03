@@ -147,17 +147,18 @@ if __name__ == '__main__':
 
     
     ds = dataset_dict.DatasetDict({
-        'train' : flickr30k.filter(lambda x: x['split'] == 'train'), 
-        'test' : flickr30k.filter(lambda x: x['split'] == 'test'), 
-        'val' : flickr30k.filter(lambda x: x['split'] == 'val'), 
+        'train' : flickr30k.filter(lambda x: x['split'] == 'train')['test'], 
+        'test' : flickr30k.filter(lambda x: x['split'] == 'test')['test'], 
+        'val' : flickr30k.filter(lambda x: x['split'] == 'val')['test'], 
     }) 
+    print(ds)
 
 
 
     # flickr30k.push_to_hub('flickr30k')
     model, vis_processor, text_processor = load_model_and_preprocess(name="blip_feature_extractor", model_type="base", is_eval=True, device=device)
-    flickr30k = flickr30k.map(lambda sample: preprocess_img_lavis(sample, lavis_vis_processor=vis_processor), num_proc=4).remove_columns(['image'])
-    # # flickr30k = flickr30k.map(lambda sample: preprocess_img(sample, processor)).remove_columns(['image'])
+    flickr30k = ds.map(lambda sample: preprocess_img_lavis(sample, lavis_vis_processor=vis_processor), num_proc=4).remove_columns(['image'])
+    flickr30k = ds.map(lambda sample: preprocess_img(sample, processor), num_proc=4).remove_columns(['image'])
     # flickr30k.set_format('numpy')
     # print(flickr30k)
     
