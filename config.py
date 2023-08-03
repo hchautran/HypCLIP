@@ -95,7 +95,7 @@ config_args = {
         'freeze_embedding': (False, 'freeze embedding layers')
     },
     'data_config': {
-        'dataset': ('EddieChen372/flickr30k', 'which dataset to use'),
+        'dataset': ('nlphuji/flickr30k', 'which dataset to use'),
         'cache_dir': ('/Volumes/ExtraSpace/.cache', 'cache_dir'),
         # 'cache_dir': ('/mnt/data/.cache', 'cache_dir'),
         'split-seed': (1234, 'seed for data splits (train/test/val)'),
