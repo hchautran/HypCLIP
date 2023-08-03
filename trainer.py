@@ -4,7 +4,7 @@ from transformers import CLIPProcessor
 import wandb
 from accelerate import Accelerator
 from model.hypCLIP import HypCLIP
-from utils.data_utils import get_dataloader
+from utils.data_utils import get_dataloader, preprocess_img
 from geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import evaluate_recall 
 import numpy as np
@@ -23,11 +23,12 @@ class HypCLIPTrainer():
             mixed_precision=config.mixed_precision, 
             gradient_accumulation_steps=config.gradient_accumulation_steps
         )
-        self.processor = CLIPProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
-        self.dataset = load_dataset(config.dataset, cache_dir=config.cache_dir).with_format('numpy')
         self.enable_log = self.config.enable_log
-
-        self.train_loader = get_dataloader(self.dataset['test'], config.batch_size, processor=self.processor, mode='train')
+        self.processor = CLIPProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
+        self.dataset = load_dataset(config.dataset, cache_dir=config.cache_dir).remove_columns(['pixel_values', 'input_ids', 'attention_mask'])
+        self.dataset= self.dataset.map(lambda sample: preprocess_img(sample, processor=self.processor)).remove_columns(['image'])
+        self.dataset.set_format('numpy')
+        self.train_loader = get_dataloader(self.dataset['train'], config.batch_size, processor=self.processor, mode='train')
         self.test_loader = get_dataloader(self.dataset['test'], 5, processor=self.processor, mode='test')
         self.val_loader = get_dataloader(self.dataset['val'], 5, processor=self.processor, mode='val')
         self.model_ckt = config.model_ckt

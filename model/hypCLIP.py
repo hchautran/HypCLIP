@@ -171,7 +171,7 @@ class HypCLIP(nn.Module):
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 
-    def lorentz_contrastive_loss(self, sims_i2t):
+    def lorentz_contrastive_loss(self, sims_i2t, sims_i2i):
         bsize = sims_i2t.shape[0] 
         ones = torch.ones(bsize, bsize).to(self.device)
 
@@ -182,13 +182,14 @@ class HypCLIP(nn.Module):
         pos_margin = self.config.lorentz_pos_margin * pos_mask 
 
         sims_i2t = sims_i2t + neg_margin 
+        sims_i2i = sims_i2i + neg_margin 
         sims_i2t = (sims_i2t + pos_margin) * ones.masked_fill_(torch.eq(ones, pos_mask), -1.0)
-        sims_i2t = torch.clamp(sims_i2t, min=0.0)
-        loss =  torch.mean(torch.sum(sims_i2t.pow(2),dim=-1), dim=0) 
+        sims = torch.cat([torch.clamp(sims_i2t, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
+        loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
         return loss
         
 
-    def euclid_contrastive_loss(self, sims_i2t):
+    def euclid_contrastive_loss(self, sims_i2t, sims_i2i):
         bsize = sims_i2t.shape[0] 
         ones = torch.ones(bsize, bsize).to(self.device)
 
@@ -199,9 +200,10 @@ class HypCLIP(nn.Module):
         pos_margin = self.config.euclid_pos_margin * pos_mask 
 
         sims_i2t = sims_i2t - neg_margin 
+        sims_i2i = sims_i2i - neg_margin 
         sims_i2t = (sims_i2t - pos_margin) * ones.masked_fill_(torch.eq(ones, pos_mask), -1.0)
-        sims_i2t = torch.clamp(sims_i2t, min=0.0)
-        loss =  torch.mean(torch.sum(sims_i2t.pow(2),dim=-1), dim=0) 
+        sims = torch.cat([torch.clamp(sims_i2t, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
+        loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
         return loss
         
         
@@ -215,9 +217,9 @@ class HypCLIP(nn.Module):
         contrastive_loss = 0.0 
 
         if self.config.manifold == EUCLID and self.config.euclid_pos_margin != 0.0:
-            contrastive_loss = self.euclid_contrastive_loss(sims_i2t) 
+            contrastive_loss = self.euclid_contrastive_loss(sims_i2t, sims_i2i) 
         elif self.config.manifold == LORENTZ and self.config.lorentz_neg_margin != 0.0:
-            contrastive_loss = self.lorentz_contrastive_loss(sims_i2t) 
+            contrastive_loss = self.lorentz_contrastive_loss(sims_i2t, sims_i2i) 
 
         logits = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
         loss = F.cross_entropy(logits, target) + contrastive_loss 

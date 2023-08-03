@@ -91,32 +91,31 @@ def get_dataloader(dataset, batch_size, processor, mode='train'):
             shuffle=False
         )
 
-
-def preprocess_img(sample, processor:CLIPProcessor):
-    sample['pixel_values'] = processor(images=sample['image'], return_tensors='pt')['pixel_values']
+def preprocess_img(sample, processor):
+    sample['pixel_values'] = processor(images=sample['image'])['pixel_values']
     return sample
     
 
 
 if __name__ == '__main__':
-    from datasets import load_dataset 
+    from datasets import load_dataset
     from tqdm.auto import tqdm
     processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
-
     batch_size = 128 
-    flickr30k = load_dataset('EddieChen372/flickr30k').with_format('numpy')
-    ds = flickr30k.map(lambda sample: preprocess_img(sample, processor))
-    # train_loader = get_dataloader(flickr30k['train'], batch_size, processor=processor)
-    # val_loader = get_dataloader(flickr30k['val'], batch_size, processor=processor)
-    # test_loader = get_dataloader(flickr30k['test'], batch_size, processor=processor)
+    flickr30k = load_dataset('EddieChen372/flickr30k').remove_columns(['pixel_values', 'input_ids', 'attention_mask'])
+    flickr30k = flickr30k.map(preprocess_img).remove_columns(['image'])
+    flickr30k.set_format('numpy')
+    train_loader = get_dataloader(flickr30k['train'], batch_size, processor=processor)
+    val_loader = get_dataloader(flickr30k['val'], batch_size, processor=processor)
+    test_loader = get_dataloader(flickr30k['test'], batch_size, processor=processor)
 
 
-    # for img_ids, batch in tqdm(train_loader):
-    #     assert len(img_ids) == len(set(img_ids))
-    #     print(img_ids)
-    #     print(batch['input_ids'].shape)
-    #     print(batch['attention_mask'].shape)
-    #     print(batch['pixel_values'].shape)
+    for img_ids, batch in tqdm(train_loader):
+        assert len(img_ids) == len(set(img_ids))
+        print(img_ids)
+        print(batch['input_ids'].shape)
+        print(batch['attention_mask'].shape)
+        print(batch['pixel_values'].shape)
         
     
     

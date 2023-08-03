@@ -49,7 +49,7 @@ if __name__ == '__main__':
         trainer = HypCLIPTrainer(config=config)
         trainer.train()
 
-    for manifold in [EUCLID, LORENTZ]:
+    for manifold in [LORENTZ, EUCLID]:
         config.manifold = manifold 
         inner_training_loop()
 
