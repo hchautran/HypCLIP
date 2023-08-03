@@ -94,7 +94,8 @@ class HypCLIPTrainer():
         if self.enable_log:
             wandb.init(
                 name=self.name,
-                config=vars(self.config)
+                config=vars(self.config),
+                reinit=True
             )
         print('trainable parameters:', self.model.num_parameters())
         self.log({'trainable parameters': self.model.num_parameters()})

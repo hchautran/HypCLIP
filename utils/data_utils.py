@@ -4,8 +4,8 @@ from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm.auto import tqdm
 import time
 import numpy as np
-from transformers import CLIPImageProcessor 
 from transformers import CLIPProcessor
+from lavis.models import load_model_and_preprocess
 
 class Flickr_dataset(Dataset):
     def __init__(self, dataset):  
@@ -73,7 +73,6 @@ def collate_func(batch, processor):
         
 
 def get_dataloader(dataset, batch_size, processor, mode='train'):
-
     flickr_dataset = Flickr_dataset(dataset) 
     custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
     if mode == 'train':
@@ -91,31 +90,42 @@ def get_dataloader(dataset, batch_size, processor, mode='train'):
             shuffle=False
         )
 
-def preprocess_img(sample, processor):
+def preprocess_img(sample, processor:CLIPProcessor):
     sample['pixel_values'] = processor(images=sample['image'])['pixel_values']
     return sample
+
+def preprocess_img_lavis(sample, processor):
+    pass
     
 
 
 if __name__ == '__main__':
     from datasets import load_dataset
     from tqdm.auto import tqdm
-    processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
-    batch_size = 128 
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
     flickr30k = load_dataset('EddieChen372/flickr30k').remove_columns(['pixel_values', 'input_ids', 'attention_mask'])
-    flickr30k = flickr30k.map(preprocess_img).remove_columns(['image'])
-    flickr30k.set_format('numpy')
-    train_loader = get_dataloader(flickr30k['train'], batch_size, processor=processor)
-    val_loader = get_dataloader(flickr30k['val'], batch_size, processor=processor)
-    test_loader = get_dataloader(flickr30k['test'], batch_size, processor=processor)
+    model, vis_processors, _ = load_model_and_preprocess(name="blip_retrieval", model_type="flickr", is_eval=False, device=device)
+    print(model)
+    print(vis_processors)
+    vis_processors.
 
 
-    for img_ids, batch in tqdm(train_loader):
-        assert len(img_ids) == len(set(img_ids))
-        print(img_ids)
-        print(batch['input_ids'].shape)
-        print(batch['attention_mask'].shape)
-        print(batch['pixel_values'].shape)
+    # processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
+    # batch_size = 128 
+    # flickr30k = flickr30k.map(preprocess_img).remove_columns(['image'])
+    # flickr30k.set_format('numpy')
+    # train_loader = get_dataloader(flickr30k['train'], batch_size, processor=processor)
+    # val_loader = get_dataloader(flickr30k['val'], batch_size, processor=processor)
+    # test_loader = get_dataloader(flickr30k['test'], batch_size, processor=processor)
+
+
+    # for img_ids, batch in tqdm(train_loader):
+    #     assert len(img_ids) == len(set(img_ids))
+    #     print(img_ids)
+    #     print(batch['input_ids'].shape)
+    #     print(batch['attention_mask'].shape)
+    #     print(batch['pixel_values'].shape)
         
     
     
