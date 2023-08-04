@@ -15,7 +15,7 @@ from utils.data_utils import get_flickr
 
 if __name__ == '__main__':
     from config import parser
-    from config import EUCLID, LORENTZ
+    from config import EUCLID, LORENTZ, POINCARE
     config = parser.parse_args()
     if 'blip' in config.model_ckt:
         print("Getting BLIP processor...")
@@ -50,7 +50,7 @@ if __name__ == '__main__':
         # trainer.train()
         print(trainer.evaluate(mode='test'))
 
-    for manifold in [EUCLID, LORENTZ]:
+    for manifold in [POINCARE, LORENTZ]:
         config.manifold = manifold 
         inner_training_loop()
 

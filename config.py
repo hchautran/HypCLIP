@@ -92,13 +92,13 @@ config_args = {
     },
     'model_config': {
         'model_ckt':(BLIP_BASE_FLICKR, 'model checkpoin on Hugging Face'),
-        'manifold': (LORENTZ, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
+        'manifold': (POINCARE, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.1, 'hyperbolic curvature'),
         'temp': (0.07, 'distance temperature'),
         'clip_radius': (3.0, 'clipping radius'),
         'vision_trainable_blocks': (3, 'number of trainable blocks in vision model'),
         'text_trainable_blocks': (3, 'number of trainable blocks in text model'),
-        'ft_out': (512, 'final project dimension'),
+        'ft_out': (256, 'final project dimension'),
         'curv_learnable': (False, 'is curvature learnable') ,
         'freeze_embedding': (False, 'freeze embedding layers')
     },
