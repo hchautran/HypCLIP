@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from .modules.text_model import CLIPText
-from .modules.vision_model import CLIPVision 
+from .modules.text_model import BLIPText 
+from .modules.vision_model import BLIPVision 
 from .modules.discriminator import Discriminator as DisModel
 from .modules.seq_linear import  LorentzSeqLinear, HypSeqLinear
 from .modules.hyp_discriminator import HypDiscriminator as HypDisModel
@@ -10,7 +10,7 @@ from .manifolds.euclidean import Euclidean
 from .manifolds.hyperboloid import Hyperboloid 
 from .manifolds.lorentz import Lorentz 
 from .manifolds.poincare import PoincareBall 
-from transformers import CLIPTextModel, CLIPVisionModel 
+from transformers import BlipVisionModel, BlipTextModel 
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
@@ -22,7 +22,7 @@ POINCARE = 'poincare'
 LORENTZ = 'lorentz'
 
 
-class HypCLIP(nn.Module):
+class HypBLIP(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
         self.config = config
@@ -33,14 +33,11 @@ class HypCLIP(nn.Module):
         self.clip_r = config.clip_radius
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-        text_body = CLIPTextModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
-        vision_body = CLIPVisionModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
-
-        
-  
-
+        text_body = BlipTextModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
+        vision_body = BlipVisionModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
 
         manifold = config.manifold
+
         assert manifold in [EUCLID, POINCARE, LORENTZ]
 
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
@@ -64,7 +61,6 @@ class HypCLIP(nn.Module):
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
             self.discriminator = LorentzDisModel(self.manifold, c=self.curv ,dim=config.ft_out)
         self.manifold_name = manifold
-
         text_head = nn.ModuleList([ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
         vision_head = nn.ModuleList([ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
 
@@ -77,9 +73,8 @@ class HypCLIP(nn.Module):
         else: 
             text_head.append(HypSeqLinear(manifold=self.manifold, c=self.curv ,ft_in=text_body.config.hidden_size, layer_dims=[self.ft_out]))
             vision_head.append(HypSeqLinear(manifold=self.manifold, c=self.curv ,ft_in=vision_body.config.hidden_size, layer_dims=[self.ft_out]))
-
-        self.vision_model = CLIPVision(body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
-        self.text_model = CLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
+        self.vision_model = BLIPVision(body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
+        self.text_model = BLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
@@ -97,7 +92,7 @@ class HypCLIP(nn.Module):
             num_params += sum(p.numel() for p in text_head.parameters())
             num_params += sum(p.numel() for p in vision_head.parameters())
             num_params += sum(p.numel() for p in self.discriminator.parameters())
-            num_params += 2 
+            num_params += 3 
         return num_params
 
     def eval(self):
@@ -111,11 +106,11 @@ class HypCLIP(nn.Module):
         self.vision_model.head.train()
         self.text_model.body.train()
         self.text_model.head.train()
-    
+
+ 
 
         
     def dist_func(self, text_embeds, image_embeds):
-
         if self.manifold_name == EUCLID:
             print('calulating dot product')
             image_embeds = F.normalize(image_embeds,p=2, dim=-1) 
@@ -131,8 +126,8 @@ class HypCLIP(nn.Module):
 
 
 
+
     def itm_loss(self, imgs, cap, sims_i2t):
-  
         bs = imgs.shape[0]
         weights_i2t = F.softmax(sims_i2t, dim=1)
         weights_t2i = F.softmax(sims_i2t.T, dim=1)
@@ -278,20 +273,3 @@ class HypCLIP(nn.Module):
         return vision_outputs[1] 
 
 
-        
-    
-if __name__ == '__main__':
-    config = {
-        'model_ckt': 'openai/clip-vit-base-patch32',
-        'ft_out': 512,
-        'manifold': 'poincare',
-        'curvature': 0.1,
-        'clip_radius': 2.3,
-    }
-    hypCLIP = HypCLIP(config)
-    
-
-    print(hypCLIP)
-
-
-    

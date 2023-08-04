@@ -88,6 +88,7 @@ class LorentzLinear(nn.Module):
         self.scale = nn.Parameter(torch.ones(()) * math.log(scale), requires_grad=not fixscale)
 
     def forward(self, x):
+        
         if self.nonlin is not None:
             x = self.nonlin(x)
         x = self.weight(self.dropout(x))

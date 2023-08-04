@@ -49,8 +49,16 @@ def add_flags_from_config(parser, config_dict):
 EUCLID = 'euclidean'
 POINCARE = 'poincare'
 LORENTZ = 'lorentz'
-
-
+BLIP_BASE_FLICKR = 'Salesforce/blip-itm-base-flickr' 
+BLIP_LARGE_FLICKR = 'Salesforce/blip-itm-large-flickr' 
+BLIP_BASE_COCO = 'Salesforce/blip-itm-base-coco' 
+BLIP_LARGE_COCO = 'Salesforce/blip-itm-large-coco' 
+CLIP_BASE_PATCH_32 = 'openai/clip-vit-base-patch32'
+CLIP_BASE_PATCH_16 = 'openai/clip-vit-base-patch16'
+CLIP_LARGE_PATCH_14  = 'openai/clip-vit-large-patch14'
+FLICKR = 'nlphuji/flickr30k' 
+CACHE_DIR = '/Volumes/ExtraSpace/.cache' 
+# CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     'training_config': {
@@ -83,7 +91,7 @@ config_args = {
         'use_both_loss': (True, 'decision margin (None for no margin)')
     },
     'model_config': {
-        'model_ckt':('openai/clip-vit-large-patch14', 'model checkpoin on Hugging Face'),
+        'model_ckt':(BLIP_BASE_FLICKR, 'model checkpoin on Hugging Face'),
         'manifold': (LORENTZ, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.1, 'hyperbolic curvature'),
         'temp': (0.07, 'distance temperature'),
@@ -95,9 +103,8 @@ config_args = {
         'freeze_embedding': (False, 'freeze embedding layers')
     },
     'data_config': {
-        'dataset': ('nlphuji/flickr30k', 'which dataset to use'),
-        'cache_dir': ('/Volumes/ExtraSpace/.cache', 'cache_dir'),
-        # 'cache_dir': ('/mnt/data/.cache', 'cache_dir'),
+        'dataset': (FLICKR, 'which dataset to use'),
+        'cache_dir': (CACHE_DIR, 'cache_dir'),
         'split-seed': (1234, 'seed for data splits (train/test/val)'),
     }
 }

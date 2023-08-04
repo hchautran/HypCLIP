@@ -2,11 +2,10 @@ import torch
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm.auto import tqdm
-import time
 import numpy as np
 from transformers import CLIPProcessor 
-from lavis.models import load_model_and_preprocess
 from datasets import dataset_dict 
+from datasets import load_dataset
 
 class Flickr_dataset(Dataset):
     def __init__(self, dataset):  
@@ -136,42 +135,18 @@ def parse_int(sample):
     
 
     
-
-
-if __name__ == '__main__':
-    from datasets import load_dataset
-    from tqdm.auto import tqdm
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
-    flickr30k = load_dataset('nlphuji/flickr30k').remove_columns(['sentids', 'filename']).map(parse_int)
-
-    
+def get_flickr(flickr_ckt, cache_dir):
+    flickr30k = load_dataset(flickr_ckt, cache_dir=cache_dir).remove_columns(['sentids', 'filename']).map(parse_int)
     ds = dataset_dict.DatasetDict({
         'train' : flickr30k.filter(lambda x: x['split'] == 'train')['test'], 
         'test' : flickr30k.filter(lambda x: x['split'] == 'test')['test'], 
         'val' : flickr30k.filter(lambda x: x['split'] == 'val')['test'], 
     }) 
-    print(ds)
+    return ds
 
 
 
-    # flickr30k.push_to_hub('flickr30k')
-    model, vis_processor, text_processor = load_model_and_preprocess(name="blip_feature_extractor", model_type="base", is_eval=True, device=device)
-    flickr30k = ds.map(lambda sample: preprocess_img_lavis(sample, lavis_vis_processor=vis_processor), num_proc=4).remove_columns(['image'])
-    flickr30k = ds.map(lambda sample: preprocess_img(sample, processor), num_proc=4).remove_columns(['image'])
-    # flickr30k.set_format('numpy')
-    # print(flickr30k)
-    
-    # # print(model)
-    # batch_size=200
-    # # print(flickr30k)
-    # train_loader = get_lavis_dataloader(flickr30k['train'], batch_size=batch_size, mode='train')
-    # # train_loader = get_dataloader(
-    # #     flickr30k['train'], 
-    # #     batch_size=batch_size, 
-    # #     mode='train', 
-    # #     processor=processor
-    # # )
+
 
 
 

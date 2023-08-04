@@ -25,19 +25,19 @@ def get_activate_func(act_func=None):
 
 
 class SeqLinear(nn.Module):
-    def __init__(self, ft_in, ft_out=[128], dropout=0.5, act_func='relu'):
+    def __init__(self, ft_in, layer_dims=[128], dropout=0.5, act_func='relu', bias=True):
         super(SeqLinear, self).__init__()
         self.linear = []
         self.norm = []
         self.dropout = []
         self.act = []
-        for idx in range(len(ft_out)):
+        for idx in range(len(layer_dims)):
             if idx == 0:
-                self.linear.append(nn.Linear(ft_in, ft_out[idx]))
+                self.linear.append(nn.Linear(ft_in, layer_dims[idx], bias=bias))
             else:
-                self.linear.append(nn.Linear(ft_out[idx-1], ft_out[idx]))
-            if idx != len(ft_out)-1:
-                self.norm.append(nn.LayerNorm([ft_out[idx]]))
+                self.linear.append(nn.Linear(layer_dims[idx-1], layer_dims[idx], bias=bias))
+            if idx != len(layer_dims)-1:
+                self.norm.append(nn.LayerNorm([layer_dims[idx]]))
                 self.act.append(get_activate_func(act_func))
             self.dropout.append(nn.Dropout(p=dropout))
             
@@ -59,19 +59,19 @@ class SeqLinear(nn.Module):
 
 
 class HypSeqLinear(nn.Module):
-    def __init__(self, manifold ,ft_in, ft_out, c ,dropout=0.5, act_func='relu'):
+    def __init__(self, manifold ,ft_in, layer_dims, c ,dropout=0.5, act_func='relu'):
         super(HypSeqLinear, self).__init__()
         self.linear = []
         self.norm = []
         self.dropout = []
         self.act = []
-        for idx in range(len(ft_out)):
+        for idx in range(len(layer_dims)):
             if idx == 0:
-                self.linear.append(HypLinear(manifold, ft_in, ft_out[idx], c))
+                self.linear.append(HypLinear(manifold, ft_in, layer_dims[idx], c))
             else:
-                self.linear.append(HypLinear(manifold, ft_out[idx-1], ft_out[idx], c))
-            if idx != len(ft_out)-1:
-                self.norm.append(nn.LayerNorm([ft_out[idx]]))
+                self.linear.append(HypLinear(manifold, layer_dims[idx-1], layer_dims[idx], c))
+            if idx != len(layer_dims)-1:
+                self.norm.append(nn.LayerNorm([layer_dims[idx]]))
                 self.act.append(HypAct(manifold, c, c, get_activate_func(act_func)))
             self.dropout.append(nn.Dropout(p=dropout))
             
@@ -91,17 +91,17 @@ class HypSeqLinear(nn.Module):
 
 
 class LorentzSeqLinear(nn.Module):
-    def __init__(self, manifold ,ft_in, ft_out, dropout=0.1, act_func='relu'):
+    def __init__(self, manifold ,ft_in, layer_dims, dropout=0.1, act_func='relu'):
         super(LorentzSeqLinear, self).__init__()
         self.linear = []
         self.norm = []
         self.dropout = []
         self.act = []
-        for idx in range(len(ft_out)):
+        for idx in range(len(layer_dims)):
             if idx == 0:
-                self.linear.append(LorentzLinear(manifold, ft_in, ft_out[idx], dropout=dropout))
+                self.linear.append(LorentzLinear(manifold, ft_in, layer_dims[idx], dropout=dropout))
             else:
-                self.linear.append(LorentzLinear(manifold, ft_out[idx-1], ft_out[idx], dropout=dropout, nonlin=get_activate_func(act_func)))
+                self.linear.append(LorentzLinear(manifold, layer_dims[idx-1], layer_dims[idx], dropout=dropout, nonlin=get_activate_func(act_func)))
             
         self.linear = nn.ModuleList(self.linear)
         

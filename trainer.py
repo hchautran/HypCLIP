@@ -1,9 +1,10 @@
 
 from datasets import load_dataset
-from transformers import CLIPProcessor
+from transformers import CLIPProcessor, BlipProcessor 
 import wandb
 from accelerate import Accelerator
 from model.hypCLIP import HypCLIP
+from model.hypBLIP import HypBLIP 
 from utils.data_utils import get_dataloader, preprocess_img
 from geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import evaluate_recall 
@@ -11,26 +12,13 @@ import numpy as np
 from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
-import time
+from utils.data_utils import get_flickr
+from config import EUCLID, LORENTZ, POINCARE
 
 
-class HypCLIPTrainer():
-    def __init__(self, config):
+class MyTrainer():
+    def __init__(self, config, model ,dataset ,train_loader, val_loader, test_loader):
         self.config = config 
-        self.device = torch.device(f'cuda:{config.cuda}' if (torch.cuda.is_available() and config.cuda >=0) else 'cpu')
-
-        self.accelerator = Accelerator(
-            mixed_precision=config.mixed_precision, 
-            gradient_accumulation_steps=config.gradient_accumulation_steps
-        )
-        self.enable_log = self.config.enable_log
-        self.processor = CLIPProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
-        self.dataset = load_dataset(config.dataset, cache_dir=config.cache_dir).remove_columns(['pixel_values', 'input_ids', 'attention_mask'])
-        self.dataset= self.dataset.map(lambda sample: preprocess_img(sample, processor=self.processor)).remove_columns(['image'])
-        self.dataset.set_format('numpy')
-        self.train_loader = get_dataloader(self.dataset['train'], config.batch_size, processor=self.processor, mode='train')
-        self.test_loader = get_dataloader(self.dataset['test'], 5, processor=self.processor, mode='test')
-        self.val_loader = get_dataloader(self.dataset['val'], 5, processor=self.processor, mode='val')
         self.model_ckt = config.model_ckt
         self.grad_clip = config.grad_clip
         self.min_epochs = config.min_epochs
@@ -39,13 +27,18 @@ class HypCLIPTrainer():
         self.patience = config.patience
         self.save_dir = config.save_dir
         self.epochs = config.epochs
+        self.cache_dir = config.cache_dir
+        self.device = torch.device(f'cuda:{config.cuda}' if (torch.cuda.is_available() and config.cuda >=0) else 'cpu')
+        self.accelerator = Accelerator(
+            mixed_precision=config.mixed_precision, 
+            gradient_accumulation_steps=config.gradient_accumulation_steps
+        )
+        self.enable_log = self.config.enable_log
         self.current_epoch = 0
+        self.model = self.accelerator.prepare(model)
+        self.dataset = dataset
 
-
-        self.model = HypCLIP(self.config) 
-        self.model = self.accelerator.prepare(self.model)
-
-        if config.manifold == 'euclidean':
+        if config.manifold == EUCLID:
             if config.optimizer == 'adam':
                 self.optimizer = torch.optim.AdamW(
                     self.model.parameters(), 
@@ -84,10 +77,9 @@ class HypCLIPTrainer():
 
         )
         self.optimizer, self.train_loader, self.val_loader, self.test_loader, self.scheduler = self.accelerator.prepare(
-            self.optimizer, self.train_loader, self.val_loader, self.test_loader ,self.scheduler
+            self.optimizer, train_loader, val_loader, test_loader ,self.scheduler
         )
-        self.name=f'{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}'
-        print(self.name)
+        self.name=f'{config.model_ckt}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}'
         print('RUNNING:',self.name)
 
 
@@ -117,7 +109,7 @@ class HypCLIPTrainer():
                 self.model.train()
 
                 running_loss = 0.0
-                for _, data in tqdm(self.train_loader):
+                for data in tqdm(self.train_loader):
                     self.accelerator.free_memory()
                     self.optimizer.zero_grad()
                     current_step += 1
@@ -145,7 +137,6 @@ class HypCLIPTrainer():
                             'current loss': loss.item(),
                             'curvature': self.model.curv.item(),
                             'temp': self.model.temp.item(),
-                            'logit scale': self.model.logit_scale.item(),
                             
                         })
                         print(stats)
@@ -175,7 +166,7 @@ class HypCLIPTrainer():
         all_text_embeds = [] 
         all_vision_embeds = [] 
         with torch.no_grad():
-            for _, data in tqdm(loader):
+            for data in tqdm(loader):
                 text_embeds = self.model.get_text_features(input_ids=data['input_ids'], attention_mask=data['attention_mask'])
                 vision_embeds = self.model.get_vision_features(pixel_values=data['pixel_values'][0].unsqueeze(0))
                 all_text_embeds.append(text_embeds)

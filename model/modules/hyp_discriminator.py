@@ -5,12 +5,12 @@ from .seq_linear import HypSeqLinear, LorentzSeqLinear
 from model.manifolds.nn import HypAct
 
 class HypDiscriminator(nn.Module):
-    def __init__(self, manifold, c ,dim=512, ft_out=[512,1], dropout=0.5, act_func='relu', fourier=False):
+    def __init__(self, manifold, c ,dim=512, layer_dims=[512,1], dropout=0.5, act_func='relu', fourier=False):
         super(HypDiscriminator, self).__init__()
         self.manifold = manifold
         self.c = c
         self.fourier = fourier
-        self.disc = HypSeqLinear(manifold, ft_in=(dim*4 if fourier else dim*2), ft_out=ft_out, c=c ,dropout=dropout, act_func=act_func)
+        self.disc = HypSeqLinear(manifold, ft_in=(dim*4 if fourier else dim*2), layer_dims=layer_dims, c=c ,dropout=dropout, act_func=act_func)
 
     def forward(self, feat1, feat2):
         if self.fourier:
@@ -26,12 +26,12 @@ class HypDiscriminator(nn.Module):
         return torch.sigmoid(self.disc(torch.cat([feat1, feat2], dim=1)))
 
 class LorentzDiscriminator(nn.Module):
-    def __init__(self, manifold, c ,dim=512, ft_out=[512,1], dropout=0.5, act_func='relu', fourier=False):
+    def __init__(self, manifold, c ,dim=512, layer_dims=[512,1], dropout=0.5, act_func='relu', fourier=False):
         super(LorentzDiscriminator, self).__init__()
         self.manifold = manifold
         self.c = c
         self.fourier = fourier
-        self.disc = LorentzSeqLinear(manifold, ft_in=(dim*4 if fourier else dim*2), ft_out=ft_out, dropout=dropout, act_func=act_func)
+        self.disc = LorentzSeqLinear(manifold, ft_in=(dim*4 if fourier else dim*2), layer_dims=layer_dims, dropout=dropout, act_func=act_func)
 
     def forward(self, feat1, feat2):
         if self.fourier:

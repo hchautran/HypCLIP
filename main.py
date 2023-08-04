@@ -1,13 +1,15 @@
 import torch
-from transformers import CLIPVisionModel, CLIPTextModel, CLIPProcessor
+from transformers import CLIPVisionModel, CLIPTextModel, CLIPProcessor, BlipForImageTextRetrieval
 from datasets import load_dataset
 from model.hypCLIP import HypCLIP
+from model.hypBLIP import HypBLIP 
 from datasets import load_dataset 
-from transformers import CLIPProcessor
+from transformers import CLIPProcessor, BlipProcessor
 from tqdm.auto import tqdm
-from utils.data_utils import get_dataloader
-from trainer import HypCLIPTrainer
+from utils.data_utils import get_dataloader, preprocess_img
+from trainer import MyTrainer
 from accelerate import find_executable_batch_size
+from utils.data_utils import get_flickr
 
 
 
@@ -15,46 +17,56 @@ if __name__ == '__main__':
     from config import parser
     from config import EUCLID, LORENTZ
     config = parser.parse_args()
-    
-    # for batch_size in [100,150,200]:    
-    #     config.batch_size=batch_size
-        # for curv in [0.05,0.1]:
-            # config.curvature = curv
-    #     for manifold in ['euclidean', 'lorentz']:
-    #         config.manifold = manifold
-    #         for ft_out in [128,256,512,1024]:
-    #             config.ft_out = ft_out 
+    if 'blip' in config.model_ckt:
+        print("Getting BLIP processor...")
+        processor = BlipProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
+    else:
+        print("Getting CLIP processor...")
+        processor = CLIPProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
+
+    if 'flickr' in config.dataset:
+        dataset = get_flickr(config.dataset, cache_dir=config.cache_dir) 
+    else:
+        dataset = get_flickr(config.dataset, cache_dir=config.cache_dir) 
+
+    dataset = (
+        dataset
+        .map(lambda sample: preprocess_img(sample, processor=processor))
+        .remove_columns(['image'])
+    )
+    dataset.set_format('numpy')
 
 
-    # processor = CLIPProcessor.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
-    # flickr30k = load_dataset('EddieChen372/flickr30k', cache_dir=config.cache_dir).with_format('numpy')
-    # train_loader = get_dataloader(flickr30k['train'], config.batch_size, processor=processor)
-    # val_loader = get_dataloader(flickr30k['val'], 5, processor=processor, mode='val')
-    # test_loader = get_dataloader(flickr30k['test'], 5, processor=processor, mode='test')
 
-    # model = HypCLIP(config) 
-    # # print(vars(config))
-    # print('number of params', model.num_parameters())
-    # print(sum(p.numel() for p in model.parameters() if p.requires_grad))
 
-    # for img_ids, batch in tqdm(train_loader):
-    #     assert len(img_ids) == len(set(img_ids))
-    # for img_ids, batch in tqdm(test_loader):
-    #     assert len(set(img_ids)) == 1 
-    # for img_ids, batch in tqdm(val_loader):
-    #     assert len(set(img_ids)) == 1 
     @find_executable_batch_size(starting_batch_size=config.batch_size)
     def inner_training_loop(batch_size):
         config.batch_size=batch_size
-        trainer = HypCLIPTrainer(config=config)
-        trainer.train()
+        train_loader = get_dataloader(dataset['train'], config.batch_size, processor=processor, mode='train')
+        test_loader = get_dataloader(dataset['test'], 5, processor=processor, mode='test')
+        val_loader = get_dataloader(dataset['val'], 5, processor=processor, mode='val')
+        model = HypCLIP(config) if 'clip' in config.model_ckt  else HypBLIP(config)
+        trainer = MyTrainer( model=model, config=config, dataset=dataset ,train_loader=train_loader, val_loader=val_loader, test_loader=test_loader)
+        # trainer.train()
+        print(trainer.evaluate(mode='test'))
 
-    for manifold in [LORENTZ, EUCLID]:
+    for manifold in [EUCLID, LORENTZ]:
         config.manifold = manifold 
         inner_training_loop()
 
     
     
+    # processor = BlipProcessor.from_pretrained("Salesforce/blip-itm-base-flickr", cache_dir=config.cache_dir)
+    # model = BlipForImageTextRetrieval.from_pretrained("Salesforce/blip-itm-base-flickr", cache_dir=config.cache_dir, torch_dtype=torch.float16).to("cuda")
+
+    # img_url = 'https://storage.googleapis.com/sfr-vision-language-research/BLIP/demo.jpg' 
+    # raw_image = Image.open(requests.get(img_url, stream=True).raw).convert('RGB')
+
+    # question = "A woman and a dog sitting together in a beach."
+    # inputs = processor(raw_image, question, return_tensors="pt").to("cuda", torch.float16)
+
+    # itm_scores = model(**inputs)[0]
+    # cosine_score = model(**inputs, use_itm_head=False)[0] 
 
 
         
