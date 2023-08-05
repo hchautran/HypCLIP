@@ -46,11 +46,19 @@ if __name__ == '__main__':
         test_loader = get_dataloader(dataset['test'], 5, processor=processor, mode='test')
         val_loader = get_dataloader(dataset['val'], 5, processor=processor, mode='val')
         model = HypCLIP(config) if 'clip' in config.model_ckt  else HypBLIP(config)
-        trainer = MyTrainer( model=model, config=config, dataset=dataset ,train_loader=train_loader, val_loader=val_loader, test_loader=test_loader)
-        # trainer.train()
-        print(trainer.evaluate(mode='test'))
+        trainer = MyTrainer(
+            model=model, 
+            config=config, 
+            dataset=dataset ,
+            train_loader=train_loader, 
+            val_loader=val_loader, 
+            test_loader=test_loader,
+            processor=processor
+        )
+        trainer.train()
+        # print(trainer.evaluate(mode='test'))
 
-    for manifold in [POINCARE, LORENTZ]:
+    for manifold in [EUCLID, LORENTZ]:
         config.manifold = manifold 
         inner_training_loop()
 
@@ -63,7 +71,7 @@ if __name__ == '__main__':
     # raw_image = Image.open(requests.get(img_url, stream=True).raw).convert('RGB')
 
     # question = "A woman and a dog sitting together in a beach."
-    # inputs = processor(raw_image, question, return_tensors="pt").to("cuda", torch.float16)
+    # inputs = processor(raw_image, questnmduy2020ion, return_tensors="pt").to("cuda", torch.float16)
 
     # itm_scores = model(**inputs)[0]
     # cosine_score = model(**inputs, use_itm_head=False)[0] 

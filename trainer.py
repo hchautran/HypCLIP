@@ -17,7 +17,7 @@ from config import EUCLID, LORENTZ, POINCARE
 
 
 class MyTrainer():
-    def __init__(self, config, model ,dataset ,train_loader, val_loader, test_loader):
+    def __init__(self, config, model ,dataset ,train_loader, val_loader, test_loader, processor):
         self.config = config 
         self.model_ckt = config.model_ckt
         self.grad_clip = config.grad_clip
@@ -28,6 +28,7 @@ class MyTrainer():
         self.save_dir = config.save_dir
         self.epochs = config.epochs
         self.cache_dir = config.cache_dir
+        self.processor = processor 
         self.device = torch.device(f'cuda:{config.cuda}' if (torch.cuda.is_available() and config.cuda >=0) else 'cpu')
         self.accelerator = Accelerator(
             mixed_precision=config.mixed_precision, 
