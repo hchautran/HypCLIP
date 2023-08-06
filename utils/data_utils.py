@@ -68,21 +68,10 @@ def collate_func(batch, processor):
         truncation=True
     )
     data['pixel_values'] = torch.from_numpy(np.concatenate(list(df['pixel_values']), 0))
-    data['image_id'] = torch.tensor(list(df['img_id'])) 
+    data['img_id'] = torch.tensor(list(df['img_id'])) 
     return data
 
 
-def collate_func_lavis(batch):
-    # print(batch)
-    df = pd.DataFrame(batch)
-    sample = {
-        'image':  torch.from_numpy(np.concatenate(list(df['pixel_values']), 0)),
-        'text_input': list(df['caption']),
-        'image_id': torch.tensor(list(df['img_id'])),
-    
-    }
-    return sample
-        
 
 def get_dataloader(dataset, batch_size, processor, mode='train'):
     flickr_dataset = Flickr_dataset(dataset) 

@@ -10,7 +10,7 @@ from .manifolds.euclidean import Euclidean
 from .manifolds.hyperboloid import Hyperboloid 
 from .manifolds.lorentz import Lorentz 
 from .manifolds.poincare import PoincareBall 
-from transformers import BlipVisionModel, BlipTextModel 
+from transformers import BlipVisionModel, BlipTextModel, BlipForImageTextRetrieval
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
@@ -26,10 +26,11 @@ class HypBLIP(BaseModel):
     def __init__(self, config) -> None:
         super(HypBLIP, self).__init__(config)
      
-        text_body = BlipTextModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
-        vision_body = BlipVisionModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
-        text_head = nn.ModuleList([ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
-        vision_head = nn.ModuleList([ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
+        model = BlipForImageTextRetrieval.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
+        text_body = model.text_encoder
+        vision_body = model.vision_model
+        text_head = nn.ModuleList([model.text_proj ,ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
+        vision_head = nn.ModuleList([model.vision_proj, ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
 
         if self.manifold_name == EUCLID:
             text_head.append(nn.Linear(text_body.config.hidden_size, self.ft_out, bias=False))

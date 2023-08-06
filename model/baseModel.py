@@ -94,18 +94,18 @@ class BaseModel(nn.Module):
         self.text_model.body.train()
         self.text_model.head.train()
         
-    def dist_func(self, text_embeds, image_embeds):
+    def dist_func(self, x, y):
         if self.manifold_name == EUCLID:
             print('calulating dot product')
-            image_embeds = F.normalize(image_embeds,p=2, dim=-1) 
-            text_embeds = F.normalize(text_embeds,p=2, dim=-1) 
-            return torch.matmul(text_embeds, image_embeds.t()) 
+            x = F.normalize(x,p=2, dim=-1) 
+            y = F.normalize(y,p=2, dim=-1) 
+            return torch.matmul(x, y.t()) 
         elif self.manifold_name == LORENTZ:
             print('calculating lorentz distance')
-            return -self.manifold.sqdist_batch(text_embeds, image_embeds)
+            return -self.manifold.sqdist_batch(x, y)
         else:
             print('calculating poincare distance')
-            return -self.manifold.sqdist_batch(text_embeds, image_embeds, c=self.curv)
+            return -self.manifold.sqdist_batch(x, y, c=self.curv)
 
     def itm_loss(self, imgs, cap, sims_i2t):
         bs = imgs.shape[0]

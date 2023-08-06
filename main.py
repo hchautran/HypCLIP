@@ -8,6 +8,7 @@ from transformers import CLIPProcessor, BlipProcessor
 from tqdm.auto import tqdm
 from utils.data_utils import get_dataloader, preprocess_img
 from trainer import MyTrainer
+from trainer_with_queue import MyTrainerWithMomentum 
 from accelerate import find_executable_batch_size
 from utils.data_utils import get_flickr
 
@@ -46,7 +47,7 @@ if __name__ == '__main__':
         test_loader = get_dataloader(dataset['test'], 5, processor=processor, mode='test')
         val_loader = get_dataloader(dataset['val'], 5, processor=processor, mode='val')
         model = HypCLIP(config) if 'clip' in config.model_ckt  else HypBLIP(config)
-        trainer = MyTrainer(
+        trainer = MyTrainerWithMomentum(
             model=model, 
             config=config, 
             dataset=dataset ,
