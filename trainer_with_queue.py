@@ -173,17 +173,16 @@ class MyTrainerWithMomentum(torch.nn.Module, MomentumDistilationMixin, SharedQue
         text_feat = self.model.get_text_features(data['input_ids'], data['attention_mask'])
         idx = idx.view(-1, 1)
         idx_all = torch.cat([idx.t(), self.idx_queue.clone().detach()], dim=1)
+        # print(idx_all)
         pos_mask = torch.eq(idx, idx_all).float()
         num_targets = pos_mask.sum(1, keepdim=True) 
         sim_targets = pos_mask / num_targets 
-        print(num_targets)
-        print(sim_targets)
         with torch.no_grad():
             self._momentum_update()
-            image_feat_m = self.visual_encoder_m(data['pixel_values'])[1]
             text_feat_m = self.text_encoder_m(data['input_ids'], data['attention_mask'])[1]
-            text_feat_m_all = torch.cat([image_feat_m.t(), self.text_queue.clone().detach()], dim=1)
-            image_feat_m_all = torch.cat([text_feat_m.t(), self.image_queue.clone().detach()], dim=1)
+            image_feat_m = self.visual_encoder_m(data['pixel_values'])[1]
+            text_feat_m_all = torch.cat([text_feat_m.t(), self.text_queue.clone().detach()], dim=1)
+            image_feat_m_all = torch.cat([image_feat_m.t(), self.image_queue.clone().detach()], dim=1)
             sim_i2t_m = self.model.dist_func(image_feat_m,  text_feat_m_all.T)
             sim_t2i_m = self.model.dist_func(text_feat_m,  image_feat_m_all.T)
             sim_i2t_targets = (
@@ -207,13 +206,9 @@ class MyTrainerWithMomentum(torch.nn.Module, MomentumDistilationMixin, SharedQue
         loss_itc = (loss_i2t + loss_t2i) / 2
         loss_contrastive = self.contrastive_loss(sims_i2t=sims_i2t, sims_t2i=sims_t2i, pos_mask=pos_mask)
         loss = loss_itc + loss_contrastive
-        # print(sim_targets.shape)
-        # print(sims_i2t.shape)
-        # print(sims_t2i.shape)
+        bs = sims_i2t.shape[0] 
+        in_batch_acc = (sims_i2t[:, :bs].argmax(-1) == torch.arange(bs).to(self.device)).float().mean().item()
 
-        # acc_i2t =  ().float().sum(-1, keepdim=True)
-        # acc_t2i =  ().float().sum(-1, keepdim=True)
-        
                 
         stats = {
             "logits/contrastive_loss": loss_contrastive.item(), 
@@ -222,6 +217,7 @@ class MyTrainerWithMomentum(torch.nn.Module, MomentumDistilationMixin, SharedQue
             "logits/min": sims_i2t.min().item(),
             "logits/mean": sims_i2t.mean().item(),
             "logits/max": sims_i2t.max().item(),
+            "logits/acc": in_batch_acc 
         }
 
         return loss, loss_itc, loss_contrastive, stats
@@ -271,13 +267,10 @@ class MyTrainerWithMomentum(torch.nn.Module, MomentumDistilationMixin, SharedQue
                 if best_r_all < metrics['r_all']:
                     waiting = 0
                     best_r_all = metrics['r_all']
+                    self.log({'best r_all': metrics['r_all']})
                     print('best r all', best_r_all)
-                else:
+                elif epoch > self.config.min_epochs:
                     waiting += 1
-                if waiting < self.patience:
-                    self.train_loader = self.accelerator.prepare(
-                        get_dataloader(self.dataset['train'], self.config.batch_size, processor=self.processor, mode='train')
-                    )
                 else: break
         print('Finished Training')
 

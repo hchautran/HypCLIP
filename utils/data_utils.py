@@ -73,10 +73,19 @@ def collate_func(batch, processor):
 
 
 
-def get_dataloader(dataset, batch_size, processor, mode='train'):
+def get_dataloader(dataset, batch_size, processor, mode='train', use_random_sampler=False):
     flickr_dataset = Flickr_dataset(dataset) 
     custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
     if mode == 'train':
+        if use_random_sampler:
+            return DataLoader(
+                flickr_dataset, 
+                batch_size=batch_size, 
+                collate_fn = lambda batch: collate_func(batch, processor),
+                shuffle=True
+            )
+ 
+
         return DataLoader(
             flickr_dataset, 
             batch_size=batch_size, 
@@ -92,23 +101,6 @@ def get_dataloader(dataset, batch_size, processor, mode='train'):
         )
 
         
-def get_lavis_dataloader(dataset, batch_size, mode='train'):
-    flickr_dataset = Flickr_dataset(dataset) 
-    custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
-    if mode == 'train':
-        return DataLoader(
-            flickr_dataset, 
-            batch_size=batch_size, 
-            collate_fn = collate_func_lavis,
-            sampler=custom_sampler,
-        ) 
-    else:
-        return DataLoader(
-            flickr_dataset, 
-            batch_size=batch_size, 
-            collate_fn =collate_func_lavis, 
-            shuffle=False
-        )
 
 def preprocess_img(sample, processor:CLIPProcessor):
     sample['pixel_values'] = processor(images=sample['image'])['pixel_values']

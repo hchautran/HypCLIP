@@ -80,7 +80,7 @@ config_args = {
         'gamma': (0.5, 'gamma for lr scheduler'),
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
         'min_epochs': (20,'do not early stop before min-epochs'),
-        'batch_size': (20,'batch size'),
+        'batch_size': (40,'batch size'),
         'enable_log': (False, 'enable log'),
         'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
         'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
@@ -90,7 +90,7 @@ config_args = {
         'euclid_neg_margin': (0.0, 'decision margin for euclid manifold (0.0 for no margin)'),
         'use_both_loss': (True, 'decision margin (None for no margin)'),
         'alpha': (0.4, 'alpha'),
-        'queue_size': (10000, 'queue_size'),
+        'queue_size': (64000, 'queue_size'),
     },
     'model_config': {
         'model_ckt':(CLIP_BASE_PATCH_16, 'model checkpoin on Hugging Face'),
