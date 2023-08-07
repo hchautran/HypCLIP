@@ -190,10 +190,12 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
             contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) 
 
         logits = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
-        loss = F.cross_entropy(logits, target) + contrastive_loss 
+        itc_loss = F.cross_entropy(logits, target)
+        loss = itc_loss + contrastive_loss 
         
         stats = {
             "logits/contrastive_loss": contrastive_loss.item() if contrastive_loss is not None else 0.0,
+            "logits/itc_loss": itc_loss.item(),
             "logits/min": sims_i2t.min().item(),
             "logits/mean": sims_i2t.mean().item(),
             "logits/max": sims_i2t.max().item(),
@@ -223,6 +225,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         text_embeds = text_outputs[1]
         itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
         itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
+        stats["logits/itm_loss"] = itm_loss.item() 
         loss = itm_loss + itc_loss
         
         return loss, stats, itc_loss, itm_loss

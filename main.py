@@ -60,9 +60,14 @@ if __name__ == '__main__':
         trainer.train()
         # print(trainer.evaluate(mode='test'))
 
-    for manifold in [LORENTZ, EUCLID]:
-        config.manifold = manifold 
-        inner_training_loop()
+    for ft_out in [256, 512, 1024]:
+        config.ft_out=256
+        for trainable_blocks in [0,1,3]:
+            config.vision_trainable_blocks = trainable_blocks 
+            config.text_trainable_blocks = trainable_blocks 
+            for manifold in [LORENTZ, EUCLID]:
+                config.manifold = manifold 
+                inner_training_loop()
 
     
     
