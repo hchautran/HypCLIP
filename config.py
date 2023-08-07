@@ -57,14 +57,14 @@ CLIP_BASE_PATCH_32 = 'openai/clip-vit-base-patch32'
 CLIP_BASE_PATCH_16 = 'openai/clip-vit-base-patch16'
 CLIP_LARGE_PATCH_14  = 'openai/clip-vit-large-patch14'
 FLICKR = 'nlphuji/flickr30k' 
-CACHE_DIR = '/Volumes/ExtraSpace/.cache' 
-# CACHE_DIR = '/mnt/data/.cache'
+# CACHE_DIR = '/Volumes/ExtraSpace/.cache' 
+CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     'training_config': {
         'lr': (1e-4, 'learning rate'),
         'dropout': (0.0, 'dropout probability'),
-        'cuda': (-1, 'which cuda device to use (-1 for cpu training)'),
+        'cuda': (0, 'which cuda device to use (-1 for cpu training)'),
         'epochs': (50, 'maximum number of epochs to train for'),
         'weight_decay': (0., 'l2 regularization strength'),
         'optimizer': ('adam', 'which optimizer to use, can be any of [sgd, adam]'),
@@ -80,15 +80,15 @@ config_args = {
         'gamma': (0.5, 'gamma for lr scheduler'),
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
         'min_epochs': (20,'do not early stop before min-epochs'),
-        'batch_size': (40,'batch size'),
-        'enable_log': (False, 'enable log'),
+        'batch_size': (50,'batch size'),
+        'enable_log': (True, 'enable log'),
         'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
         'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
         'lorentz_pos_margin': (0.0, 'decision margin for hyperbolic maninfold (0.0 for no margin)'),
-        'lorentz_neg_margin': (2.0, 'decision margin for hyperbolic manifold (0.0 for no margin)'),
+        'lorentz_neg_margin': (3.0, 'decision margin for hyperbolic manifold (0.0 for no margin)'),
         'euclid_pos_margin': (1.0, 'decision margin for euclid manifold (0.0 for no margin)'),
         'euclid_neg_margin': (0.0, 'decision margin for euclid manifold (0.0 for no margin)'),
-        'use_both_loss': (True, 'decision margin (None for no margin)'),
+        # 'use_both_loss': (True, 'decision margin (None for no margin)'),
         'alpha': (0.4, 'alpha'),
         'queue_size': (64000, 'queue_size'),
     },
@@ -97,9 +97,9 @@ config_args = {
         'manifold': (EUCLID, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.1, 'hyperbolic curvature'),
         'temp': (0.07, 'distance temperature'),
-        'clip_radius': (3.0, 'clipping radius'),
-        'vision_trainable_blocks': (3, 'number of trainable blocks in vision model'),
-        'text_trainable_blocks': (3, 'number of trainable blocks in text model'),
+        'clip_radius': (2.5, 'clipping radius'),
+        'vision_trainable_blocks': (12, 'number of trainable blocks in vision model'),
+        'text_trainable_blocks': (12, 'number of trainable blocks in text model'),
         'ft_out': (256, 'final project dimension'),
         'curv_learnable': (False, 'is curvature learnable') ,
         'freeze_embedding': (False, 'freeze embedding layers')

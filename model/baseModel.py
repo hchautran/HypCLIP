@@ -16,13 +16,20 @@ from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
 from .modules.utils import ManifoldMapper 
 
+from lavis.models.base_model import (
+    MomentumDistilationMixin,
+    SharedQueueMixin,
+    all_gather_with_grad,
+    concat_all_gather,
+)
+
 
 EUCLID = 'euclidean'
 POINCARE = 'poincare'
 LORENTZ = 'lorentz'
 
 
-class BaseModel(nn.Module):
+class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
     def __init__(self, config) -> None:
         super().__init__()
         self.config = config
@@ -32,8 +39,10 @@ class BaseModel(nn.Module):
         self.ft_out = config.ft_out
         self.clip_r = config.clip_radius
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.momentum = config.momentum
+        self.queue_size = config.queue_size
 
-  
+
 
         manifold = config.manifold
 
@@ -44,8 +53,11 @@ class BaseModel(nn.Module):
         self.curv = torch.as_tensor(config.curv if manifold != EUCLID else 0)
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
+        
+        self.visual_encoder_m = None
+        self.text_encoder_m = None
+        self.model_pairs = None 
     
-
         if manifold == EUCLID:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
@@ -96,15 +108,15 @@ class BaseModel(nn.Module):
         
     def dist_func(self, x, y):
         if self.manifold_name == EUCLID:
-            print('calulating dot product')
+            # print('calulating dot product')
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
             return torch.matmul(x, y.t()) 
         elif self.manifold_name == LORENTZ:
-            print('calculating lorentz distance')
+            # print('calculating lorentz distance')
             return -self.manifold.sqdist_batch(x, y)
         else:
-            print('calculating poincare distance')
+            # print('calculating poincare distance')
             return -self.manifold.sqdist_batch(x, y, c=self.curv)
 
     def itm_loss(self, imgs, cap, sims_i2t):
@@ -142,36 +154,26 @@ class BaseModel(nn.Module):
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 
-    def lorentz_contrastive_loss(self, sims_i2t, sims_i2i):
+
+    def contrastive_loss(self, sims_i2t, sims_i2i):
         bsize = sims_i2t.shape[0] 
         ones = torch.ones(bsize, bsize).to(self.device)
-
         pos_mask = torch.eye(bsize).to(self.device) 
         neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
+        sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
+        if self.config.manifold == EUCLID:
+            neg_margin = self.config.euclid_neg_margin * neg_mask 
+            pos_margin = self.config.euclid_pos_margin * pos_mask 
+            sims_i2t = sims_i2t - neg_margin 
+            sims_i2i = sims_i2i - neg_margin 
+            sims_i2t = (sims_i2t - pos_margin) * sign 
+        else:
+            neg_margin = self.config.lorentz_neg_margin * neg_mask 
+            pos_margin = self.config.lorentz_pos_margin * pos_mask 
+            sims_i2t = sims_i2t + neg_margin 
+            sims_i2i = sims_i2i + neg_margin 
+            sims_i2t = (sims_i2t + pos_margin) * sign 
 
-        neg_margin = self.config.lorentz_neg_margin * neg_mask 
-        pos_margin = self.config.lorentz_pos_margin * pos_mask 
-
-        sims_i2t = sims_i2t + neg_margin 
-        sims_i2i = sims_i2i + neg_margin 
-        sims_i2t = (sims_i2t + pos_margin) * ones.masked_fill_(torch.eq(ones, pos_mask), -1.0)
-        sims = torch.cat([torch.clamp(sims_i2t, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
-        loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
-        return loss
-        
-    def euclid_contrastive_loss(self, sims_i2t, sims_i2i):
-        bsize = sims_i2t.shape[0] 
-        ones = torch.ones(bsize, bsize).to(self.device)
-
-        pos_mask = torch.eye(bsize).to(self.device) 
-        neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
-
-        neg_margin = self.config.euclid_neg_margin * neg_mask 
-        pos_margin = self.config.euclid_pos_margin * pos_mask 
-
-        sims_i2t = sims_i2t - neg_margin 
-        sims_i2i = sims_i2i - neg_margin 
-        sims_i2t = (sims_i2t - pos_margin) * ones.masked_fill_(torch.eq(ones, pos_mask), -1.0)
         sims = torch.cat([torch.clamp(sims_i2t, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
         loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
         return loss
@@ -181,16 +183,11 @@ class BaseModel(nn.Module):
         eye_mask = torch.eye(bsize).to(self.device) * 1e9
         sims_i2t = self.dist_func(image_embeds, text_embeds)
         sims_i2i = self.dist_func(image_embeds, image_embeds)
-
         target = torch.arange(bsize).to(self.device)
         contrastive_loss = None 
 
-        if self.config.manifold == EUCLID and self.config.euclid_pos_margin != 0.0:
-            contrastive_loss = self.euclid_contrastive_loss(sims_i2t, sims_i2i) 
-        elif self.config.manifold == LORENTZ and self.config.lorentz_neg_margin != 0.0:
-            contrastive_loss = self.lorentz_contrastive_loss(sims_i2t, sims_i2i) 
-        elif self.config.manifold == POINCARE and self.config.lorentz_neg_margin != 0.0:
-            contrastive_loss = self.lorentz_contrastive_loss(sims_i2t, sims_i2i) 
+        if self.config.euclid_pos_margin != 0.0 or  self.config.lorentz_neg_margin != 0.0:
+            contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) 
 
         logits = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
         loss = F.cross_entropy(logits, target) + contrastive_loss 

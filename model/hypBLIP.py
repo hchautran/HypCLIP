@@ -27,20 +27,17 @@ class HypBLIP(BaseModel):
         super(HypBLIP, self).__init__(config)
      
         model = BlipForImageTextRetrieval.from_pretrained(self.model_ckt, cache_dir=config.cache_dir) 
-        text_body = model.text_encoder
-        vision_body = model.vision_model
+        text_body = BlipTextModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir)
+        vision_body = BlipVisionModel.from_pretrained(self.model_ckt, cache_dir=config.cache_dir)
         text_head = nn.ModuleList([model.text_proj ,ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
         vision_head = nn.ModuleList([model.vision_proj, ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)])
 
-        if self.manifold_name == EUCLID:
-            text_head.append(nn.Linear(text_body.config.hidden_size, self.ft_out, bias=False))
-            vision_head.append(nn.Linear(vision_body.config.hidden_size, self.ft_out, bias=False))
-        elif self.manifold_name == LORENTZ: 
-            text_head.append(LorentzSeqLinear(manifold=self.manifold, ft_in=text_body.config.hidden_size, layer_dims=[self.ft_out]))
-            vision_head.append(LorentzSeqLinear(manifold=self.manifold, ft_in=vision_body.config.hidden_size, layer_dims=[self.ft_out]))
-        else: 
-            text_head.append(HypSeqLinear(manifold=self.manifold, c=self.curv ,ft_in=text_body.config.hidden_size, layer_dims=[self.ft_out]))
-            vision_head.append(HypSeqLinear(manifold=self.manifold, c=self.curv ,ft_in=vision_body.config.hidden_size, layer_dims=[self.ft_out]))
+        # if self.manifold_name == EUCLID:
+            # text_head.append(nn.Linear(text_body.config.hidden_size, self.ft_out, bias=False))
+            # vision_head.append(nn.Linear(vision_body.config.hidden_size, self.ft_out, bias=False))
+        if self.manifold_name == LORENTZ: 
+            text_head.append(LorentzSeqLinear(manifold=self.manifold, ft_in=model.config.image_text_hidden_size, layer_dims=[self.ft_out]))
+            vision_head.append(LorentzSeqLinear(manifold=self.manifold, ft_in=model.config.image_text_hidden_size, layer_dims=[self.ft_out]))
         self.vision_model = BLIPVision(body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
         self.text_model = BLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
 

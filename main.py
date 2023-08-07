@@ -43,11 +43,11 @@ if __name__ == '__main__':
     @find_executable_batch_size(starting_batch_size=config.batch_size)
     def inner_training_loop(batch_size):
         config.batch_size=batch_size
-        train_loader = get_dataloader(dataset['train'], config.batch_size, processor=processor, mode='train', use_random_sampler=True)
+        train_loader = get_dataloader(dataset['train'], config.batch_size, processor=processor, mode='train', use_random_sampler=False)
         test_loader = get_dataloader(dataset['test'], 5, processor=processor, mode='test')
         val_loader = get_dataloader(dataset['val'], 5, processor=processor, mode='val')
         model = HypCLIP(config) if 'clip' in config.model_ckt  else HypBLIP(config)
-        trainer = MyTrainerWithMomentum(
+        trainer = MyTrainer(
             model=model, 
             config=config, 
             dataset=dataset ,
@@ -58,9 +58,9 @@ if __name__ == '__main__':
         )
         # print(trainer.evaluate(mode='test'))
         trainer.train()
-        print(trainer.evaluate(mode='test'))
+        # print(trainer.evaluate(mode='test'))
 
-    for manifold in [LORENTZ]:
+    for manifold in [LORENTZ, EUCLID]:
         config.manifold = manifold 
         inner_training_loop()
 
