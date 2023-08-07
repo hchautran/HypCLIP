@@ -57,8 +57,8 @@ CLIP_BASE_PATCH_32 = 'openai/clip-vit-base-patch32'
 CLIP_BASE_PATCH_16 = 'openai/clip-vit-base-patch16'
 CLIP_LARGE_PATCH_14  = 'openai/clip-vit-large-patch14'
 FLICKR = 'nlphuji/flickr30k' 
-# CACHE_DIR = '/Volumes/ExtraSpace/.cache' 
-CACHE_DIR = '/mnt/data/.cache'
+CACHE_DIR = '/Volumes/ExtraSpace/.cache' 
+# CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     'training_config': {
@@ -81,7 +81,7 @@ config_args = {
         'grad_clip': (None, 'max norm for gradient clipping, or None for no gradient clipping'),
         'min_epochs': (25,'do not early stop before min-epochs'),
         'batch_size': (60,'batch size'),
-        'enable_log': (True, 'enable log'),
+        'enable_log': (False, 'enable log'),
         'mixed_precision': ("fp16", "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'"),
         'gradient_accumulation_steps': (1, "The number of steps that should pass before gradients are accumulated"),
         'lorentz_pos_margin': (1.0, 'decision margin for hyperbolic maninfold (0.0 for no margin)'),
@@ -99,7 +99,7 @@ config_args = {
         'clip_radius': (2.5, 'clipping radius'),
         'vision_trainable_blocks': (9, 'number of trainable blocks in vision model'),
         'text_trainable_blocks': (9, 'number of trainable blocks in text model'),
-        'ft_out': (1024, 'final project dimension'),
+        'ft_out': (128, 'final project dimension'),
         'curv_learnable': (False, 'is curvature learnable') ,
         'freeze_embedding': (False, 'freeze embedding layers')
     },

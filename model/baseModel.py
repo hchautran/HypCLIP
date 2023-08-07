@@ -178,11 +178,14 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         bsize = text_embeds.shape[0]
         eye_mask = torch.eye(bsize).to(self.device) * 1e9
         sims_i2t = self.dist_func(image_embeds, text_embeds)
+        sims_t2i = sims_i2t.T
         sims_i2i = self.dist_func(image_embeds, image_embeds)
+        sims_t2t = self.dist_func(text_embeds, text_embeds)
         target = torch.arange(bsize).to(self.device)
-        contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) 
-        logits = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
-        itc_loss = F.cross_entropy(logits, target)
+        contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) + self.contrastive_loss(sims_t2i, sims_t2t - eye_mask)
+        logits_i2t = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
+        itc_loss = (F.cross_entropy(logits_i2t, target) + F.cross_entropy(logits_t2i, target))/2 
         loss = itc_loss + contrastive_loss 
         
         stats = {
