@@ -60,28 +60,14 @@ if __name__ == '__main__':
         trainer.train()
         # print(trainer.evaluate(mode='test'))
 
-    for ft_out in [256, 512, 1024]:
-        config.ft_out=256
-        for trainable_blocks in [0,1,3]:
-            config.vision_trainable_blocks = trainable_blocks 
-            config.text_trainable_blocks = trainable_blocks 
-            for manifold in [LORENTZ, EUCLID]:
-                config.manifold = manifold 
-                inner_training_loop()
+    for ft_out in [128, 256, 512, 1024]:
+        config.ft_out = ft_out
+        for vision_trainable_blocks in [1,3,5,7,9]:
+            config.vision_trainable_blocks = vision_trainable_blocks 
+            for text_trainable_blocks in [1,3,5,7,9]:
+                config.text_trainable_blocks = text_trainable_blocks 
+                for manifold in [LORENTZ, EUCLID]:
+                    config.manifold = manifold 
+                    inner_training_loop()
 
     
-    
-    # processor = BlipProcessor.from_pretrained("Salesforce/blip-itm-base-flickr", cache_dir=config.cache_dir)
-    # model = BlipForImageTextRetrieval.from_pretrained("Salesforce/blip-itm-base-flickr", cache_dir=config.cache_dir, torch_dtype=torch.float16).to("cuda")
-
-    # img_url = 'https://storage.googleapis.com/sfr-vision-language-research/BLIP/demo.jpg' 
-    # raw_image = Image.open(requests.get(img_url, stream=True).raw).convert('RGB')
-
-    # question = "A woman and a dog sitting together in a beach."
-    # inputs = processor(raw_image, questnmduy2020ion, return_tensors="pt").to("cuda", torch.float16)
-
-    # itm_scores = model(**inputs)[0]
-    # cosine_score = model(**inputs, use_itm_head=False)[0] 
-
-
-        

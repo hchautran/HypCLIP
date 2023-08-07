@@ -33,16 +33,12 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
     def __init__(self, config) -> None:
         super().__init__()
         self.config = config
-        
-
         self.model_ckt = config.model_ckt
         self.ft_out = config.ft_out
         self.clip_r = config.clip_radius
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.momentum = config.momentum
         self.queue_size = config.queue_size
-
-
 
         manifold = config.manifold
 
@@ -71,7 +67,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
             self.discriminator = LorentzDisModel(self.manifold, c=self.curv ,dim=config.ft_out)
-        self.manifold_name = manifold
+        self.manifold_name =  manifold    
         self.vision_model = None 
         self.text_model = None 
 
@@ -184,11 +180,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         sims_i2t = self.dist_func(image_embeds, text_embeds)
         sims_i2i = self.dist_func(image_embeds, image_embeds)
         target = torch.arange(bsize).to(self.device)
-        contrastive_loss = None 
-
-        if self.config.euclid_pos_margin != 0.0 or  self.config.lorentz_neg_margin != 0.0:
-            contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) 
-
+        contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) 
         logits = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
         itc_loss = F.cross_entropy(logits, target)
         loss = itc_loss + contrastive_loss 

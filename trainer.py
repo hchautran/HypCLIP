@@ -81,7 +81,7 @@ class MyTrainer():
         self.optimizer, self.train_loader, self.val_loader, self.test_loader, self.scheduler = self.accelerator.prepare(
             self.optimizer, train_loader, val_loader, test_loader ,self.scheduler
         )
-        self.name=f'{config.model_ckt}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}'
+        self.name=f'{config.model_ckt.split("/")[-1]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}'
         print('RUNNING:',self.name)
 
 
