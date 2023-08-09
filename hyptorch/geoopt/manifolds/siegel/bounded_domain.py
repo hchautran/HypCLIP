@@ -1,7 +1,7 @@
 from typing import Optional, Tuple, Union
 import torch
-from lorentz.geoopt import linalg as lalg
-from lorentz.geoopt.utils import COMPLEX_DTYPES
+from hyptorch.geoopt import linalg as lalg
+from hyptorch.geoopt.utils import COMPLEX_DTYPES
 from .siegel import SiegelManifold
 from .upper_half import UpperHalf
 from .vvd_metrics import SiegelMetricType
