@@ -101,7 +101,8 @@ config_args = {
         'text_trainable_blocks': (1, 'number of trainable blocks in text model'),
         'ft_out': (128, 'final project dimension'),
         'curv_learnable': (False, 'is curvature learnable') ,
-        'freeze_embedding': (False, 'freeze embedding layers')
+        'freeze_embedding': (False, 'freeze embedding layers'),
+        'use_lorentz_centroid': (True, 'use lorentz centroid pooler')
     },
     'data_config': {
         'dataset': (FLICKR, 'which dataset to use'),

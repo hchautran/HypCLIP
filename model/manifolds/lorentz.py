@@ -270,16 +270,30 @@ class Lorentz(LorentzOri):
         zero_point[..., 0] = torch.sqrt(self.k)
         return geoopt.ManifoldTensor(zero_point, manifold=self)
 
-    def mid_point(self, x, w=None):
+    def centroid(self, x, w=None, eps=1e-8):
+        """ Centroid implementation. Adapted the code from Chen et al. (2022) """
         if w is not None:
-            ave = w.matmul(x)
+            avg = w.matmul(x)
         else:
-            ave = x.mean(dim=-2)
-        denom = (-self.inner(ave, ave, keepdim=True))
-        # mask = denom < 0
-        # denom[mask].clamp_max_(-1e-8)
-        # denom[~mask].clamp_min_(1e-8)
-        denom = denom.abs().clamp_min(1e-8).sqrt()
-        return ave / denom
+            avg = x.mean(dim=-2)
 
-    retr = expmap
+        denom = (-self.inner(avg, avg, keepdim=True))
+        denom = denom.abs().clamp_min(eps).sqrt()
+
+        centroid = torch.sqrt(self.k) * avg / denom
+        return centroid
+
+    def lorentz_relu(self, x: torch.Tensor, add_time: bool=True) -> torch.Tensor:
+        """ Implements ReLU activation directly on the manifold. """
+        return self.lorentz_activation(x, torch.relu, add_time)
+
+    def lorentz_activation(self, x: torch.Tensor, activation, add_time: bool=True) -> torch.Tensor:
+        """ Implements activation directly on the manifold. """
+        x = activation(x.narrow(-1, 1, x.shape[-1] - 1))
+        if add_time:
+            x = self.add_time(x)
+        return x
+    
+    def tangent_relu(self, x: torch.Tensor) -> torch.Tensor:
+        """ Implements ReLU activation in tangent space. """
+        return self.expmap0(torch.relu(self.logmap0(x)))

@@ -12,10 +12,8 @@ from .manifolds.lorentz import Lorentz
 from .manifolds.poincare import PoincareBall 
 from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
 
-from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
-import torch.nn.functional as F
-from .modules.utils import ManifoldMapper 
+from .modules.utils import ManifoldMapper, LorentzCentroidPooler
 from model.baseModel import BaseModel
 
 
@@ -38,13 +36,18 @@ class HypCLIP(BaseModel):
         vision_head = nn.ModuleList([vision_model.visual_projection])
 
         if self.manifold_name == LORENTZ: 
-            text_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))
-            vision_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))
+            if config.use_lorentz_centroid:
+                text_head.append(LorentzCentroidPooler(self.manifold, curv=self.curv, clip_r=self.clip_r))
+                vision_head.append(LorentzCentroidPooler(self.manifold, curv=self.curv, clip_r=self.clip_r))
+            else:
+                text_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))
+                vision_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))
+
             text_head.append(LorentzSeqLinear(manifold=self.manifold, ft_in=text_body.config.projection_dim, layer_dims=[self.ft_out]))
             vision_head.append(LorentzSeqLinear(manifold=self.manifold, ft_in=vision_body.config.projection_dim, layer_dims=[self.ft_out]))
 
-        self.vision_model = CLIPVision(body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
-        self.text_model = CLIPText(body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
+        self.vision_model = CLIPVision(config=config, body=vision_body, head=vision_head, num_trainable_blocks=config.vision_trainable_blocks, freeze_embedding=config.freeze_embedding)
+        self.text_model = CLIPText(config=config, body=text_body, head=text_head, num_trainable_blocks=config.text_trainable_blocks, freeze_embeddings=config.freeze_embedding)
 
 
 

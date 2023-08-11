@@ -8,14 +8,14 @@ from .seq_linear import LorentzSeqLinear
 
 
 class CLIPText(nn.Module): 
-    def __init__(self, body, head, num_trainable_blocks=0, freeze_embeddings=True) -> None:
+    def __init__(self, config ,body, head, num_trainable_blocks=0, freeze_embeddings=True) -> None:
         super().__init__()
 
         freeze_clip(text_model=body, num_trainable_blocks=num_trainable_blocks, freeze_embeddings=freeze_embeddings)
         self.body = body
         self.head = head 
+        self.config = config
         
-
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
@@ -31,13 +31,17 @@ class CLIPText(nn.Module):
         )
 
         last_hidden_state = text_outputs[0]
-        pooled_output = last_hidden_state[:, 0, :]
 
-        for layer in self.head: 
+        if not self.config.use_lorentz_centroid or self.config.manifold != 'lorentz':
+            pooled_output = last_hidden_state[:, 0, :]
+        else:
+            pooled_output = last_hidden_state
+        for layer in self.head:
             pooled_output = layer(pooled_output)
 
         return last_hidden_state, pooled_output
     
+
 
         
 class BLIPText(nn.Module): 
@@ -64,8 +68,12 @@ class BLIPText(nn.Module):
         )
 
         last_hidden_state = text_outputs[0]
-        pooled_output = last_hidden_state[:, 0, :]
-        for layer in self.head: 
+        if not self.config.use_lorentz_centroid or self.config.manifold != 'lorentz':
+            pooled_output = last_hidden_state[:, 0, :]
+        else:
+            pooled_output = last_hidden_state
+
+        for layer in self.head:
             pooled_output = layer(pooled_output)
 
         return last_hidden_state, pooled_output

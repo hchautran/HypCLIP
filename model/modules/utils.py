@@ -2,6 +2,7 @@ from transformers import CLIPVisionModelWithProjection, CLIPTextModelWithProject
 from transformers import BlipVisionModel, BlipTextModel  
 import torch
 import torch.nn as nn
+from model.manifolds.lorentz import Lorentz
 
 def fr(m):
     for param in m.parameters():
@@ -58,3 +59,20 @@ class ManifoldMapper(nn.Module):
             )
             x = x * fac
         return self.manifold.expmap0(x, c=self.curv)
+
+
+class LorentzCentroidPooler(nn.Module):
+    def __init__(self, manifold:Lorentz, curv, clip_r=None):
+        super().__init__()
+        self.manifold = manifold
+        self.curv = curv 
+        self.clip_r = clip_r 
+        self.mapper = ManifoldMapper(self.manifold, self.curv, clip_r=clip_r) 
+        
+    def forward(self, x):
+        x = self.mapper(x)
+        pooled_x = self.manifold.centroid(x)
+        return pooled_x 
+
+
+    

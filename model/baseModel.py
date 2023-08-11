@@ -39,6 +39,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.momentum = config.momentum
         self.queue_size = config.queue_size
+        self.use_lorentz_centroid = config.use_lorentz_centroid
 
         manifold = config.manifold
 
@@ -198,6 +199,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         vision_outputs = self.vision_model(
             pixel_values=pixel_values,
         )
+        
 
         text_outputs = self.text_model(
             input_ids=input_ids,
@@ -211,7 +213,6 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
         stats["logits/itm_loss"] = itm_loss.item() 
         loss = itm_loss + itc_loss
-        
         return loss, stats, itc_loss, itm_loss
 
     def get_text_features(
