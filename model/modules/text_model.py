@@ -30,8 +30,8 @@ class CLIPText(nn.Module):
             return_dict=True,
         )
 
-        pooled_output = text_outputs[1]
         last_hidden_state = text_outputs[0]
+        pooled_output = last_hidden_state[:, 0, :]
 
         for layer in self.head: 
             pooled_output = layer(pooled_output)
@@ -64,7 +64,7 @@ class BLIPText(nn.Module):
         )
 
         last_hidden_state = text_outputs[0]
-        pooled_output = text_outputs[1]
+        pooled_output = last_hidden_state[:, 0, :]
         for layer in self.head: 
             pooled_output = layer(pooled_output)
 

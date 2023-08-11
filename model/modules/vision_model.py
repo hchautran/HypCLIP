@@ -25,8 +25,8 @@ class CLIPVision(nn.Module):
             return_dict=True,
         )
 
-        pooled_output = vision_outputs[1]  # pooled_output
         last_hidden_state = vision_outputs[0]
+        pooled_output = last_hidden_state[:, 0, :]
         for layer in self.head:
             pooled_output = layer(pooled_output)
         return last_hidden_state, pooled_output
@@ -48,11 +48,11 @@ class BLIPVision(nn.Module):
 
         vision_outputs = self.body(
             pixel_values=pixel_values,
-            return_dict=True,
+            return_dict=False,
         )
 
-        pooled_output = vision_outputs[1]  # pooled_output
         last_hidden_state = vision_outputs[0]
+        pooled_output = last_hidden_state[:, 0, :]
         for layer in self.head:
             pooled_output = layer(pooled_output)
         return last_hidden_state, pooled_output

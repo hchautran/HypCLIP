@@ -56,8 +56,8 @@ if __name__ == '__main__':
             test_loader=test_loader,
             processor=processor
         )
-        # print(trainer.evaluate(mode='test'))
-        trainer.train()
+        print(trainer.evaluate(mode='test'))
+        # trainer.train()
         # print(trainer.evaluate(mode='test'))
 
     # for ft_out in [128, 256, 512, 1024]:

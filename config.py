@@ -93,12 +93,12 @@ config_args = {
     },
     'model_config': {
         'model_ckt':(CLIP_BASE_PATCH_16, 'model checkpoin on Hugging Face'),
-        'manifold': (EUCLID, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
+        'manifold': (LORENTZ, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.05, 'hyperbolic curvature'),
         'temp': (0.07, 'distance temperature'),
         'clip_radius': (2.5, 'clipping radius'),
-        'vision_trainable_blocks': (9, 'number of trainable blocks in vision model'),
-        'text_trainable_blocks': (9, 'number of trainable blocks in text model'),
+        'vision_trainable_blocks': (1, 'number of trainable blocks in vision model'),
+        'text_trainable_blocks': (1, 'number of trainable blocks in text model'),
         'ft_out': (128, 'final project dimension'),
         'curv_learnable': (False, 'is curvature learnable') ,
         'freeze_embedding': (False, 'freeze embedding layers')

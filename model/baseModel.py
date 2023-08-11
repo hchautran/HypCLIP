@@ -73,21 +73,10 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
-        num_params += self.vision_model.body.num_parameters(only_trainable=only_trainable)
-        num_params += self.text_model.body.num_parameters(only_trainable=only_trainable)
-        vision_head = self.vision_model.head
-        text_head = self.text_model.head
         if only_trainable:
-            num_params += sum(p.numel() for p in text_head.parameters() if p.requires_grad)
-            num_params += sum(p.numel() for p in vision_head.parameters() if p.requires_grad)
-            num_params += sum(p.numel() for p in self.discriminator.parameters() if p.requires_grad)
-            num_params += int(self.curv.requires_grad)
-            num_params += int(self.temp.requires_grad)
+            num_params += sum(p.numel() for p in self.parameters() if p.requires_grad)
         else:
-            num_params += sum(p.numel() for p in text_head.parameters())
-            num_params += sum(p.numel() for p in vision_head.parameters())
-            num_params += sum(p.numel() for p in self.discriminator.parameters())
-            num_params += 3 
+            num_params += sum(p.numel() for p in self.parameters())
         return num_params
 
     def eval(self):
