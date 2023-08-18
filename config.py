@@ -92,7 +92,7 @@ config_args = {
         'queue_size': (64000, 'queue_size'),
     },
     'model_config': {
-        'model_ckt':(CLIP_BASE_PATCH_16, 'model checkpoin on Hugging Face'),
+        'model_ckt':(BLIP_BASE_FLICKR, 'model checkpoin on Hugging Face'),
         'manifold': (LORENTZ, 'which manifold to use, can be any of [euclidean, poincare, lorentz]'),
         'curv': (0.05, 'hyperbolic curvature'),
         'temp': (0.07, 'distance temperature'),
@@ -102,7 +102,7 @@ config_args = {
         'ft_out': (128, 'final project dimension'),
         'curv_learnable': (False, 'is curvature learnable') ,
         'freeze_embedding': (False, 'freeze embedding layers'),
-        'use_lorentz_centroid': (True, 'use lorentz centroid pooler')
+        'use_lorentz_centroid': (False, 'use lorentz centroid pooler')
     },
     'data_config': {
         'dataset': (FLICKR, 'which dataset to use'),

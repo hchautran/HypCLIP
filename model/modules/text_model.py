@@ -45,12 +45,13 @@ class CLIPText(nn.Module):
 
         
 class BLIPText(nn.Module): 
-    def __init__(self, body, head, num_trainable_blocks=0, freeze_embeddings=True) -> None:
+    def __init__(self, config ,body, head, num_trainable_blocks=0, freeze_embeddings=True) -> None:
         super().__init__()
 
         freeze_blip(text_model=body, num_trainable_blocks=num_trainable_blocks, freeze_embeddings=freeze_embeddings)
         self.body = body
         self.head = head 
+        self.config = config
         
 
     def forward(
