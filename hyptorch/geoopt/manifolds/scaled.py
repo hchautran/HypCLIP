@@ -3,8 +3,8 @@ import torch
 import itertools
 import types
 from typing import Union, Tuple, Optional
-import lib.geoopt as geoopt
-from lib.geoopt.manifolds.base import Manifold, ScalingInfo
+import hyptorch.geoopt as geoopt
+from hyptorch.geoopt.manifolds.base import Manifold, ScalingInfo
 import functools
 
 __all__ = ["Scaled"]
@@ -65,7 +65,7 @@ class Scaled(Manifold):
     --------
     Here is a simple example of radius 2 Sphere
 
-    >>> import lib.geoopt, torch, numpy as np
+    >>> import hyptorch.geoopt, torch, numpy as np
     >>> sphere = geoopt.Sphere()
     >>> radius_2_sphere = Scaled(sphere, 2)
     >>> p1 = torch.tensor([-1., 0.])

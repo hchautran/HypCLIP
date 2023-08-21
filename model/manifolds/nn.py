@@ -81,8 +81,7 @@ class LorentzLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.bias = bias
-        self.weight = nn.Linear(
-            self.in_features, self.out_features, bias=bias)
+        self.weight = nn.Linear(self.in_features, self.out_features, bias=bias)
         self.reset_parameters()
         self.dropout = nn.Dropout(dropout)
         self.scale = nn.Parameter(torch.ones(()) * math.log(scale), requires_grad=not fixscale)

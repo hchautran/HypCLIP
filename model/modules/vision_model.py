@@ -32,9 +32,9 @@ class CLIPVision(nn.Module):
             pooled_output = last_hidden_state[:, 0, :]
         else:
             pooled_output = last_hidden_state
-
         for layer in self.head:
             pooled_output = layer(pooled_output)
+
         return last_hidden_state, pooled_output
     
 

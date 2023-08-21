@@ -1,18 +1,13 @@
 
-from datasets import load_dataset
-from transformers import CLIPProcessor, BlipProcessor 
 import wandb
 from accelerate import Accelerator
 from model.hypCLIP import HypCLIP
 from model.hypBLIP import HypBLIP 
-from utils.data_utils import get_dataloader, preprocess_img
 from geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import evaluate_recall 
-import numpy as np
 from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
-from utils.data_utils import get_flickr
 from config import EUCLID, LORENTZ, POINCARE
 from model.hypBLIP  import HypBLIP
 from model.hypCLIP import HypCLIP

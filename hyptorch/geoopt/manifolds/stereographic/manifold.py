@@ -1,7 +1,7 @@
 import torch.nn
 from typing import Tuple, Optional, List
 from . import math
-import lib.geoopt as geoopt
+import hyptorch.geoopt as geoopt
 from ...utils import size2shape, broadcast_shapes
 from ..base import Manifold, ScalingInfo
 

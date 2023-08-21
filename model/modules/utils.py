@@ -67,12 +67,7 @@ class LorentzCentroidPooler(nn.Module):
         self.manifold = manifold
         self.curv = curv 
         self.clip_r = clip_r 
-        self.mapper = ManifoldMapper(self.manifold, self.curv, clip_r=clip_r) 
         
-    def forward(self, x):
-        x = self.mapper(x)
-        pooled_x = self.manifold.centroid(x)
+    def forward(self, x, attention_mask=None):
+        pooled_x = self.manifold.centroid(x, attention_mask=attention_mask)
         return pooled_x 
-
-
-    

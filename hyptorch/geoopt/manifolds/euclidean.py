@@ -2,7 +2,7 @@ from typing import Union, Tuple, Optional
 import torch
 from .base import Manifold, ScalingInfo
 from ..utils import size2shape, broadcast_shapes
-import lib.geoopt as geoopt
+import hyptorch.geoopt as geoopt
 
 
 __all__ = ["Euclidean"]

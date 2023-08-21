@@ -4,7 +4,7 @@ import torch.nn as nn
 from hyptorch.lorentz.manifold import CustomLorentz
 
 
-class LorentzFullyConnected(nn.Module):
+class LorentzLinear(nn.Module):
     """
         Modified Lorentz fully connected layer of Chen et al. (2022).
 
@@ -28,7 +28,7 @@ class LorentzFullyConnected(nn.Module):
             learn_scale=False,
             normalize=False
         ):
-        super(LorentzFullyConnected, self).__init__()
+        super(LorentzLinear, self).__init__()
         self.manifold = manifold
         self.in_features = in_features
         self.out_features = out_features

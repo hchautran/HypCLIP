@@ -39,6 +39,8 @@ class HypCLIP(BaseModel):
             if config.use_lorentz_centroid:
                 text_head.append(LorentzCentroidPooler(self.manifold, curv=self.curv, clip_r=self.clip_r))
                 vision_head.append(LorentzCentroidPooler(self.manifold, curv=self.curv, clip_r=self.clip_r))
+                text_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))
+                vision_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))
             else:
                 text_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))
                 vision_head.append(ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r))

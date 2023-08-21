@@ -2,7 +2,7 @@ from abc import ABC
 from typing import Union, Tuple, Optional
 import torch
 from ..base import Manifold
-from lib.geoopt import linalg as lalg
+from hyptorch.geoopt import linalg as lalg
 from ..siegel import csym_math as sm
 from .vvd_metrics import SiegelMetricType, SiegelMetricFactory
 

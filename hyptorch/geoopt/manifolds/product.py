@@ -2,8 +2,8 @@ import torch.nn
 from typing import Tuple, Union, Optional
 import operator
 import functools
-import lib.geoopt.utils
-import lib.geoopt as geoopt
+import hyptorch.geoopt.utils
+import hyptorch.geoopt as geoopt
 from ..utils import size2shape
 from .base import Manifold, ScalingInfo
 from .stereographic import Stereographic
@@ -28,7 +28,7 @@ class ProductManifold(Manifold):
     --------
     A Torus
 
-    >>> import lib.geoopt
+    >>> import hyptorch.geoopt
     >>> sphere = geoopt.Sphere()
     >>> torus = ProductManifold((sphere, 2), (sphere, 2))
     """
@@ -449,7 +449,7 @@ class StereographicProductManifold(ProductManifold):
     --------
     A Torus
 
-    >>> import lib.geoopt
+    >>> import hyptorch.geoopt
     >>> sphere = geoopt.SphereProjection()
     >>> torus = StereographicProductManifold((sphere, 2), (sphere, 2))
     """

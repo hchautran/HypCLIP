@@ -270,10 +270,13 @@ class Lorentz(LorentzOri):
         zero_point[..., 0] = torch.sqrt(self.k)
         return geoopt.ManifoldTensor(zero_point, manifold=self)
 
-    def centroid(self, x, w=None, eps=1e-8):
+    def centroid(self, x, w=None, attention_mask=None ,eps=1e-8):
         """ Centroid implementation. Adapted the code from Chen et al. (2022) """
         if w is not None:
             avg = w.matmul(x)
+        elif attention_mask is not None:
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(x.size()).float()
+            avg = torch.sum(x * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=eps)
         else:
             avg = x.mean(dim=-2)
 
@@ -282,6 +285,7 @@ class Lorentz(LorentzOri):
 
         centroid = torch.sqrt(self.k) * avg / denom
         return centroid
+
 
     def lorentz_relu(self, x: torch.Tensor, add_time: bool=True) -> torch.Tensor:
         """ Implements ReLU activation directly on the manifold. """

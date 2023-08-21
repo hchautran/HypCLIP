@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import math
 
 from hyptorch.lorentz.manifold import CustomLorentz
-from hyptorch.lorentz.layers import LorentzFullyConnected
+from hyptorch.lorentz.layers import LorentzLinear
 
 class LorentzConv1d(nn.Module):
     """ Implements a fully hyperbolic 1D convolutional layer using the Lorentz model.
@@ -37,7 +37,7 @@ class LorentzConv1d(nn.Module):
 
         lin_features = (self.in_channels - 1) * self.kernel_size + 1
 
-        self.linearized_kernel = LorentzFullyConnected(
+        self.linearized_kernel = LorentzLinear(
             manifold,
             lin_features, 
             self.out_channels, 
@@ -120,7 +120,7 @@ class LorentzConv2d(nn.Module):
 
         lin_features = ((self.in_channels - 1) * self.kernel_size[0] * self.kernel_size[1]) + 1
 
-        self.linearized_kernel = LorentzFullyConnected(
+        self.linearized_kernel = LorentzLinear(
             manifold,
             lin_features, 
             self.out_channels, 

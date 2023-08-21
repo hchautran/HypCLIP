@@ -3,7 +3,7 @@ from torch.nn import Module
 
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.lorentz.layers import (
-    LorentzFullyConnected, 
+    LorentzLinear, 
     LorentzConv2d, 
     LorentzConvTranspose2d,
     LorentzBatchNorm1d,
@@ -35,7 +35,7 @@ class LFC_Block(Module):
         if normalization=="batch_norm":
             self.batch_norm = LorentzBatchNorm1d(num_features=out_features, manifold=self.manifold)
 
-        self.linear = LorentzFullyConnected(
+        self.linear = LorentzLinear(
             manifold=self.manifold, 
             in_features=in_features, 
             out_features=out_features,

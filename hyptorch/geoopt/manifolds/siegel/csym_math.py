@@ -1,6 +1,6 @@
 import torch
 from typing import Tuple
-from lib.geoopt.linalg import block_matrix
+from hyptorch.geoopt.linalg import block_matrix
 
 EPS = {torch.float32: 4e-3, torch.float64: 1e-5}
 

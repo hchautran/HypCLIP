@@ -1,3 +1,3 @@
-from lib.geoopt.samplers.sgrhmc import SGRHMC
-from lib.geoopt.samplers.rhmc import RHMC
-from lib.geoopt.samplers.rsgld import RSGLD
+from hyptorch.geoopt.samplers.sgrhmc import SGRHMC
+from hyptorch.geoopt.samplers.rhmc import RHMC
+from hyptorch.geoopt.samplers.rsgld import RSGLD

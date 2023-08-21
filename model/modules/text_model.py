@@ -1,10 +1,8 @@
 
 import torch
 import torch.nn as nn
-from .utils import freeze_clip, freeze_blip 
+from .utils import freeze_clip, freeze_blip, LorentzCentroidPooler
 from typing import Optional
-from .seq_linear import LorentzSeqLinear 
-
 
 
 class CLIPText(nn.Module): 
@@ -37,7 +35,10 @@ class CLIPText(nn.Module):
         else:
             pooled_output = last_hidden_state
         for layer in self.head:
-            pooled_output = layer(pooled_output)
+            if isinstance(layer, LorentzCentroidPooler):
+                pooled_output = layer(pooled_output, attention_mask)
+            else:
+                pooled_output = layer(pooled_output)
 
         return last_hidden_state, pooled_output
     
@@ -75,7 +76,11 @@ class BLIPText(nn.Module):
             pooled_output = last_hidden_state
 
         for layer in self.head:
-            pooled_output = layer(pooled_output)
+            if isinstance(layer, LorentzCentroidPooler):
+                pooled_output = layer(pooled_output, attention_mask)
+            else:
+                pooled_output = layer(pooled_output)
+
 
         return last_hidden_state, pooled_output
     
