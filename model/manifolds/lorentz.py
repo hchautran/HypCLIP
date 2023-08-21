@@ -22,7 +22,7 @@ class Lorentz(LorentzOri):
         self, x: torch.Tensor, *, atol=1e-5, rtol=1e-5, dim=-1
     ) -> Tuple[bool, Optional[str]]:
         dn = x.size(dim) - 1
-        x = x ** 2
+        x = x**2
         quad_form = -x.narrow(dim, 0, 1) + x.narrow(dim, 1, dn).sum(
             dim=dim, keepdim=True
         )
@@ -64,7 +64,8 @@ class Lorentz(LorentzOri):
 
     def sqdist_batch(self, p1_list, p2_list):
         import torch
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         dists = torch.tensor([]).to(device)
         for idx in range(p1_list.shape[0]):
             cur_dist = self.sqdist(p1_list[idx], p2_list).unsqueeze(0)
@@ -77,8 +78,10 @@ class Lorentz(LorentzOri):
 
     def klein_to_lorentz(self, x):
         norm = (x * x).sum(dim=-1, keepdim=True)
-        size = x.shape[:-1] + (1, )
-        return torch.cat([x.new_ones(size), x], dim=-1) / torch.clamp_min(torch.sqrt(1 - norm), 1e-7)
+        size = x.shape[:-1] + (1,)
+        return torch.cat([x.new_ones(size), x], dim=-1) / torch.clamp_min(
+            torch.sqrt(1 - norm), 1e-7
+        )
 
     def lorentz_to_poincare(self, x):
         return math.lorentz_to_poincare(x, self.k)
@@ -118,13 +121,12 @@ class Lorentz(LorentzOri):
         else:
             return res
 
-    def expmap0(self, u: torch.Tensor, c ,*, project=True, dim=-1) -> torch.Tensor:
+    def expmap0(self, u: torch.Tensor, c, *, project=True, dim=-1) -> torch.Tensor:
         res = math.expmap0(u, k=c, dim=dim)
         if project:
             return math.project(res, k=c, dim=dim)
         else:
             return res
-
 
     def logmap(self, x: torch.Tensor, y: torch.Tensor, *, dim=-1) -> torch.Tensor:
         return math.logmap(x, y, k=self.k, dim=dim)
@@ -135,7 +137,7 @@ class Lorentz(LorentzOri):
     def logmap0(self, y: torch.Tensor, *, dim=-1) -> torch.Tensor:
         return math.logmap0(y, k=self.k, dim=dim)
 
-    def logmap0(self, y: torch.Tensor, c ,*, dim=-1) -> torch.Tensor:
+    def logmap0(self, y: torch.Tensor, c, *, dim=-1) -> torch.Tensor:
         return math.logmap0(y, k=c, dim=dim)
 
     def logmap0back(self, x: torch.Tensor, *, dim=-1) -> torch.Tensor:
@@ -155,7 +157,13 @@ class Lorentz(LorentzOri):
             v = u
         return math.inner(u, v, dim=dim, keepdim=keepdim)
 
-    def inner0(self, v: torch.Tensor = None, *, keepdim=False, dim=-1,) -> torch.Tensor:
+    def inner0(
+        self,
+        v: torch.Tensor = None,
+        *,
+        keepdim=False,
+        dim=-1,
+    ) -> torch.Tensor:
         return math.inner0(v, k=self.k, dim=dim, keepdim=keepdim)
 
     def cinner(self, x: torch.Tensor, y: torch.Tensor):
@@ -270,34 +278,37 @@ class Lorentz(LorentzOri):
         zero_point[..., 0] = torch.sqrt(self.k)
         return geoopt.ManifoldTensor(zero_point, manifold=self)
 
-    def centroid(self, x, w=None, attention_mask=None ,eps=1e-8):
-        """ Centroid implementation. Adapted the code from Chen et al. (2022) """
+    def centroid(self, x, w=None, attention_mask=None, eps=1e-8):
+        """Centroid implementation. Adapted the code from Chen et al. (2022)"""
         if w is not None:
             avg = w.matmul(x)
         elif attention_mask is not None:
             input_mask_expanded = attention_mask.unsqueeze(-1).expand(x.size()).float()
-            avg = torch.sum(x * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=eps)
+            avg = torch.sum(x * input_mask_expanded, 1) / torch.clamp(
+                input_mask_expanded.sum(1), min=eps
+            )
         else:
             avg = x.mean(dim=-2)
 
-        denom = (-self.inner(avg, avg, keepdim=True))
+        denom = -self.inner(avg, avg, keepdim=True)
         denom = denom.abs().clamp_min(eps).sqrt()
 
         centroid = torch.sqrt(self.k) * avg / denom
         return centroid
 
-
-    def lorentz_relu(self, x: torch.Tensor, add_time: bool=True) -> torch.Tensor:
-        """ Implements ReLU activation directly on the manifold. """
+    def lorentz_relu(self, x: torch.Tensor, add_time: bool = True) -> torch.Tensor:
+        """Implements ReLU activation directly on the manifold."""
         return self.lorentz_activation(x, torch.relu, add_time)
 
-    def lorentz_activation(self, x: torch.Tensor, activation, add_time: bool=True) -> torch.Tensor:
-        """ Implements activation directly on the manifold. """
+    def lorentz_activation(
+        self, x: torch.Tensor, activation, add_time: bool = True
+    ) -> torch.Tensor:
+        """Implements activation directly on the manifold."""
         x = activation(x.narrow(-1, 1, x.shape[-1] - 1))
         if add_time:
             x = self.add_time(x)
         return x
-    
+
     def tangent_relu(self, x: torch.Tensor) -> torch.Tensor:
-        """ Implements ReLU activation in tangent space. """
+        """Implements ReLU activation in tangent space."""
         return self.expmap0(torch.relu(self.logmap0(x)))
