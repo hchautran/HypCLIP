@@ -66,8 +66,8 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-CACHE_DIR = "/Volumes/ExtraSpace/.cache"
-# CACHE_DIR = '/mnt/data/.cache'
+# CACHE_DIR = "/Volumes/ExtraSpace/.cache"
+CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     "training_config": {
@@ -98,8 +98,8 @@ config_args = {
             "max norm for gradient clipping, or None for no gradient clipping",
         ),
         "min_epochs": (25, "do not early stop before min-epochs"),
-        "batch_size": (60, "batch size"),
-        "enable_log": (False, "enable log"),
+        "batch_size": (20, "batch size"),
+        "enable_log": (True, "enable log"),
         "mixed_precision": (
             "fp16",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
@@ -128,7 +128,7 @@ config_args = {
         "queue_size": (64000, "queue_size"),
     },
     "model_config": {
-        "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoin on Hugging Face"),
+        "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
         "manifold": (
             LORENTZ,
             "which manifold to use, can be any of [euclidean, poincare, lorentz]",
@@ -141,7 +141,7 @@ config_args = {
         "ft_out": (128, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (False, "freeze embedding layers"),
-        "use_lorentz_centroid": (True, "use lorentz centroid pooler"),
+        "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

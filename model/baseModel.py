@@ -19,8 +19,6 @@ from .modules.utils import ManifoldMapper
 from lavis.models.base_model import (
     MomentumDistilationMixin,
     SharedQueueMixin,
-    all_gather_with_grad,
-    concat_all_gather,
 )
 
 
@@ -46,6 +44,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         assert manifold in [EUCLID, POINCARE, LORENTZ]
 
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
+        self.weight_i2t = nn.Parameter(torch.as_tensor(0.5), requires_grad=False) 
 
         self.curv = torch.as_tensor(config.curv if manifold != EUCLID else 0)
         if not torch.is_floating_point(self.curv):
@@ -172,13 +171,15 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         sims_i2i = self.dist_func(image_embeds, image_embeds)
         sims_t2t = self.dist_func(text_embeds, text_embeds)
         target = torch.arange(bsize).to(self.device)
-        contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) + self.contrastive_loss(sims_t2i, sims_t2t - eye_mask)
         logits_i2t = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
         logits_t2i = torch.cat([sims_t2i/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
-        itc_loss = (F.cross_entropy(logits_i2t, target) + F.cross_entropy(logits_t2i, target))/2 
+
+        contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) + self.contrastive_loss(sims_t2i, sims_t2t - eye_mask)
+        itc_loss =  F.cross_entropy(logits_i2t, target) + F.cross_entropy(logits_t2i, target) 
         loss = itc_loss + contrastive_loss 
         
         stats = {
+            "logits/weight_t2i": 1.0 - self.weight_i2t.item(),
             "logits/contrastive_loss": contrastive_loss.item() if contrastive_loss is not None else 0.0,
             "logits/itc_loss": itc_loss.item(),
             "logits/min": sims_i2t.min().item(),

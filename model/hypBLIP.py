@@ -59,20 +59,7 @@ class HypBLIP(BaseModel):
                     ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
                 )
 
-            text_head.append(
-                LorentzSeqLinear(
-                    manifold=self.manifold,
-                    ft_in=model.config.image_text_hidden_size,
-                    layer_dims=[self.ft_out],
-                )
-            )
-            vision_head.append(
-                LorentzSeqLinear(
-                    manifold=self.manifold,
-                    ft_in=model.config.image_text_hidden_size,
-                    layer_dims=[self.ft_out],
-                )
-            )
+  
 
         self.vision_model = BLIPVision(
             config,
