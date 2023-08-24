@@ -66,7 +66,7 @@ class ManifoldMapper(nn.Module):
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
             fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
             x = x * fac
-        return self.manifold.expmap0(x, c=self.curv)
+        return self.manifold.projx(x)
 
 
 class LorentzCentroidPooler(nn.Module):

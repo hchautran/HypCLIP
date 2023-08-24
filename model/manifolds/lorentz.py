@@ -2,7 +2,6 @@ import torch.nn
 from typing import Tuple, Optional
 from . import lmath as math
 import geoopt
-from geoopt import Manifold
 from geoopt import Lorentz as LorentzOri
 from geoopt.utils import size2shape
 from .utils import acosh

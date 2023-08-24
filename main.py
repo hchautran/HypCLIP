@@ -1,19 +1,13 @@
 import torch
 from transformers import (
-    CLIPVisionModel,
-    CLIPTextModel,
     CLIPProcessor,
-    BlipForImageTextRetrieval,
 )
 from datasets import load_dataset
 from model.hypCLIP import HypCLIP
 from model.hypBLIP import HypBLIP
-from datasets import load_dataset
 from transformers import CLIPProcessor, BlipProcessor
-from tqdm.auto import tqdm
 from utils.data_utils import get_dataloader, preprocess_img
 from trainer import MyTrainer
-from trainer_with_queue import MyTrainerWithMomentum
 from accelerate import find_executable_batch_size
 from utils.data_utils import get_flickr
 
@@ -44,6 +38,8 @@ if __name__ == "__main__":
     ).remove_columns(["image"])
     dataset.set_format("numpy")
 
+   
+
     @find_executable_batch_size(starting_batch_size=config.batch_size)
     def inner_training_loop(batch_size):
         config.batch_size = batch_size
@@ -69,15 +65,15 @@ if __name__ == "__main__":
             processor=processor,
         )
         # print(trainer.evaluate(mode="test"))
-        trainer.train()
-        # print(trainer.evaluate(mode='test'))
+        # trainer.train()
+        print(trainer.evaluate(mode="test"))
 
-    for ft_out in [256]:
-        config.ft_out = ft_out
-        for vision_trainable_blocks in [1, 3]:
-            config.vision_trainable_blocks = vision_trainable_blocks
-            for text_trainable_blocks in [1, 3]:
-                config.text_trainable_blocks = text_trainable_blocks
-                for manifold in [LORENTZ, EUCLID]:
-                    config.manifold = manifold
-                    inner_training_loop()
+    #  for ft_out in [128, 256, 512, 1024]:
+    #      config.ft_out = ft_out
+    #      for vision_trainable_blocks in [1, 3, 5]:
+    #          config.vision_trainable_blocks = vision_trainable_blocks
+    #          for text_trainable_blocks in [1, 3, 5]:
+    #              config.text_trainable_blocks = text_trainable_blocks
+    #              for manifold in [LORENTZ, EUCLID]:
+    #                  config.manifold = manifold
+    inner_training_loop()

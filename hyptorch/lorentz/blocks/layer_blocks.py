@@ -1,6 +1,5 @@
 import torch
 from torch.nn import Module
-
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.lorentz.layers import (
     LorentzLinear, 
@@ -9,6 +8,8 @@ from hyptorch.lorentz.layers import (
     LorentzBatchNorm1d,
     LorentzBatchNorm2d,
 )
+
+
 
 class LFC_Block(Module):
     """ Implementation of a hyperbolic fully-connected Block.

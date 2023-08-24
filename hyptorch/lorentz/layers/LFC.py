@@ -70,7 +70,8 @@ class LorentzLinear(nn.Module):
             x = torch.cat([x_time, x_space], dim=-1)
         else:
             x = self.manifold.add_time(x_space)
-
+        
+      
         return x
 
     def reset_parameters(self):

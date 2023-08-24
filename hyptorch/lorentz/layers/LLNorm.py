@@ -88,29 +88,3 @@ class LorentzBatchNorm(nn.Module):
             output = self.manifold.expmap(beta, x_T)
 
         return output
-
-
-class LorentzBatchNorm1d(LorentzBatchNorm):
-    """1D Lorentz Batch Normalization with Centroid and Fréchet variance"""
-
-    def __init__(self, manifold: CustomLorentz, num_features: int):
-        super(LorentzBatchNorm1d, self).__init__(manifold, num_features)
-
-    def forward(self, x, momentum=0.1):
-        return super(LorentzBatchNorm1d, self).forward(x, momentum)
-
-
-class LorentzBatchNorm2d(LorentzBatchNorm):
-    """2D Lorentz Batch Normalization with Centroid and Fréchet variance"""
-
-    def __init__(self, manifold: CustomLorentz, num_channels: int):
-        super(LorentzBatchNorm2d, self).__init__(manifold, num_channels)
-
-    def forward(self, x, momentum=0.1):
-        """x has to be in channel last representation -> Shape = bs x H x W x C"""
-        bs, h, w, c = x.shape
-        x = x.view(bs, -1, c)
-        x = super(LorentzBatchNorm2d, self).forward(x, momentum)
-        x = x.reshape(bs, h, w, c)
-
-        return x

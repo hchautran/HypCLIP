@@ -66,8 +66,8 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-# CACHE_DIR = "/Volumes/ExtraSpace/.cache"
-CACHE_DIR = '/mnt/data/.cache'
+CACHE_DIR = "/Volumes/ExtraSpace/.cache"
+# CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     "training_config": {
@@ -99,7 +99,7 @@ config_args = {
         ),
         "min_epochs": (25, "do not early stop before min-epochs"),
         "batch_size": (20, "batch size"),
-        "enable_log": (True, "enable log"),
+        "enable_log": (False, "enable log"),
         "mixed_precision": (
             "fp16",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
@@ -109,7 +109,7 @@ config_args = {
             "The number of steps that should pass before gradients are accumulated",
         ),
         "lorentz_pos_margin": (
-            1.0,
+            0.0,
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
@@ -131,14 +131,14 @@ config_args = {
         "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
         "manifold": (
             LORENTZ,
-            "which manifold to use, can be any of [euclidean, poincare, lorentz]",
+            "which manifold to use [euclidean, lorentz]",
         ),
-        "curv": (0.05, "hyperbolic curvature"),
+        "curv": (0.1, "hyperbolic curvature"),
         "temp": (0.07, "distance temperature"),
-        "clip_radius": (2.5, "clipping radius"),
+        "clip_radius": (3.0, "clipping radius"),
         "vision_trainable_blocks": (1, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (1, "number of trainable blocks in text model"),
-        "ft_out": (128, "final project dimension"),
+        "ft_out": (256, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (False, "freeze embedding layers"),
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),

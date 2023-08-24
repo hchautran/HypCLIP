@@ -1,6 +1,10 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from typing import Optional
+from typing import Tuple
+
+
 
 class FC_Block(nn.Module):
     """ Implementation of a fully-connected block.

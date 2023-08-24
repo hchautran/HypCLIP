@@ -364,11 +364,7 @@ def _expmap0(u, k: torch.Tensor, dim: int = -1):
     nomin = (_norm(u, keepdim=True, dim=dim))
     u = u / nomin
     nomin = nomin.clamp_max(EXP_MAX_NORM)
-    # mask = nomin.lt(EXP_MAX_NORM)
-    # if (~mask).any():
-    #     nomin_mask = nomin.masked_scatter(mask, torch.ones_like(nomin))
-    #     u = u / nomin_mask
-    #     nomin = (_norm(u, keepdim=True, dim=dim))
+
     l_v = torch.cosh(nomin)
     r_v = torch.sinh(nomin) * u
     dn = r_v.size(dim) - 1

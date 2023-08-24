@@ -9,27 +9,38 @@ from hyptorch.lorentz.layers import (
 )
 
 
-def get_Conv2d(manifold, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=True, LFC_normalize=False):
+def get_Conv2d(
+    manifold,
+    in_channels,
+    out_channels,
+    kernel_size,
+    stride=1,
+    padding=0,
+    bias=True,
+    LFC_normalize=False,
+):
     return LorentzConv2d(
-        manifold=manifold, 
-        in_channels=in_channels+1, 
-        out_channels=out_channels+1, 
-        kernel_size=kernel_size, 
-        stride=stride, 
-        padding=padding, 
-        bias=bias, 
-        LFC_normalize=LFC_normalize
+        manifold=manifold,
+        in_channels=in_channels + 1,
+        out_channels=out_channels + 1,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        bias=bias,
+        LFC_normalize=LFC_normalize,
     )
 
+
 def get_BatchNorm2d(manifold, num_channels):
-    return LorentzBatchNorm2d(manifold=manifold, num_channels=num_channels+1)
+    return LorentzBatchNorm2d(manifold=manifold, num_channels=num_channels + 1)
+
 
 def get_Activation(manifold):
     return LorentzReLU(manifold)
 
 
 class LorentzInputBlock(nn.Module):
-    """ Input Block of ResNet model """
+    """Input Block of ResNet model"""
 
     def __init__(self, manifold: CustomLorentz, img_dim, in_channels, bias=True):
         super(LorentzInputBlock, self).__init__()
@@ -38,12 +49,7 @@ class LorentzInputBlock(nn.Module):
 
         self.conv = nn.Sequential(
             get_Conv2d(
-                self.manifold,
-                img_dim,
-                in_channels,
-                kernel_size=3,
-                padding=1,
-                bias=bias
+                self.manifold, img_dim, in_channels, kernel_size=3, padding=1, bias=bias
             ),
             get_BatchNorm2d(self.manifold, in_channels),
             get_Activation(self.manifold),
@@ -56,11 +62,13 @@ class LorentzInputBlock(nn.Module):
 
 
 class LorentzBasicBlock(nn.Module):
-    """ Basic Block for Lorentz ResNet-10, -18 and -34 """
+    """Basic Block for Lorentz ResNet-10, -18 and -34"""
 
     expansion = 1
 
-    def __init__(self, manifold: CustomLorentz, in_channels, out_channels, stride=1, bias=True):
+    def __init__(
+        self, manifold: CustomLorentz, in_channels, out_channels, stride=1, bias=True
+    ):
         super(LorentzBasicBlock, self).__init__()
 
         self.manifold = manifold
@@ -75,7 +83,7 @@ class LorentzBasicBlock(nn.Module):
                 kernel_size=3,
                 stride=stride,
                 padding=1,
-                bias=bias
+                bias=bias,
             ),
             get_BatchNorm2d(self.manifold, out_channels),
             get_Activation(self.manifold),
@@ -85,7 +93,7 @@ class LorentzBasicBlock(nn.Module):
                 out_channels * LorentzBasicBlock.expansion,
                 kernel_size=3,
                 padding=1,
-                bias=bias
+                bias=bias,
             ),
             get_BatchNorm2d(self.manifold, out_channels * LorentzBasicBlock.expansion),
         )
@@ -101,7 +109,7 @@ class LorentzBasicBlock(nn.Module):
                     kernel_size=1,
                     stride=stride,
                     padding=0,
-                    bias=bias
+                    bias=bias,
                 ),
                 get_BatchNorm2d(
                     self.manifold, out_channels * LorentzBasicBlock.expansion
@@ -113,7 +121,9 @@ class LorentzBasicBlock(nn.Module):
         out = self.conv(x)
 
         # Residual = Add space components
-        out = out.narrow(-1, 1, res.shape[-1]-1) + res.narrow(-1, 1, res.shape[-1]-1)
+        out = out.narrow(-1, 1, res.shape[-1] - 1) + res.narrow(
+            -1, 1, res.shape[-1] - 1
+        )
         out = self.manifold.add_time(out)
 
         out = self.activation(out)
@@ -122,11 +132,13 @@ class LorentzBasicBlock(nn.Module):
 
 
 class LorentzBottleneck(nn.Module):
-    """ Residual block for Lorentz ResNet with > 50 layers """
+    """Residual block for Lorentz ResNet with > 50 layers"""
 
     expansion = 4
 
-    def __init__(self, manifold: CustomLorentz, in_channels, out_channels, stride=1, bias=False):
+    def __init__(
+        self, manifold: CustomLorentz, in_channels, out_channels, stride=1, bias=False
+    ):
         super(LorentzBottleneck, self).__init__()
 
         self.manifold = manifold
@@ -140,7 +152,7 @@ class LorentzBottleneck(nn.Module):
                 out_channels,
                 kernel_size=1,
                 padding=0,
-                bias=bias
+                bias=bias,
             ),
             get_BatchNorm2d(self.manifold, out_channels),
             get_Activation(self.manifold),
@@ -151,7 +163,7 @@ class LorentzBottleneck(nn.Module):
                 kernel_size=3,
                 stride=stride,
                 padding=1,
-                bias=bias
+                bias=bias,
             ),
             get_BatchNorm2d(self.manifold, out_channels),
             get_Activation(self.manifold),
@@ -161,7 +173,7 @@ class LorentzBottleneck(nn.Module):
                 out_channels * LorentzBottleneck.expansion,
                 kernel_size=1,
                 padding=0,
-                bias=bias
+                bias=bias,
             ),
             get_BatchNorm2d(self.manifold, out_channels * LorentzBottleneck.expansion),
         )
@@ -177,7 +189,7 @@ class LorentzBottleneck(nn.Module):
                     kernel_size=1,
                     stride=stride,
                     padding=0,
-                    bias=bias
+                    bias=bias,
                 ),
                 get_BatchNorm2d(
                     self.manifold, out_channels * LorentzBottleneck.expansion
@@ -189,7 +201,9 @@ class LorentzBottleneck(nn.Module):
         out = self.conv(x)
 
         # Residual = Add space components
-        out = out.narrow(-1, 1, res.shape[-1]-1) + res.narrow(-1, 1, res.shape[-1]-1)
+        out = out.narrow(-1, 1, res.shape[-1] - 1) + res.narrow(
+            -1, 1, res.shape[-1] - 1
+        )
         out = self.manifold.add_time(out)
 
         out = self.activation(out)

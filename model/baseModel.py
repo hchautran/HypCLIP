@@ -8,7 +8,7 @@ from .modules.hyp_discriminator import HypDiscriminator as HypDisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .manifolds.euclidean import Euclidean 
 from .manifolds.hyperboloid import Hyperboloid 
-from .manifolds.lorentz import Lorentz 
+from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
 from .manifolds.poincare import PoincareBall 
 from transformers import BlipVisionModel, BlipTextModel 
 from typing import  Optional, Tuple, Union
@@ -40,7 +40,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         self.use_lorentz_centroid = config.use_lorentz_centroid
 
         manifold = config.manifold
-
+    
         assert manifold in [EUCLID, POINCARE, LORENTZ]
 
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
@@ -97,12 +97,10 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
             return torch.matmul(x, y.t()) 
-        elif self.manifold_name == LORENTZ:
+        else: 
             # print('calculating lorentz distance')
             return -self.manifold.sqdist_batch(x, y)
-        else:
-            # print('calculating poincare distance')
-            return -self.manifold.sqdist_batch(x, y, c=self.curv)
+
 
     def itm_loss(self, imgs, cap, sims_i2t):
         bs = imgs.shape[0]

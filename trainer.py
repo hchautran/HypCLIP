@@ -174,9 +174,11 @@ class MyTrainer:
                 text_embeds = self.model.get_text_features(
                     input_ids=data["input_ids"], attention_mask=data["attention_mask"]
                 )
+                self.model.manifold.assert_check_point_on_manifold(text_embeds)
                 vision_embeds = self.model.get_vision_features(
                     pixel_values=data["pixel_values"][0].unsqueeze(0)
                 )
+                self.model.manifold.assert_check_point_on_manifold(vision_embeds)
                 all_text_embeds.append(text_embeds)
                 all_vision_embeds.append(vision_embeds)
 
