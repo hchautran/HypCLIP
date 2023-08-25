@@ -196,7 +196,7 @@ class CLIPVisionEmbeddings(nn.Module):
        
         self.batch_norm = LorentzBatchNorm2d(manifold=manifold, num_channels=self.embed_dim + 1)
         self.num_patches = (self.image_size // self.patch_size) ** 2
-        self.num_positions = self.num_patches + 1
+        self.num_positions = self.num_patches
         self.position_embedding = LorentzEmbedding(manifold, self.num_positions, self.embed_dim + 1)
 
         self.register_buffer("position_ids", torch.arange(self.num_positions).expand((1, -1)), persistent=False)
@@ -205,22 +205,19 @@ class CLIPVisionEmbeddings(nn.Module):
         batch_size = pixel_values.shape[0]
         pixel_values = pixel_values.permute(0,2,3,1)
         pixel_values = F.pad(pixel_values, pad=(1,0), mode="constant", value=0)
-        pixel_values = self.manifold.projx(pixel_values)
+        pixel_values = self.manifold.expmap0(pixel_values)
 
-        self.manifold.assert_check_point_on_manifold(pixel_values)
 
         patch_embeds = self.batch_norm(self.patch_embedding(pixel_values))
-        print(patch_embeds)
-        # self.manifold.assert_check_point_on_manifold(patch_embeds)
+        print(self.manifold.inner(patch_embeds, patch_embeds))
         
-        patch_embeds = self.manifold.lorentz_flatten(patch_embeds)
-        class_embeds = self.class_embedding.expand(batch_size, 1, -1)
+        embeddings = self.manifold.lorentz_flatten(patch_embeds)
 
-        # self.manifold.assert_check_point_on_manifold(class_embeds)
-
-        embeddings = torch.cat([class_embeds, patch_embeds], dim=1)
-
+        # class_embeds = self.class_embedding.expand(batch_size, 1, -1)
+        # embeddings = torch.cat([class_embeds, patch_embeds], dim=1)
         
+        self.manifold.assert_check_point_on_manifold(pixel_values)
+        self.manifold.assert_check_point_on_manifold(patch_embeds)
         position_embeddings = self.position_embedding(self.position_ids)
         embeddings = embeddings.narrow(-1, 1, position_embeddings.shape[-1] - 1) + position_embeddings.narrow(
             -1, 1, position_embeddings.shape[-1] - 1

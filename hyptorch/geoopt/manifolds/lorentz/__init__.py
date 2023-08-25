@@ -120,7 +120,7 @@ class Lorentz(Manifold):
 
     def inner(
         self,
-        x: torch.Tensor,
+        x: torch.Tensor, #x argument for maintaining the support of optims
         u: torch.Tensor,
         v: torch.Tensor = None,
         *,

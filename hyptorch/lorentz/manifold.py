@@ -2,11 +2,16 @@ import torch
 
 from hyptorch.geoopt import Lorentz
 from hyptorch.geoopt.manifolds.lorentz import math
+from typing import Tuple, Optional
 
 
 class CustomLorentz(Lorentz):
-    def _init__(self, k=1.0, learnable=False):
+
+    def __init__(self, k=1.0, learnable=False, atol=1e-5, rtol=1e-5):
         super(CustomLorentz, self).__init__(k=k, learnable=learnable)
+        self.atol = atol 
+        self.rtol = rtol 
+
 
     def sqdist(self, x, y, dim=-1):
         """Squared Lorentzian distance, as defined in the paper 'Lorentzian Distance Learning for Hyperbolic Representation'"""
@@ -63,21 +68,12 @@ class CustomLorentz(Lorentz):
         """ Implements flattening operation directly on the manifold. Based on Lorentz Direct Concatenation (Qu et al., 2022) """
         bs,h,w,c = x.shape
         # bs x H x W x C
-        time = x.narrow(-1, 0, 1).view(-1, h*w)
-        space = x.narrow(-1, 1, x.shape[-1] - 1).flatten(start_dim=1) # concatenate all x_s
-
+        time = x.narrow(-1, 0, 1).view(-1, h*w, 1)
+        space = x.narrow(-1, 1, x.shape[-1] - 1).flatten(start_dim=1, end_dim=2) # concatenate all x_s
         time_rescaled = torch.sqrt(torch.sum(time**2, dim=-1, keepdim=True)+(((h*w)-1)/-self.k))
         x = torch.cat([time_rescaled, space], dim=-1)
-        # x = self.add_time(x)
         return x
 
-    def lorentz_concat(self, x:torch.Tensor) -> torch.Tensor:
-        
-        space = x.narrow(-1, 1, x.shape[-1] - 1).flatten(start_dim=1) # concatenate all x_s
-        time = x.narrow(-1, 0, 1).view(-1, h*w)
-
-        time_rescaled = torch.sqrt(torch.sum(time**2, dim=-1, keepdim=True)+(((h*w)-1)/-self.k))
-        x = torch.cat([time_rescaled, space], dim=-1)
 
 
 
@@ -110,3 +106,18 @@ class CustomLorentz(Lorentz):
     def tangent_relu(self, x: torch.Tensor) -> torch.Tensor:
         """Implements ReLU activation in tangent space."""
         return self.expmap0(torch.relu(self.logmap0(x)))
+
+    def _check_point_on_manifold(
+        self, x: torch.Tensor, *, dim=-1, atol=1e-5, rtol=1e-5
+    ) -> Tuple[bool, Optional[str]]:
+        dn = x.size(dim) - 1
+        x = x**2
+        quad_form = -x.narrow(dim, 0, 1) + x.narrow(dim, 1, dn).sum(
+            dim=dim, keepdim=True
+        )
+        ok = torch.allclose(quad_form, -self.k, atol=self.atol, rtol=self.rtol)
+        if not ok:
+            reason = f"'x' minkowski quadratic form is not equal to {-self.k.item()}"
+        else:
+            reason = None
+        return ok, reason

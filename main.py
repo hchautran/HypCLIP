@@ -64,8 +64,8 @@ if __name__ == "__main__":
             test_loader=test_loader,
             processor=processor,
         )
-        # print(trainer.evaluate(mode="val"))
-        trainer.train()
+        print(trainer.evaluate(mode="val"))
+        # trainer.train()
         # print(trainer.evaluate(mode="test"))
 
     for ft_out in [256]:

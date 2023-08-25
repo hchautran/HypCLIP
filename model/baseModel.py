@@ -1,21 +1,12 @@
 import torch
 import torch.nn as nn
-from .modules.text_model import BLIPText 
-from .modules.vision_model import BLIPVision 
 from .modules.discriminator import Discriminator as DisModel
-from .modules.seq_linear import  LorentzSeqLinear, HypSeqLinear
-from .modules.hyp_discriminator import HypDiscriminator as HypDisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .manifolds.euclidean import Euclidean 
-from .manifolds.hyperboloid import Hyperboloid 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
-from .manifolds.poincare import PoincareBall 
-from transformers import BlipVisionModel, BlipTextModel 
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
-from .modules.utils import ManifoldMapper 
-
 from lavis.models.base_model import (
     MomentumDistilationMixin,
     SharedQueueMixin,
@@ -61,7 +52,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
             self.discriminator = DisModel(dim=config.ft_out, layer_dims=[256, 256, 256, 1])
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
-            self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
+            self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
             self.discriminator = LorentzDisModel(self.manifold, dim=config.ft_out, layer_dims=[256, 256,256])
         self.manifold_name =  manifold    
         self.vision_model = None 

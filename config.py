@@ -66,8 +66,8 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-# CACHE_DIR = "/Volumes/ExtraSpace/.cache"
-CACHE_DIR = '/mnt/data/.cache'
+CACHE_DIR = "/Volumes/ExtraSpace/.cache"
+# CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     "training_config": {
@@ -125,15 +125,17 @@ config_args = {
         ),
         "alpha": (0.4, "alpha"),
         "queue_size": (64000, "queue_size"),
-        "enable_log": (True, "enable log"),
+        "enable_log": (False, "enable log"),
     },
-    "model_config": {
+    "hybrid_model_config": {
         "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
         "manifold": (
             LORENTZ,
             "which manifold to use [euclidean, lorentz]",
         ),
-        "curv": (1, "hyperbolic curvature"),
+        "curv": (12.0, "hyperbolic curvature"),
+        "atol": (1e-2, "The relative tolerance parameter"),
+        "rtol": (1e-2, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (2.5, "clipping radius"),
         "vision_trainable_blocks": (0, "number of trainable blocks in vision model"),
