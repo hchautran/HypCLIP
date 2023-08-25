@@ -58,15 +58,11 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
-            self.discriminator = DisModel(dim=config.ft_out)
-        elif manifold == POINCARE:
-            self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
-            self.manifold = PoincareBall()
-            self.discriminator = HypDisModel(self.manifold, c=self.curv ,dim=config.ft_out)
+            self.discriminator = DisModel(dim=config.ft_out, layer_dims=[256, 256, 256, 1])
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
-            self.discriminator = LorentzDisModel(self.manifold, c=self.curv ,dim=config.ft_out)
+            self.discriminator = LorentzDisModel(self.manifold, dim=config.ft_out, layer_dims=[256, 256,256])
         self.manifold_name =  manifold    
         self.vision_model = None 
         self.text_model = None 
@@ -134,6 +130,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         dim=0).view(-1,1).to(imgs.device)
 
         disc = self.discriminator(img_enc_all, cap_enc_all)
+        print(disc.shape)
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 

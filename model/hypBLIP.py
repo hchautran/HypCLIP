@@ -16,6 +16,8 @@ from transformers.models.clip.modeling_clip import CLIPOutput
 from .modules.utils import ManifoldMapper
 from model.baseModel import BaseModel
 from .modules.utils import ManifoldMapper, LorentzCentroidPooler
+from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
+from transformers.activations import ACT2FN
 
 EUCLID = "euclidean"
 POINCARE = "poincare"
@@ -59,6 +61,24 @@ class HypBLIP(BaseModel):
                     ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
                 )
 
+            # text_head.append(
+            #     LFC_Block(self.manifold, in_features=257, out_features=257, activation=ACT2FN['gelu'],LFC_normalize=True ),
+            # )
+            # text_head.append(
+            #     LFC_Block(self.manifold, in_features=257, out_features=257,  activation=ACT2FN['gelu'], LFC_normalize=True),
+            # )
+            # text_head.append(
+            #     LFC_Block(self.manifold, in_features=257, out_features=257),
+            # )
+            # vision_head.append(
+            #     LFC_Block(self.manifold, in_features=257, out_features=257, activation=ACT2FN['gelu'], LFC_normalize=True),
+            # )
+            # vision_head.append(
+            #     LFC_Block(self.manifold, in_features=257, out_features=257, activation=ACT2FN['gelu'], LFC_normalize=True),
+            # )
+            # vision_head.append(
+            #     LFC_Block(self.manifold, in_features=257, out_features=257),
+            # )
   
 
         self.vision_model = BLIPVision(

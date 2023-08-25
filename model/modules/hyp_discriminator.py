@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .seq_linear import HypSeqLinear, LorentzSeqLinear
+from hyptorch.lorentz.layers import LorentzMLR 
+from hyptorch.lorentz.manifold import CustomLorentz 
 from model.manifolds.nn import HypAct
 
 class HypDiscriminator(nn.Module):
@@ -26,24 +28,22 @@ class HypDiscriminator(nn.Module):
         return torch.sigmoid(self.disc(torch.cat([feat1, feat2], dim=1)))
 
 class LorentzDiscriminator(nn.Module):
-    def __init__(self, manifold, c ,dim=512, layer_dims=[512,1], dropout=0.5, act_func='relu', fourier=False):
+    def __init__(self, manifold:CustomLorentz, dim=512, layer_dims=[512], dropout=0.5, act_func='relu'):
         super(LorentzDiscriminator, self).__init__()
         self.manifold = manifold
-        self.c = c
-        self.fourier = fourier
-        self.disc = LorentzSeqLinear(manifold, ft_in=(dim*4 if fourier else dim*2), layer_dims=layer_dims, dropout=dropout, act_func=act_func)
+        self.disc = LorentzSeqLinear(manifold, ft_in=2*dim+1, layer_dims=layer_dims, dropout=dropout, act_func=act_func)
+        self.mlr = LorentzMLR(manifold=manifold, num_features=layer_dims[-1], num_classes=1) 
 
     def forward(self, feat1, feat2):
-        if self.fourier:
-            feat1 = self.manifold.logmap0(feat1, c = self.c)
-            fourier_feat1 = torch.fft.fft(feat1).float()
+        # self.manifold.assert_check_point_on_manifold(feat1)
+        # self.manifold.assert_check_point_on_manifold(feat2)
+        space = torch.cat([feat1.narrow(-1, 1, feat1.shape[-1] - 1), feat2.narrow(-1, 1, feat2.shape[-1] - 1)], dim=-1)
+        # time = torch.cat([feat1.narrow(-1, 0, 1),  feat2.narrow(-1, 0, 1)], dim=-1)
+        # time_rescaled = torch.sqrt(torch.sum(time**2, dim=-1, keepdim=True)+(((feat1.shape[0] + feat2.shape[0])-1)/self.manifold.k))
+        out = self.manifold.add_time(space) 
+        # self.manifold.assert_check_point_on_manifold(out)
 
-            feat2 = self.manifold.logmap0(feat2, c = self.c)
-            fourier_feat2 = torch.fft.fft(feat2).float()
-            fourier_feat1 = self.manifold.expmap0(fourier_feat1, c = self.c)
-            fourier_feat2 = self.manifold.expmap0(fourier_feat2, c = self.c)
-            return torch.sigmoid(self.disc(torch.cat([feat1, feat2, fourier_feat1, fourier_feat2],  dim=1)))
-        return torch.sigmoid(self.disc(torch.cat([feat1, feat2], dim=1)))
+        return self.mlr(self.disc(out))
 
         
         

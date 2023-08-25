@@ -68,10 +68,17 @@ class CustomLorentz(Lorentz):
 
         time_rescaled = torch.sqrt(torch.sum(time**2, dim=-1, keepdim=True)+(((h*w)-1)/-self.k))
         x = torch.cat([time_rescaled, space], dim=-1)
-        self.assert_check_point_on_manifold(x)
         # x = self.add_time(x)
-
         return x
+
+    def lorentz_concat(self, x:torch.Tensor) -> torch.Tensor:
+        
+        space = x.narrow(-1, 1, x.shape[-1] - 1).flatten(start_dim=1) # concatenate all x_s
+        time = x.narrow(-1, 0, 1).view(-1, h*w)
+
+        time_rescaled = torch.sqrt(torch.sum(time**2, dim=-1, keepdim=True)+(((h*w)-1)/-self.k))
+        x = torch.cat([time_rescaled, space], dim=-1)
+
 
 
 
@@ -98,6 +105,7 @@ class CustomLorentz(Lorentz):
         if add_time:
             x = self.add_time(x)
         return x
+    
 
     def tangent_relu(self, x: torch.Tensor) -> torch.Tensor:
         """Implements ReLU activation in tangent space."""

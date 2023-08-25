@@ -8,6 +8,7 @@ from hyptorch.lorentz.layers import (
     LorentzBatchNorm1d,
     LorentzBatchNorm2d,
 )
+from transformers.activations import ACT2FN
 
 
 
@@ -24,7 +25,8 @@ class LFC_Block(Module):
             bias=True,
             activation=None,
             normalization="None",
-            LFC_normalize=False
+            LFC_normalize=False,
+            dropout=0.1
         ):
         super(LFC_Block, self).__init__()
 
@@ -41,12 +43,12 @@ class LFC_Block(Module):
             in_features=in_features, 
             out_features=out_features,
             bias=bias,
-            normalize=LFC_normalize
+            normalize=LFC_normalize,
+            dropout=dropout
         )
 
     def forward(self, x):
         x = self.linear(x)
-
         if self.batch_norm is not None:
             x = self.batch_norm(x)
         if self.activation is not None:
@@ -78,7 +80,6 @@ class LConv2d_Block(Module):
         self.manifold = manifold
         self.activation = activation
         self.normalization = normalization
-
         self.batch_norm = None
         if normalization=="batch_norm":
             self.batch_norm = LorentzBatchNorm2d(num_channels=out_channels, manifold=self.manifold)

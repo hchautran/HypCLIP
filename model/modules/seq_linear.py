@@ -2,7 +2,8 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from model.manifolds.poincare import PoincareBall
-from model.manifolds.nn import HypLinear, HypAct, LorentzLinear
+from model.manifolds.nn import HypLinear, HypAct 
+from hyptorch.lorentz.blocks.layer_blocks import LFC_Block 
 import math
 import torch
 import torch.nn as nn
@@ -99,9 +100,9 @@ class LorentzSeqLinear(nn.Module):
         self.act = []
         for idx in range(len(layer_dims)):
             if idx == 0:
-                self.linear.append(LorentzLinear(manifold, ft_in, layer_dims[idx], dropout=dropout))
+                self.linear.append(LFC_Block(manifold, ft_in, layer_dims[idx], dropout=dropout, normalization="batch_norm", activation=get_activate_func(act_func)))
             else:
-                self.linear.append(LorentzLinear(manifold, layer_dims[idx-1], layer_dims[idx], dropout=dropout, nonlin=get_activate_func(act_func)))
+                self.linear.append(LFC_Block(manifold, layer_dims[idx-1], layer_dims[idx], dropout=dropout, normalization="batch_norm" ))
             
         self.linear = nn.ModuleList(self.linear)
         

@@ -342,13 +342,11 @@ def expmap0(u, *, k, dim=-1):
     return _expmap0(u, k, dim=dim)
 
 
-# @torch.jit.script
+@torch.jit.script
 def _expmap0(u, k: torch.Tensor, dim: int = -1):
     nomin = _norm(u, keepdim=True, dim=dim)
-    u = u / nomin
-    nomin = (nomin / torch.sqrt(k)).clamp_max(EXP_MAX_NORM)
-    l_v = torch.sqrt(k) * torch.cosh(nomin) 
-    r_v = torch.sqrt(k) * torch.sinh(nomin) * u
+    l_v = torch.cosh(nomin / torch.sqrt(k)) * torch.sqrt(k)
+    r_v = torch.sqrt(k) * torch.sinh(nomin / torch.sqrt(k)) * u / nomin
     dn = r_v.size(dim) - 1
     p = torch.cat((l_v + r_v.narrow(dim, 0, 1), r_v.narrow(dim, 1, dn)), dim)
     return p

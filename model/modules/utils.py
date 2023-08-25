@@ -2,7 +2,8 @@ from transformers import CLIPVisionModelWithProjection, CLIPTextModelWithProject
 from transformers import BlipVisionModel, BlipTextModel
 import torch
 import torch.nn as nn
-from model.manifolds.lorentz import Lorentz
+import torch.nn.functional as F
+from hyptorch.lorentz.manifold import CustomLorentz
 
 
 def fr(m):
@@ -55,7 +56,7 @@ def freeze_blip(
 
 
 class ManifoldMapper(nn.Module):
-    def __init__(self, manifold, curv, clip_r=None):
+    def __init__(self, manifold:CustomLorentz, curv, clip_r=None):
         super().__init__()
         self.manifold = manifold
         self.curv = curv
@@ -66,11 +67,15 @@ class ManifoldMapper(nn.Module):
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
             fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
             x = x * fac
-        return self.manifold.projx(x)
+        
+        x = F.pad(x, (1,0), "constant", 0)
+        
+        out = self.manifold.expmap0(x)
+        return out 
 
 
 class LorentzCentroidPooler(nn.Module):
-    def __init__(self, manifold: Lorentz, curv, clip_r=None):
+    def __init__(self, manifold: CustomLorentz, curv, clip_r=None):
         super().__init__()
         self.manifold = manifold
         self.curv = curv

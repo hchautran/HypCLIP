@@ -65,3 +65,7 @@ class Euclidean(Manifold):
 
     def ptransp0(self, x, v, c):
         return x + v
+
+        
+    def assert_check_point_on_manifold(self, x):
+        pass

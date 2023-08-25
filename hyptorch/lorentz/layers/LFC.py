@@ -26,7 +26,8 @@ class LorentzLinear(nn.Module):
             bias=False,
             init_scale=None,
             learn_scale=False,
-            normalize=False
+            normalize=False,
+            dropout=0.1
         ):
         super(LorentzLinear, self).__init__()
         self.manifold = manifold
@@ -34,6 +35,7 @@ class LorentzLinear(nn.Module):
         self.out_features = out_features
         self.bias = bias
         self.normalize = normalize
+        self.dropout = nn.Dropout(dropout)
 
         self.weight = nn.Linear(self.in_features, self.out_features, bias=bias)
 
@@ -48,7 +50,8 @@ class LorentzLinear(nn.Module):
 
     def forward(self, x):
 
-        x = self.weight(x)
+        x = self.weight(self.dropout(x))
+
         x_space = x.narrow(-1, 1, x.shape[-1] - 1)
 
         if self.normalize:
@@ -70,8 +73,6 @@ class LorentzLinear(nn.Module):
             x = torch.cat([x_time, x_space], dim=-1)
         else:
             x = self.manifold.add_time(x_space)
-        
-      
         return x
 
     def reset_parameters(self):
