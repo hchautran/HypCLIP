@@ -69,7 +69,6 @@ class ManifoldMapper(nn.Module):
             x = x * fac
         
         x = F.pad(x, (1,0), "constant", 0)
-        
         out = self.manifold.expmap0(x)
         return out 
 
@@ -81,6 +80,6 @@ class LorentzCentroidPooler(nn.Module):
         self.curv = curv
         self.clip_r = clip_r
 
-    def forward(self, x, attention_mask=None):
-        pooled_x = self.manifold.centroid(x, attention_mask=attention_mask)
+    def forward(self, x, w=None ):
+        pooled_x = self.manifold.centroid(x, w)
         return pooled_x

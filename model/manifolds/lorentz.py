@@ -120,12 +120,7 @@ class Lorentz(LorentzOri):
         else:
             return res
 
-    def expmap0(self, u: torch.Tensor, c, *, project=True, dim=-1) -> torch.Tensor:
-        res = math.expmap0(u, k=c, dim=dim)
-        if project:
-            return math.project(res, k=c, dim=dim)
-        else:
-            return res
+
 
     def logmap(self, x: torch.Tensor, y: torch.Tensor, *, dim=-1) -> torch.Tensor:
         return math.logmap(x, y, k=self.k, dim=dim)
@@ -195,6 +190,15 @@ class Lorentz(LorentzOri):
         v = self.logmap0(y)
         v = self.transp0(x, v)
         return self.expmap(x, v)
+
+    def calc_time(self, space):
+        """Calculates time component from given space component."""
+        return torch.sqrt(torch.norm(space, dim=-1, keepdim=True) ** 2 + self.k)
+    
+    def add_time(self, space):
+        """Concatenates time component to given space component."""
+        time = self.calc_time(space)
+        return torch.cat([time, space], dim=-1)
 
     def geodesic_unit(
         self, t: torch.Tensor, x: torch.Tensor, u: torch.Tensor, *, dim=-1, project=True

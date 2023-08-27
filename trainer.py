@@ -6,6 +6,7 @@ from utils.retrivial_utils import evaluate_recall
 from tqdm.auto import tqdm
 import torch
 from config import EUCLID
+import time
 
 
 class MyTrainer:
@@ -105,6 +106,7 @@ class MyTrainer:
 
                 running_loss = 0.0
                 for data in tqdm(self.train_loader):
+                    start = time.time()
                     self.accelerator.free_memory()
                     self.optimizer.zero_grad()
                     current_step += 1
@@ -128,25 +130,23 @@ class MyTrainer:
 
                     if (current_step + 1) % self.log_freq == 0:
                         self.log(stats)
-                        self.log(
-                            {
-                                "current loss itm": loss_itm.item(),
-                                "current loss itc": loss_itc.item(),
-                                "current loss": loss.item(),
-                                "curvature": self.model.curv.item(),
-                                "temp": self.model.temp.item(),
-                            }
-                        )
                         print(stats)
                         print("Loss: {}".format(loss.item()))
+                    if (current_step + 1) % self.eval_freq == 0:
+                        metrics = self.evaluate(mode='val')
+                        print(metrics)
+                        self.log(metrics)
+                    print('infer time', time.time() - start)
+
+                    
                     # print('infer time', time.time() - start)
-                metrics = self.evaluate()
+                metrics = self.evaluate(mode='test')
                 print(metrics)
                 self.log(metrics)
-                if best_r_all < metrics["r_all"]:
+                if best_r_all < metrics["test/r_all"]:
                     waiting = 0
-                    best_r_all = metrics["r_all"]
-                    self.log({"best r_all": metrics["r_all"]})
+                    best_r_all = metrics["test/r_all"]
+                    self.log({"best r_all": metrics["test/r_all"]})
                     print("best r all", best_r_all)
                 elif epoch > self.config.min_epochs:
                     waiting += 1
@@ -190,7 +190,7 @@ class MyTrainer:
                 .detach()
                 .numpy()
             )
-            metrics = evaluate_recall(sims_t2i=sims_t2i)
+            metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
             metrics["epoch"] = self.current_epoch
         return metrics
 

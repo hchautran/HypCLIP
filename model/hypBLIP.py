@@ -60,26 +60,12 @@ class HypBLIP(BaseModel):
                 vision_head.append(
                     ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
                 )
-
-            # text_head.append(
-            #     LFC_Block(self.manifold, in_features=257, out_features=257, activation=ACT2FN['gelu'],LFC_normalize=True ),
-            # )
-            # text_head.append(
-            #     LFC_Block(self.manifold, in_features=257, out_features=257,  activation=ACT2FN['gelu'], LFC_normalize=True),
-            # )
-            # text_head.append(
-            #     LFC_Block(self.manifold, in_features=257, out_features=257),
-            # )
-            # vision_head.append(
-            #     LFC_Block(self.manifold, in_features=257, out_features=257, activation=ACT2FN['gelu'], LFC_normalize=True),
-            # )
-            # vision_head.append(
-            #     LFC_Block(self.manifold, in_features=257, out_features=257, activation=ACT2FN['gelu'], LFC_normalize=True),
-            # )
-            # vision_head.append(
-            #     LFC_Block(self.manifold, in_features=257, out_features=257),
-            # )
-  
+            dim = model.config.image_text_hidden_size
+            # vision_head.append(nn.Sequential(
+                # LFC_Block(self.manifold, dim + 1, dim + 1, bias=False, activation=ACT2FN['relu'], normalization="batch_norm"),
+                # LFC_Block(self.manifold, dim + 1, dim + 1, bias=False, activation=ACT2FN['relu'], normalization="batch_norm"),
+                # LFC_Block(self.manifold, dim + 1, dim + 1),
+            # ))
 
         self.vision_model = BLIPVision(
             config,

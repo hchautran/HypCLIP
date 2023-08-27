@@ -4,9 +4,11 @@ from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .manifolds.euclidean import Euclidean 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
+# from model.manifolds.lorentz import Lorentz 
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
+import time
 from lavis.models.base_model import (
     MomentumDistilationMixin,
     SharedQueueMixin,
@@ -36,7 +38,6 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
 
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
         self.weight_i2t = nn.Parameter(torch.as_tensor(0.5), requires_grad=False) 
-
         self.curv = torch.as_tensor(config.curv if manifold != EUCLID else 0)
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
@@ -49,11 +50,11 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
-            self.discriminator = DisModel(dim=config.ft_out, layer_dims=[256, 256, 256, 1])
+            self.discriminator = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 256, 256, 1])
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
-            self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
-            self.discriminator = LorentzDisModel(self.manifold, dim=config.ft_out, layer_dims=[256, 256,256])
+            self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
+            self.discriminator = LorentzDisModel(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 256,256])
         self.manifold_name =  manifold    
         self.vision_model = None 
         self.text_model = None 
@@ -196,6 +197,8 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
 
         image_embeds = vision_outputs[1]
         text_embeds = text_outputs[1]
+        self.manifold.assert_check_point_on_manifold(image_embeds)
+        self.manifold.assert_check_point_on_manifold(text_embeds)
         itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
         itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
         stats["logits/itm_loss"] = itm_loss.item() 

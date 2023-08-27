@@ -1,20 +1,20 @@
 import numpy as np
 
-def evaluate_recall(sims_t2i):
+def evaluate_recall(sims_t2i, mode='val'):
     recall_t2i, _ = t2i(sims_t2i, return_ranks=False)
     recall_i2t, _ = i2t(sims_t2i.T, return_ranks=False)
     r1i, r5i, r10i, _, _ = recall_i2t
     r1t, r5t, r10t, _, _ = recall_t2i
     output = {
-        'r1_i2t': r1i,
-        'r5_i2t': r5i,
-        'r10_i2t': r10i,
-        'r_i2t': r1i + r5i + r10i,
-        'r1_t2i': r1t,
-        'r5_t2i': r5t,
-        'r10_t2i': r10t,
-        'r_t2i': r1t + r5t + r10t,
-        'r_all': r1t + r5t + r10t + r1i + r5i + r10i,
+        f'{mode}/r1_i2t': r1i,
+        f'{mode}/r5_i2t': r5i,
+        f'{mode}/r10_i2t': r10i,
+        f'{mode}/r_i2t': r1i + r5i + r10i,
+        f'{mode}/r1_t2i': r1t,
+        f'{mode}/r5_t2i': r5t,
+        f'{mode}/r10_t2i': r10t,
+        f'{mode}/r_t2i': r1t + r5t + r10t,
+        f'{mode}/r_all': r1t + r5t + r10t + r1i + r5i + r10i,
     }
     return output 
 

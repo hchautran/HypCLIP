@@ -64,17 +64,15 @@ if __name__ == "__main__":
             test_loader=test_loader,
             processor=processor,
         )
-        print(trainer.evaluate(mode="val"))
-        # trainer.train()
-        # print(trainer.evaluate(mode="test"))
+        trainer.train()
 
-    for ft_out in [256]:
+    for ft_out in [512]:
         config.ft_out = ft_out
         print(config.enable_log)
-        for vision_trainable_blocks in [1]:
+        for vision_trainable_blocks in [0,1,3]:
             config.vision_trainable_blocks = vision_trainable_blocks
-            for text_trainable_blocks in [1]:
+            for text_trainable_blocks in [0,1,3]:
                 config.text_trainable_blocks = text_trainable_blocks
-                for manifold in [LORENTZ, EUCLID]:
+                for manifold in [EUCLID, LORENTZ]:
                     config.manifold = manifold
                     inner_training_loop()

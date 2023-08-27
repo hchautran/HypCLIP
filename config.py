@@ -66,22 +66,22 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-CACHE_DIR = "/Volumes/ExtraSpace/.cache"
-# CACHE_DIR = '/mnt/data/.cache'
+# CACHE_DIR = "/Volumes/ExtraSpace/.cache"
+CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     "training_config": {
         "lr": (1e-4, "learning rate"),
         "dropout": (0.0, "dropout probability"),
         "cuda": (0, "which cuda device to use (-1 for cpu training)"),
-        "epochs": (10, "maximum number of epochs to train for"),
+        "epochs": (100, "maximum number of epochs to train for"),
         "weight_decay": (0.0, "l2 regularization strength"),
         "optimizer": ("adam", "which optimizer to use, can be any of [sgd, adam]"),
         "momentum": (0.999, "momentum in optimizer"),
         "patience": (25, "patience for early stopping"),
         "seed": (42, "seed for training"),
         "log_freq": (1, "how often to compute print train/val metrics (in epochs)"),
-        "eval_freq": (-1, "how often to compute val metrics (in epochs)"),
+        "eval_freq": (725, "how often to compute val metrics (in epochs)"),
         "save": (0, "1 to save model and logs and 0 otherwise"),
         "save_dir": (
             None,
@@ -98,9 +98,9 @@ config_args = {
             "max norm for gradient clipping, or None for no gradient clipping",
         ),
         "min_epochs": (25, "do not early stop before min-epochs"),
-        "batch_size": (20, "batch size"),
+        "batch_size": (200, "batch size"),
         "mixed_precision": (
-            "fp16",
+            "no",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
         ),
         "gradient_accumulation_steps": (
@@ -112,7 +112,7 @@ config_args = {
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            3.0,
+            5.0,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
@@ -125,7 +125,7 @@ config_args = {
         ),
         "alpha": (0.4, "alpha"),
         "queue_size": (64000, "queue_size"),
-        "enable_log": (False, "enable log"),
+        "enable_log": (True, "enable log"),
     },
     "hybrid_model_config": {
         "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
@@ -133,16 +133,16 @@ config_args = {
             LORENTZ,
             "which manifold to use [euclidean, lorentz]",
         ),
-        "curv": (12.0, "hyperbolic curvature"),
-        "atol": (1e-2, "The relative tolerance parameter"),
-        "rtol": (1e-2, "The absolute tolerance parameter"),
+        "curv": (5.0, "hyperbolic curvature"),
+        "atol": (1e-5, "The relative tolerance parameter"),
+        "rtol": (1e-5, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
-        "clip_radius": (2.5, "clipping radius"),
+        "clip_radius": (5.0, "clipping radius"),
         "vision_trainable_blocks": (0, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (0, "number of trainable blocks in text model"),
         "ft_out": (256, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
-        "freeze_embedding": (False, "freeze embedding layers"),
+        "freeze_embedding": (True, "freeze embedding layers"),
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
     },
     "data_config": {

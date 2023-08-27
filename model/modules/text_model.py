@@ -35,10 +35,8 @@ class CLIPText(nn.Module):
         else:
             pooled_output = last_hidden_state
         for layer in self.head:
-            if isinstance(layer, LorentzCentroidPooler):
-                pooled_output = layer(pooled_output, attention_mask)
-            else:
                 pooled_output = layer(pooled_output)
+
 
         return last_hidden_state, pooled_output
     
@@ -76,10 +74,7 @@ class BLIPText(nn.Module):
             pooled_output = last_hidden_state
 
         for layer in self.head:
-            if isinstance(layer, LorentzCentroidPooler):
-                pooled_output = layer(pooled_output, attention_mask)
-            else:
-                pooled_output = layer(pooled_output)
+            pooled_output = layer(pooled_output)
 
 
         return last_hidden_state, pooled_output
