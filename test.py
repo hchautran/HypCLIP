@@ -1,6 +1,3 @@
-from torch import embedding_renorm_
-from LAVIS.evaluate import main
-from hyptorch.lorentz.layers.LEmbed import LorentzEmbedding
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.lorentz.blocks.layer_blocks import LFC_Block 
 from hyptorch.models.clip import (
@@ -61,26 +58,14 @@ if __name__ == "__main__":
     dataset.set_format("numpy")
 
 
-    train_loader = get_dataloader(
-        dataset["train"],
-        config.batch_size,
-        processor=processor,
-        mode="train",
-        use_random_sampler=False,
-    )
     test_loader = get_dataloader(dataset["test"], 5, processor=processor, mode="test")
-    val_loader = get_dataloader(dataset["val"], 5, processor=processor, mode="val")
 
-    
     clip_cfg = CLIPConfig().from_pretrained(config.model_ckt)
     manifold = CustomLorentz(k=config.curv)
     text_model = HypCLIPTextTransformer(manifold=manifold, config=clip_cfg.text_config)
     vision_model = HypCLIPVisionTransformer(manifold=manifold, config=clip_cfg.vision_config)
 
-
-
-
-    for batch in train_loader: 
+    for batch in test_loader: 
         text =text_model(batch['input_ids'], batch['attention_mask'])
         manifold.assert_check_point_on_manifold(text[0])
         vision =vision_model(batch['pixel_values'])
