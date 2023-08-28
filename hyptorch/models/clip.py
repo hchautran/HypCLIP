@@ -214,18 +214,14 @@ class HypCLIPPreTrainedModel(PreTrainedModel):
                 module.visual_projection.weight,
                 std=module.vision_embed_dim**-0.5 * self.config.initializer_factor,
             )
-        if isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
-        if isinstance(module, nn.Linear) and module.bias is not None:
-            module.bias.data.zero_()
+
 
     def _set_gradient_checkpointing(self, module, value=False):
         if isinstance(module, HypCLIPEncoder):
             module.gradient_checkpointing = value
 
 
-class HypCLIPModel(HypCLIPPreTrainedModel):
+class HypCLIPModel(PreTrainedModel):
     config_class = CLIPConfig
 
     def __init__(self, manifold,config: CLIPConfig):
@@ -251,14 +247,14 @@ class HypCLIPModel(HypCLIPPreTrainedModel):
         self.text_embed_dim = text_config.hidden_size
         self.vision_embed_dim = vision_config.hidden_size
 
-        self.text_model = HypCLIPTextTransformer(text_config)
-        self.vision_model = HypCLIPVisionTransformer(vision_config)
+        self.text_model = HypCLIPTextTransformer(self.manifold, text_config)
+        self.vision_model = HypCLIPVisionTransformer(self.manifold, vision_config)
 
-        self.visual_projection = LorentzLinear(self.vision_embed_dim + 1, self.projection_dim, bias=False)
-        self.text_projection = LorentzLinear(self.text_embed_dim + 1, self.projection_dim, bias=False)
+        self.visual_projection = LorentzLinear(self.manifold, self.vision_embed_dim + 1, self.projection_dim + 1, bias=False)
+        self.text_projection = LorentzLinear(self.manifold, self.text_embed_dim + 1, self.projection_dim + 1, bias=False)
         self.logit_scale = nn.Parameter(torch.tensor(self.config.logit_scale_init_value))
-
         self.post_init()
+
 
     def get_text_features(
         self,

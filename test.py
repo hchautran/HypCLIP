@@ -3,6 +3,7 @@ from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
 from hyptorch.models.clip import (
     HypCLIPVisionTransformer,
     HypCLIPTextTransformer,
+    HypCLIPModel
 ) 
 from transformers import CLIPConfig 
 import torch
@@ -23,7 +24,6 @@ if __name__ == "__main__":
     manifold = CustomLorentz(k=config.curv, atol=config.atol, rtol=config.rtol)
     x = torch.rand((100, 512)).uniform_(-1.0, 1.0) 
     x = manifold.expmap0(F.pad(x, (1,0), 'constant', 0))
-    # print(manifold.inner(x, x))
    
     manifold.assert_check_point_on_manifold(x)
     layers = nn.Sequential(
@@ -34,7 +34,6 @@ if __name__ == "__main__":
 
     x = layers(x)
     manifold.assert_check_point_on_manifold(x)
-    # print(manifold.inner(x, x))
 
     if "blip" in config.model_ckt:
         print("Getting BLIP processor...")
@@ -60,16 +59,24 @@ if __name__ == "__main__":
 
     test_loader = get_dataloader(dataset["test"], 5, processor=processor, mode="test")
 
-    clip_cfg = CLIPConfig().from_pretrained(config.model_ckt)
+    clip_cfg = CLIPConfig.from_pretrained(config.model_ckt)
     manifold = CustomLorentz(k=config.curv)
     text_model = HypCLIPTextTransformer(manifold=manifold, config=clip_cfg.text_config)
     vision_model = HypCLIPVisionTransformer(manifold=manifold, config=clip_cfg.vision_config)
+    model = HypCLIPModel(manifold=manifold, config=clip_cfg)
 
     for batch in test_loader: 
         text =text_model(batch['input_ids'], batch['attention_mask'])
         manifold.assert_check_point_on_manifold(text[0])
         vision =vision_model(batch['pixel_values'])
         manifold.assert_check_point_on_manifold(vision[0])
+        out = model(
+            
+            input_ids=batch['input_ids'],
+            pixel_values=batch['pixel_values'],
+            attention_mask=batch['attention_mask']
+        )
+        print(out)
         
         break
 

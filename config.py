@@ -98,7 +98,7 @@ config_args = {
             "max norm for gradient clipping, or None for no gradient clipping",
         ),
         "min_epochs": (25, "do not early stop before min-epochs"),
-        "batch_size": (200, "batch size"),
+        "batch_size": (10, "batch size"),
         "mixed_precision": (
             "no",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
@@ -128,7 +128,7 @@ config_args = {
         "enable_log": (True, "enable log"),
     },
     "hybrid_model_config": {
-        "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
+        "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoin on Hugging Face"),
         "manifold": (
             LORENTZ,
             "which manifold to use [euclidean, lorentz]",

@@ -58,8 +58,6 @@ class HypCLIPVisionEmbeddings(nn.Module):
 
 
         patch_embeds = self.batch_norm(self.patch_embedding(pixel_values))
-        print(self.manifold.inner(patch_embeds, patch_embeds))
-        
         embeddings = self.manifold.lorentz_flatten(patch_embeds)
 
         
