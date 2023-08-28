@@ -9,7 +9,7 @@ from hyptorch.lorentz.layers import (
     LorentzBatchNorm2d,
 )
 from transformers.activations import ACT2FN
-
+from transformers import CLIPModel 
 
 
 class LFC_Block(Module):

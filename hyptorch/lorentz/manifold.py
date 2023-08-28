@@ -1,5 +1,4 @@
 import torch
-
 from hyptorch.geoopt import Lorentz
 from hyptorch.geoopt.manifolds.lorentz import math
 from typing import Tuple, Optional
@@ -25,6 +24,12 @@ class CustomLorentz(Lorentz):
     def calc_time(self, space):
         """Calculates time component from given space component."""
         return torch.sqrt(torch.norm(space, dim=-1, keepdim=True) ** 2 + self.k)
+
+
+    def bmm(self, x: torch.Tensor, y: torch.Tensor):
+        x = x.clone()
+        x.narrow(-1, 0, 1).mul_(-1)
+        return x @ y
 
     def centroid(self, x, w=None, eps=1e-8):
         """Centroid implementation. Adapted the code from Chen et al. (2022)"""
@@ -73,8 +78,6 @@ class CustomLorentz(Lorentz):
         time_rescaled = torch.sqrt(torch.sum(time**2, dim=-1, keepdim=True)+(((h*w)-1)/-self.k))
         x = torch.cat([time_rescaled, space], dim=-1)
         return x
-
-
 
 
 

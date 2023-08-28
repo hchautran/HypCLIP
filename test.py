@@ -2,9 +2,11 @@ from torch import embedding_renorm_
 from LAVIS.evaluate import main
 from hyptorch.lorentz.layers.LEmbed import LorentzEmbedding
 from hyptorch.lorentz.manifold import CustomLorentz
-from hyptorch.lorentz.layers.LCLIP import CLIPTextEmbeddings, CLIPVisionEmbeddings, VisionEmbeddings 
-from hyptorch.lorentz.layers.LFC import LorentzLinear 
 from hyptorch.lorentz.blocks.layer_blocks import LFC_Block 
+from hyptorch.models.clip import (
+    HypCLIPVisionTransformer,
+    HypCLIPTextTransformer,
+) 
 from transformers import CLIPConfig 
 import torch
 from transformers import (
@@ -22,9 +24,9 @@ if __name__ == "__main__":
     from config import EUCLID, LORENTZ, POINCARE
     config = parser.parse_args()
     manifold = CustomLorentz(k=config.curv, atol=config.atol, rtol=config.rtol)
-    x = torch.rand((100, 384)).uniform_(-1.5, 1.5) 
+    x = torch.rand((100, 512)).uniform_(-1.0, 1.0) 
     x = manifold.expmap0(F.pad(x, (1,0), 'constant', 0))
-    print(manifold.inner(x, x))
+    # print(manifold.inner(x, x))
    
     manifold.assert_check_point_on_manifold(x)
     layers = nn.Sequential(
@@ -36,12 +38,6 @@ if __name__ == "__main__":
     x = layers(x)
     manifold.assert_check_point_on_manifold(x)
     # print(manifold.inner(x, x))
-
-
-
-
-
-
 
     if "blip" in config.model_ckt:
         print("Getting BLIP processor...")
@@ -78,23 +74,17 @@ if __name__ == "__main__":
     
     clip_cfg = CLIPConfig().from_pretrained(config.model_ckt)
     manifold = CustomLorentz(k=config.curv)
-    text_emb = CLIPTextEmbeddings(manifold=manifold, config=clip_cfg.text_config)
-    vision_emb = CLIPVisionEmbeddings(manifold=manifold, config=clip_cfg.vision_config)
-    # vision_emb = VisionEmbeddings(config=clip_cfg.vision_config)
+    text_model = HypCLIPTextTransformer(manifold=manifold, config=clip_cfg.text_config)
+    vision_model = HypCLIPVisionTransformer(manifold=manifold, config=clip_cfg.vision_config)
 
 
 
 
     for batch in train_loader: 
-        print(batch['pixel_values'].shape)
-        print(batch['input_ids'].shape)
-        text =text_emb(batch['input_ids'])
-        print('text size', text.shape)
-        manifold.assert_check_point_on_manifold(text)
-        img =vision_emb(batch['pixel_values'])
-        print(img.shape)
-        print(manifold._check_point_on_manifold(img))
-        manifold.assert_check_point_on_manifold(img)
+        text =text_model(batch['input_ids'], batch['attention_mask'])
+        manifold.assert_check_point_on_manifold(text[0])
+        vision =vision_model(batch['pixel_values'])
+        manifold.assert_check_point_on_manifold(vision[0])
         
         break
 
