@@ -79,5 +79,3 @@ class BLIPText(nn.Module):
 
         return last_hidden_state, pooled_output
     
-
-    

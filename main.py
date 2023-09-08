@@ -5,6 +5,7 @@ from transformers import (
 from datasets import load_dataset
 from model.hypCLIP import HypCLIP
 from model.hypBLIP import HypBLIP
+from model.perceiverModel import MyModel
 from transformers import CLIPProcessor, BlipProcessor
 from utils.data_utils import get_dataloader, preprocess_img
 from trainer import MyTrainer
@@ -38,7 +39,6 @@ if __name__ == "__main__":
     ).remove_columns(["image"])
     dataset.set_format("numpy")
 
-   
 
     @find_executable_batch_size(starting_batch_size=config.batch_size)
     def inner_training_loop(batch_size):
@@ -54,7 +54,8 @@ if __name__ == "__main__":
             dataset["test"], 5, processor=processor, mode="test"
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=processor, mode="val")
-        model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
+        # model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
+        model = MyModel(config) 
         trainer = MyTrainer(
             model=model,
             config=config,

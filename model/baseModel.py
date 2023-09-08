@@ -62,9 +62,9 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
     def num_parameters(self, only_trainable=True):
         num_params = 0
         if only_trainable:
-            num_params += sum(p.numel() for p in self.parameters() if p.requires_grad)
+            num_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
         else:
-            num_params += sum(p.numel() for p in self.parameters())
+            num_params = sum(p.numel() for p in self.parameters())
         return num_params
 
     def eval(self):
@@ -189,7 +189,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         )
         
 
-        text_outputs = self.text_model(
+        text_outputs = self.text_modeltext_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,

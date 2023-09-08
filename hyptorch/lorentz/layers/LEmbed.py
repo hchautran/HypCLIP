@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from typing import Optional
 import torch
 from torch import Tensor
+from transformers import PerceiverModel 
 
 
 __all__ = ["Embedding", "EmbeddingBag"]

@@ -125,10 +125,10 @@ config_args = {
         ),
         "alpha": (0.4, "alpha"),
         "queue_size": (64000, "queue_size"),
-        "enable_log": (True, "enable log"),
+        "enable_log": (False, "enable log"),
     },
     "hybrid_model_config": {
-        "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoin on Hugging Face"),
+        "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
         "manifold": (
             LORENTZ,
             "which manifold to use [euclidean, lorentz]",
@@ -144,6 +144,11 @@ config_args = {
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (True, "freeze embedding layers"),
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
+    },
+    "perceiver": {
+        "d_latents": (1024, 'latent dimentsion'),
+        "num_latents": (50, 'number of latent query'),
+        "num_self_attends_per_block": (1, 'latent dimentsion'),
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

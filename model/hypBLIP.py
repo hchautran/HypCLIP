@@ -10,7 +10,7 @@ from .manifolds.euclidean import Euclidean
 from .manifolds.hyperboloid import Hyperboloid
 from .manifolds.lorentz import Lorentz
 from .manifolds.poincare import PoincareBall
-from transformers import BlipVisionModel, BlipTextModel, BlipForImageTextRetrieval
+from transformers import BlipForImageTextRetrieval
 from typing import Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 from .modules.utils import ManifoldMapper

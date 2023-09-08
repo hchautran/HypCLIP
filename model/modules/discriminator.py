@@ -7,15 +7,10 @@ class Discriminator(nn.Module):
     def __init__(self, dim=512, layer_dims=[512,1], dropout=0.5, act_func='relu', fourier=False):
         super(Discriminator, self).__init__()
         self.fourier = fourier
-        self.disc = SeqLinear(ft_in=(dim*2 if self.fourier else dim*2) , layer_dims=layer_dims, dropout=dropout, act_func=act_func)
+        self.disc = SeqLinear(ft_in=dim*2 , layer_dims=layer_dims, dropout=dropout, act_func=act_func)
 
     def forward(self, feat1, feat2):
-        if self.fourier:
-            fourier_feat1 = torch.fft.fft(feat1).float()
-            fourier_feat2 = torch.fft.fft(feat2).float()
-            return torch.sigmoid(self.disc(torch.cat([feat1, feat2, fourier_feat1, fourier_feat2], dim=1)))
-        else:
-            return torch.sigmoid(self.disc(torch.cat([feat1, feat2], dim=1)))
+        return torch.sigmoid(self.disc(torch.cat([feat1, feat2], dim=1)))
 
         
 class CoDiscriminator(nn.Module):
