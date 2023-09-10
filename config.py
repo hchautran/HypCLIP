@@ -98,7 +98,7 @@ config_args = {
             "max norm for gradient clipping, or None for no gradient clipping",
         ),
         "min_epochs": (25, "do not early stop before min-epochs"),
-        "batch_size": (10, "batch size"),
+        "batch_size": (50, "batch size"),
         "mixed_precision": (
             "no",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
