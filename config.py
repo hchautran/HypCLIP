@@ -66,8 +66,8 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-CACHE_DIR = "/Volumes/ExtraSpace/.cache"
-# CACHE_DIR = '/mnt/data/.cache'
+# CACHE_DIR = "/Volumes/ExtraSpace/.cache"
+CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     "training_config": {
@@ -81,7 +81,6 @@ config_args = {
         "patience": (25, "patience for early stopping"),
         "seed": (42, "seed for training"),
         "log_freq": (1, "how often to compute print train/val metrics (in epochs)"),
-        "eval_freq": (725, "how often to compute val metrics (in epochs)"),
         "save": (0, "1 to save model and logs and 0 otherwise"),
         "save_dir": (
             None,
@@ -98,9 +97,8 @@ config_args = {
             "max norm for gradient clipping, or None for no gradient clipping",
         ),
         "min_epochs": (25, "do not early stop before min-epochs"),
-        "batch_size": (50, "batch size"),
         "mixed_precision": (
-            "no",
+            "fp16",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
         ),
         "gradient_accumulation_steps": (
@@ -120,17 +118,18 @@ config_args = {
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_neg_margin": (
-            0.25,
+            0.0,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
-        "alpha": (0.4, "alpha"),
-        "queue_size": (64000, "queue_size"),
-        "enable_log": (False, "enable log"),
+        "enable_log": (True, "enable log"),
+        "batch_size": (120, "batch size"),
+        "eval_freq": (1209, "how often to compute val metrics (in epochs)"),
+        "weight_i2t": (0.25, "weight image to text")
     },
     "hybrid_model_config": {
         "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
         "manifold": (
-            LORENTZ,
+            EUCLID,
             "which manifold to use [euclidean, lorentz]",
         ),
         "curv": (10.0, "hyperbolic curvature"),
@@ -146,9 +145,12 @@ config_args = {
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
     },
     "perceiver": {
-        "d_latents": (1024, 'latent dimentsion'),
-        "num_latents": (50, 'number of latent query'),
-        "num_self_attends_per_block": (1, 'latent dimentsion'),
+        "d_latents": (256, 'latent dimentsion'),
+        "num_latents": (24, 'number of latent query'),
+        "num_self_attends_per_block": (3, 'num selft attenton per block'),
+        "num_blocks": (6, 'multi modal blocks'),
+        "num_cross_attention_heads": (2, 'multi modal blocks'),
+        "num_self_attention_heads": (2, 'multi modal blocks'),
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

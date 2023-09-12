@@ -9,6 +9,7 @@ from transformers import CLIPConfig
 import torch
 from transformers import (
     CLIPProcessor,
+    BlipForImageTextRetrieval
 )
 from transformers import CLIPProcessor, BlipProcessor
 from utils.data_utils import get_dataloader, preprocess_img
@@ -16,11 +17,13 @@ from utils.data_utils import get_flickr
 import torch.nn.functional  as F
 import torch.nn as nn
 from transformers.activations import ACT2FN
+from peft import  get_peft_model
 
+from peft import LoraConfig, TaskType
 if __name__ == "__main__":
-    # from config import parser
+    from config import parser
     # from config import EUCLID, LORENTZ, POINCARE
-    # config = parser.parse_args()
+    config = parser.parse_args()
     # manifold = CustomLorentz(k=config.curv, atol=config.atol, rtol=config.rtol)
     # x = torch.rand((100, 512)).uniform_(-1.0, 1.0) 
     # x = manifold.expmap0(F.pad(x, (1,0), 'constant', 0))
@@ -79,9 +82,20 @@ if __name__ == "__main__":
     #     print(out)
         
     #     break
-    input = torch.rand(50, 1024, 128)
-    poolder = nn.Conv1d(in_channels=1024, out_channels=512, kernel_size=128, stride=128)
-    print(poolder(input).shape) 
+    model = BlipForImageTextRetrieval.from_pretrained(config.model_ckt)
+    print(model)
+    peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=8, 
+        lora_alpha=32, 
+        lora_dropout=0.1, 
+        target_modules=['qkv', 'projection', 'fc1', 'fc2', 'query', 'key', 'value', 'dense', 'vision_proj', 'text_proj']
+    )
+
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
+    
 
 
 

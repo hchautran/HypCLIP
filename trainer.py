@@ -7,6 +7,7 @@ from tqdm.auto import tqdm
 import torch
 from config import EUCLID
 import time
+from transformers import Blip2Model
 
 
 class MyTrainer:
@@ -86,7 +87,7 @@ class MyTrainer:
         print("RUNNING:", self.name)
 
         if self.enable_log:
-            wandb.init(name=self.name, config=vars(self.config), reinit=True, project="HypBLIP")
+            wandb.init(name=self.name, config=vars(self.config), reinit=True, project="Perceiver")
         print("trainable parameters:", self.model.num_parameters())
         self.log({"trainable parameters": self.model.num_parameters()})
 
@@ -112,7 +113,7 @@ class MyTrainer:
                     current_step += 1
                     # assert len(img_ids) == len(set(img_ids))
 
-                    loss, stats, loss_itc, loss_itm = self.model(
+                    loss, stats, _, _ = self.model(
                         input_ids=data["input_ids"],
                         attention_mask=data["attention_mask"],
                         pixel_values=data["pixel_values"],
@@ -132,7 +133,7 @@ class MyTrainer:
                         self.log(stats)
                         print(stats)
                         print("Loss: {}".format(loss.item()))
-                    if (current_step + 1) % self.eval_freq == 0:
+                    if self.eval_freq != -1 and (current_step + 1) % self.eval_freq == 0:
                         metrics = self.evaluate(mode='val')
                         print(metrics)
                         self.log(metrics)

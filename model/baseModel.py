@@ -94,7 +94,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         bs = imgs.shape[0]
         weights_i2t = F.softmax(sims_i2t, dim=1)
         weights_t2i = F.softmax(sims_i2t.T, dim=1)
-        mask = (torch.eye(bs)>1).to(self.device)
+        mask = (torch.eye(bs) > 0).to(self.device)
 
         weights_i2t.masked_fill_(mask, 0)
         weights_t2i.masked_fill_(mask, 0) 

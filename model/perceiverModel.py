@@ -7,8 +7,8 @@ import torch.nn.functional as F
 from transformers import BlipForImageTextRetrieval
 from transformers import PerceiverConfig
 from .modules.utils import freeze_blip 
-from .modules.perceiver import MultiModalLayer
-
+from .modules.perceiver import MultiModalHead 
+from peft import get_peft_model, LoraConfig, TaskType
 
 EUCLID = 'euclidean'
 POINCARE = 'poincare'
@@ -39,36 +39,42 @@ class MyModel(nn.Module):
         self.model_ckt = config.model_ckt
         self.ft_out = config.ft_out
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.use_lorentz_centroid = config.use_lorentz_centroid
-        manifold = config.manifold
-    
-
+        self.weight_i2t = config.weight_i2t
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
-        self.weight_i2t = nn.Parameter(torch.as_tensor(0.5), requires_grad=False) 
-        self.curv = torch.as_tensor(config.curv if manifold != EUCLID else 0)
-        if not torch.is_floating_point(self.curv):
-            self.curv = self.curv.to(torch.get_default_dtype())
-        
         self.discriminator = DisModel(self.ft_out, layer_dims=[1])
         model = BlipForImageTextRetrieval.from_pretrained(self.model_ckt)
+
         head_config = PerceiverConfig(
             d_latents=config.d_latents, 
             num_latents=config.num_latents, 
-            num_self_attends_per_block=config.num_self_attends_per_block
+            num_self_attends_per_block=config.num_self_attends_per_block,
+            num_cross_attention_heads=config.num_cross_attention_heads,
+            num_self_attention_heads=config.num_self_attention_heads,
         )
-        print(model)
+        peft_config = LoraConfig(
+            task_type=TaskType.FEATURE_EXTRACTION, 
+            inference_mode=False, 
+            r=8, 
+            lora_alpha=32, 
+            lora_dropout=0.1, 
+            target_modules=['dense', 'vision_proj', 'text_proj', 'query', 'value','key']
+        )
+        model = get_peft_model(model, peft_config)
+        model.print_trainable_parameters()
+
 
         self.vision_body = model.vision_model
-        self.text_body =  model.text_encoder 
-        self.multimodal_head = MultiModalLayer(
+        self.text_body =  model.text_encoder
+        self.text_head = model.text_proj
+        self.vision_head = model.vision_proj
+        self.multimodal_head = MultiModalHead(
             head_config, 
-            d_vision=model.config.text_config.hidden_size, 
-            d_text=model.config.vision_config.hidden_size
+            d_vision=model.config.image_text_hidden_size, 
+            d_text=model.config.image_text_hidden_size,
+            d_out=model.config.image_text_hidden_size,
+            num_blocks=self.config.num_blocks
         ) 
-        self.vision_pooler = ConvPooler(config)
-        self.text_pooler = ConvPooler(config)
 
-        freeze_blip(vision_model=self.vision_body, text_model=self.text_body, num_trainable_blocks=0, freeze_embeddings=True)
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
@@ -98,7 +104,7 @@ class MyModel(nn.Module):
         bs = imgs.shape[0]
         weights_i2t = F.softmax(sims_i2t, dim=1)
         weights_t2i = F.softmax(sims_i2t.T, dim=1)
-        mask = (torch.eye(bs)>1).to(self.device)
+        mask = (torch.eye(bs) > 0).to(self.device)
 
         weights_i2t.masked_fill_(mask, 0)
         weights_t2i.masked_fill_(mask, 0) 
@@ -126,7 +132,6 @@ class MyModel(nn.Module):
         dim=0).view(-1,1).to(imgs.device)
 
         disc = self.discriminator(img_enc_all, cap_enc_all)
-        print(disc.shape)
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 
@@ -162,15 +167,15 @@ class MyModel(nn.Module):
         sims_i2i = self.dist_func(image_embeds, image_embeds)
         sims_t2t = self.dist_func(text_embeds, text_embeds)
         target = torch.arange(bsize).to(self.device)
-        logits_i2t = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
-        logits_t2i = torch.cat([sims_t2i/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
+        logits_i2t = torch.cat([sims_i2t/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
 
-        margin_loss = self.margin_loss(sims_i2t, sims_i2i - eye_mask) + self.margin_loss(sims_t2i, sims_t2t - eye_mask)
-        itc_loss =  F.cross_entropy(logits_i2t, target) + F.cross_entropy(logits_t2i, target) 
+        margin_loss = self.weight_i2t * self.margin_loss(sims_i2t, sims_t2t - eye_mask) + (1 - self.weight_i2t) * self.margin_loss(sims_t2i, sims_i2i - eye_mask)
+        itc_loss =  self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
         loss = itc_loss + margin_loss 
         
         stats = {
-            "logits/weight_t2i": 1.0 - self.weight_i2t.item(),
+            "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/margin_loss": margin_loss.item() if margin_loss is not None else 0.0,
             "logits/itc_loss": itc_loss.item(),
             "logits/min": sims_i2t.min().item(),
@@ -179,6 +184,18 @@ class MyModel(nn.Module):
             "logits/acc": (sims_i2t.argmax(-1) == target).float().mean().item(),
         }
         return loss, stats, sims_i2t
+
+    def get_attend_mask(self,num_latents):
+        zeros = torch.zeros(num_latents)
+        hiddens = torch.zeros(num_latents) - float('inf')
+
+        vis_mask = torch.cat([hiddens, zeros]).expand([num_latents, -1])
+        text_mask = torch.cat([zeros, hiddens]).expand([num_latents, -1])
+        attention_mask = torch.cat([text_mask, vis_mask], dim=0)
+        
+        return attention_mask.to(self.device)
+
+        
 
     def forward(
         self,
@@ -195,23 +212,21 @@ class MyModel(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask,
         )
+        vision_output = self.vision_head(vision_outputs[0])
+        text_output = self.text_head(text_outputs[0])
+        self_attend_mask = self.get_attend_mask(num_latents=self.config.num_latents)
 
-
-        vision_outputs, text_outputs = self.multimodal_head(
-            text_inputs=text_outputs[0], 
-            vision_inputs=vision_outputs[0], 
-            attention_mask=attention_mask
+        text_embeds, image_embeds, text_itm, image_itm = self.multimodal_head(
+            text_inputs=text_output, 
+            vision_inputs=vision_output, 
+            self_attend_mask=self_attend_mask
         ) 
-
-
-        image_embeds = self.vision_pooler(vision_outputs)
-        text_embeds = self.text_pooler(text_outputs)
-        print(image_embeds[0].shape)
-        print(text_embeds[0].shape)
         itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
-        itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
+        
+
+        itm_loss = self.itm_loss(text_itm, image_itm, sims_i2t=sims_i2t)
         stats["logits/itm_loss"] = itm_loss.item() 
-        loss = itm_loss + itc_loss
+        loss = itc_loss + itm_loss
         return loss, stats, itc_loss, itm_loss
 
     def get_text_features(
@@ -223,20 +238,23 @@ class MyModel(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask,
         )
-        text_outputs = self.multimodal_head.get_text_features(
-            text_inputs=text_outputs[0], 
-            attention_mask=attention_mask
+        text_outputs = self.text_head(text_outputs[0])
+
+        text_embeds = self.multimodal_head.get_text_features(
+            text_inputs=text_outputs, 
         ) 
-        text_embeds = self.text_pooler(text_outputs[0])
+
         return text_embeds
 
     def get_vision_features(self, pixel_values:torch.Tensor):
         vision_outputs = self.vision_body(
             pixel_values=pixel_values,
         )
-        vision_outputs = self.multimodal_head.get_vision_features(
-            vision_inputs=vision_outputs[0]
+        vision_outputs = self.vision_head(vision_outputs[0])
+
+        image_embeds = self.multimodal_head.get_vision_features(
+            vision_inputs=vision_outputs
         ) 
-        image_embeds = self.vision_pooler(vision_outputs[0])
+        
         return image_embeds 
 

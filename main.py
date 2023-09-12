@@ -67,13 +67,11 @@ if __name__ == "__main__":
         )
         trainer.train()
 
-    for ft_out in [512]:
-        config.ft_out = ft_out
-        print(config.enable_log)
-        for vision_trainable_blocks in [0,1,3]:
-            config.vision_trainable_blocks = vision_trainable_blocks
-            for text_trainable_blocks in [0,1,3]:
-                config.text_trainable_blocks = text_trainable_blocks
-                for manifold in [EUCLID, LORENTZ]:
-                    config.manifold = manifold
-                    inner_training_loop()
+    print(config.enable_log)
+    for vision_trainable_blocks in [0,1,3]:
+        config.vision_trainable_blocks = vision_trainable_blocks
+        for text_trainable_blocks in [0,1,3]:
+            config.text_trainable_blocks = text_trainable_blocks
+            for manifold in [EUCLID, LORENTZ]:
+                config.manifold = manifold
+                inner_training_loop()
