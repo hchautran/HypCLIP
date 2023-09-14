@@ -18,6 +18,7 @@ import torch.nn.functional  as F
 import torch.nn as nn
 from transformers.activations import ACT2FN
 from peft import  get_peft_model
+from transformers import AutoModel, AutoTokenizer
 
 from peft import LoraConfig, TaskType
 if __name__ == "__main__":
@@ -38,29 +39,38 @@ if __name__ == "__main__":
     # x = layers(x)
     # manifold.assert_check_point_on_manifold(x)
 
-    # if "blip" in config.model_ckt:
-    #     print("Getting BLIP processor...")
-    #     processor = BlipProcessor.from_pretrained(
-    #         config.model_ckt, cache_dir=config.cache_dir
-    #     )
-    # else:
-    #     print("Getting CLIP processor...")
-    #     processor = CLIPProcessor.from_pretrained(
-    #         config.model_ckt, cache_dir=config.cache_dir
-    #     )
+    if "blip" in config.model_ckt:
+        print("Getting BLIP processor...")
+        processor = BlipProcessor.from_pretrained(
+            config.model_ckt, cache_dir=config.cache_dir
+        )
+    else:
+        print("Getting CLIP processor...")
+        processor = CLIPProcessor.from_pretrained(
+            config.model_ckt, cache_dir=config.cache_dir
+        )
 
-    # if "flickr" in config.dataset:
-    #     dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
-    # else:
-    #     dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
+    dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
 
-    # dataset = dataset.map(
-    #     lambda sample: preprocess_img(sample, processor=processor)
-    # ).remove_columns(["image"])
-    # dataset.set_format("numpy")
+    dataset = dataset.map(
+        lambda sample: preprocess_img(sample, processor=processor)
+    ).remove_columns(["image"])
+    dataset.set_format("numpy")
 
 
-    # test_loader = get_dataloader(dataset["test"], 5, processor=processor, mode="test")
+    text_model = AutoModel.from_pretrained('bert-base-uncased')
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+
+
+    test_loader = get_dataloader(dataset["test"], 5, processor=tokenizer, mode="test")
+    peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=8, 
+        lora_alpha=32, 
+        lora_dropout=0.1, 
+        target_modules=['query', 'value','key', 'dense']
+    )
 
     # clip_cfg = CLIPConfig.from_pretrained(config.model_ckt)
     # manifold = CustomLorentz(k=config.curv)
@@ -68,34 +78,16 @@ if __name__ == "__main__":
     # vision_model = HypCLIPVisionTransformer(manifold=manifold, config=clip_cfg.vision_config)
     # model = HypCLIPModel(manifold=manifold, config=clip_cfg)
 
-    # for batch in test_loader: 
-    #     text =text_model(batch['input_ids'], batch['attention_mask'])
-    #     manifold.assert_check_point_on_manifold(text[0])
-    #     vision =vision_model(batch['pixel_values'])
-    #     manifold.assert_check_point_on_manifold(vision[0])
-    #     out = model(
-            
-    #         input_ids=batch['input_ids'],
-    #         pixel_values=batch['pixel_values'],
-    #         attention_mask=batch['attention_mask']
-    #     )
-    #     print(out)
-        
-    #     break
-    model = BlipForImageTextRetrieval.from_pretrained(config.model_ckt)
-    print(model)
-    peft_config = LoraConfig(
-        task_type=TaskType.FEATURE_EXTRACTION, 
-        inference_mode=False, 
-        r=8, 
-        lora_alpha=32, 
-        lora_dropout=0.1, 
-        target_modules=['qkv', 'projection', 'fc1', 'fc2', 'query', 'key', 'value', 'dense', 'vision_proj', 'text_proj']
-    )
+    print(text_model)
+    text_model = get_peft_model(text_model, peft_config)
+    text_model.print_trainable_parameters()
+    for batch in test_loader: 
+        output = text_model(batch['input_ids'], batch['attention_mask'])
+        print(output[0].shape)
 
-    model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
-    
+        
+        break
+
 
 
 

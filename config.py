@@ -78,7 +78,7 @@ config_args = {
         "weight_decay": (0.0, "l2 regularization strength"),
         "optimizer": ("adam", "which optimizer to use, can be any of [sgd, adam]"),
         "momentum": (0.999, "momentum in optimizer"),
-        "patience": (25, "patience for early stopping"),
+        "patience": (5, "patience for early stopping"),
         "seed": (42, "seed for training"),
         "log_freq": (1, "how often to compute print train/val metrics (in epochs)"),
         "save": (0, "1 to save model and logs and 0 otherwise"),
@@ -96,7 +96,7 @@ config_args = {
             None,
             "max norm for gradient clipping, or None for no gradient clipping",
         ),
-        "min_epochs": (25, "do not early stop before min-epochs"),
+        "min_epochs": (10, "do not early stop before min-epochs"),
         "mixed_precision": (
             "fp16",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
@@ -121,12 +121,13 @@ config_args = {
             0.0,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
-        "enable_log": (True, "enable log"),
-        "batch_size": (120, "batch size"),
-        "eval_freq": (1209, "how often to compute val metrics (in epochs)"),
-        "weight_i2t": (0.25, "weight image to text")
+        "enable_log": (False, "enable log"),
+        "batch_size": (150, "batch size"),
+        "eval_freq": (150, "how often to compute val metrics (in epochs)"),
+        "weight_i2t": (0.3, "weight image to text")
     },
     "hybrid_model_config": {
+        # "model_ckt": (CLIP_LARGE_PATCH_14, "model checkpoin on Hugging Face"),
         "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
         "manifold": (
             EUCLID,
@@ -145,12 +146,12 @@ config_args = {
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
     },
     "perceiver": {
-        "d_latents": (256, 'latent dimentsion'),
-        "num_latents": (24, 'number of latent query'),
+        "d_latents": (512, 'latent dimentsion'),
+        "num_latents": (32, 'number of latent query'),
         "num_self_attends_per_block": (3, 'num selft attenton per block'),
-        "num_blocks": (6, 'multi modal blocks'),
+        "num_blocks": (1, 'multi modal blocks'),
         "num_cross_attention_heads": (2, 'multi modal blocks'),
-        "num_self_attention_heads": (2, 'multi modal blocks'),
+        "num_self_attention_heads": (4, 'multi modal blocks'),
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

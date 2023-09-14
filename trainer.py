@@ -135,6 +135,7 @@ class MyTrainer:
                         print("Loss: {}".format(loss.item()))
                     if self.eval_freq != -1 and (current_step + 1) % self.eval_freq == 0:
                         metrics = self.evaluate(mode='val')
+                        self.model.train()
                         print(metrics)
                         self.log(metrics)
                     print('infer time', time.time() - start)

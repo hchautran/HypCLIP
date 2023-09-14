@@ -6,6 +6,7 @@ from datasets import load_dataset
 from model.hypCLIP import HypCLIP
 from model.hypBLIP import HypBLIP
 from model.perceiverModel import MyModel
+# from model.perceiverMixtureModel import MyModel
 from transformers import CLIPProcessor, BlipProcessor
 from utils.data_utils import get_dataloader, preprocess_img
 from trainer import MyTrainer
@@ -15,7 +16,7 @@ from utils.data_utils import get_flickr
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ, POINCARE
+    from config import EUCLID, LORENTZ 
 
     config = parser.parse_args()
     if "blip" in config.model_ckt:

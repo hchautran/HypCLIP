@@ -5,14 +5,21 @@ from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
 from transformers import BlipForImageTextRetrieval
-from transformers import PerceiverConfig
+from transformers import PerceiverConfig, PerceiverModel
 from .modules.utils import freeze_blip 
-from .modules.perceiver import MultiModalHead 
+from .modules.perceiver import MixtureMultiModalHead
 from peft import get_peft_model, LoraConfig, TaskType
 
-EUCLID = 'euclidean'
-POINCARE = 'poincare'
-LORENTZ = 'lorentz'
+EUCLID = "euclidean"
+POINCARE = "poincare"
+LORENTZ = "lorentz"
+BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
+BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
+BLIP_BASE_COCO = "Salesforce/blip-itm-base-coco"
+BLIP_LARGE_COCO = "Salesforce/blip-itm-large-coco"
+CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
+CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
+CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 
 
 class ConvPooler(nn.Module):
@@ -42,7 +49,11 @@ class MyModel(nn.Module):
         self.weight_i2t = config.weight_i2t
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
         self.discriminator = DisModel(dim=self.ft_out, layer_dims=[512, 1])
-        model = BlipForImageTextRetrieval.from_pretrained(self.model_ckt)
+        models = [
+            BlipForImageTextRetrieval.from_pretrained(BLIP_BASE_FLICKR),
+            BlipForImageTextRetrieval.from_pretrained(BLIP_BASE_COCO)
+        ]
+
 
         head_config = PerceiverConfig(
             d_latents=config.d_latents, 
@@ -57,20 +68,21 @@ class MyModel(nn.Module):
             r=8, 
             lora_alpha=32, 
             lora_dropout=0.1, 
-            target_modules=['dense', 'query', 'value','key']
+            target_modules=['vision_proj' 'text_proj', 'query', 'key','value']
         )
-        model = get_peft_model(model, peft_config)
-        model.print_trainable_parameters()
+        models = [get_peft_model(model, peft_config) for model in models]
+        for model in models:
+            model.print_trainable_parameters()
 
 
-        self.vision_body = model.vision_model
-        self.text_body =  model.text_encoder
-        self.text_head = model.text_proj
-        self.vision_head = model.vision_proj
-        self.multimodal_head = MultiModalHead(
+        self.vision_bodies = nn.ModuleList([model.vision_model for model in models])
+        self.text_bodies =  nn.ModuleList([model.text_encoder for model in models])
+        self.text_heads = nn.ModuleList([model.text_proj for model in models])
+        self.vision_heads = nn.ModuleList([model.vision_proj for model in models])
+        self.multimodal_head = MixtureMultiModalHead(
             head_config, 
-            d_vision=model.config.vision_config.hidden_size, 
-            d_text=model.config.text_config.hidden_size,
+            d_visions=[model.config.image_text_hidden_size for model in models],  
+            d_texts=[model.config.image_text_hidden_size for model in models],
             d_out=self.ft_out,
             num_blocks=self.config.num_blocks
         ) 
@@ -85,14 +97,18 @@ class MyModel(nn.Module):
         return num_params
 
     def eval(self):
-        self.vision_body.eval()
-        self.vision_body.eval()
+        self.text_bodies.eval()
+        self.vision_bodies.eval()
+        self.text_heads.eval()
+        self.vision_heads.eval()
         self.multimodal_head.eval()
         self.discriminator.eval()
 
     def train(self):
-        self.vision_body.train()
-        self.text_body.train()
+        self.vision_bodies.train()
+        self.text_bodies.train()
+        self.vision_heads.train()
+        self.text_heads.train()
         self.multimodal_head.train()
         self.discriminator.train()
         
@@ -187,12 +203,12 @@ class MyModel(nn.Module):
         }
         return loss, stats, sims_i2t
 
-    def get_attend_mask(self,num_latents):
-        zeros = torch.zeros(num_latents)
-        hiddens = torch.zeros(num_latents) - float('inf')
+    def get_attend_mask(self, num_latents, num_vis, num_text):
+        zeros = torch.zeros(num_latents*num_vis)
+        hiddens = torch.zeros(num_latents*num_text) - float('inf')
 
-        vis_mask = torch.cat([hiddens, zeros]).expand([num_latents, -1])
-        text_mask = torch.cat([zeros, hiddens]).expand([num_latents, -1])
+        vis_mask = torch.cat([hiddens, zeros]).expand([num_latents*num_vis, -1])
+        text_mask = torch.cat([zeros, hiddens]).expand([num_latents*num_vis, -1])
         attention_mask = torch.cat([text_mask, vis_mask], dim=0)
         
         return attention_mask.to(self.device)
@@ -205,30 +221,36 @@ class MyModel(nn.Module):
         pixel_values: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
     ) -> Union[Tuple, CLIPOutput]:
+        text_inputs = []
+        vision_inputs = []
+        for i in range(len(self.vision_bodies)):
+            vision_outputs = self.vision_bodies[i](
+                pixel_values=pixel_values,
+            )
+            vision_output = self.vision_heads[i](vision_outputs[0])
+            vision_inputs.append(vision_output)
+            
 
-        vision_outputs = self.vision_body(
-            pixel_values=pixel_values,
-        )[0]
+        for i in range(len(self.text_bodies)):
+            text_outputs = self.text_bodies[i](
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )
+            text_output = self.text_heads[i](text_outputs[0])
+            text_inputs.append(text_output)
 
-        text_outputs = self.text_body(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-        )[0]
-        vision_ori = self.vision_head(vision_outputs[:, 0, :])
-        text_ori = self.text_head(text_outputs[:, 0, :])
-        self_attend_mask = self.get_attend_mask(num_latents=self.config.num_latents)
+        self_attend_mask = self.get_attend_mask(num_latents=self.config.num_latents, num_vis=len(self.vision_bodies), num_text=len(self.text_bodies))
+        print(self_attend_mask.shape)
 
         text_embeds, image_embeds, text_itm, image_itm = self.multimodal_head(
-            text_ori=text_ori,
-            vision_ori= vision_ori,
-            text_inputs=text_outputs[:, 1:, :], 
-            vision_inputs=vision_outputs[:, 1:, :], 
+            text_inputs=text_inputs, 
+            vision_inputs=vision_inputs, 
             self_attend_mask=self_attend_mask
         ) 
-        itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
-        
 
+        itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
         itm_loss = self.itm_loss(text_itm, image_itm, sims_i2t=sims_i2t)
+
         stats["logits/itm_loss"] = itm_loss.item() 
         loss = itc_loss + itm_loss
         return loss, stats, itc_loss, itm_loss
@@ -238,28 +260,34 @@ class MyModel(nn.Module):
         input_ids: torch.Tensor, 
         attention_mask: torch.Tensor,
     ):
-        text_outputs = self.text_body(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-        )[0]
-        text_ori = self.text_head(text_outputs[:, 0, :])
+        text_inputs = []
+        for i in range(len(self.text_bodies)):
+            text_outputs = self.text_bodies[i](
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )
+            text_output = self.text_heads[i](text_outputs[0])
+            text_inputs.append(text_output)
+
 
         text_embeds = self.multimodal_head.get_text_features(
-            text_ori=text_ori,
-            text_inputs=text_outputs[:, 1:, :], 
+            text_inputs=text_inputs, 
         ) 
 
         return text_embeds
 
     def get_vision_features(self, pixel_values:torch.Tensor):
-        vision_outputs = self.vision_body(
-            pixel_values=pixel_values,
-        )[0]
-        vision_ori = self.vision_head(vision_outputs[:, 0 ,:])
+        vision_inputs = []
+        for i in range(len(self.vision_bodies)):
+            vision_outputs = self.vision_bodies[i](
+                pixel_values=pixel_values,
+            )
+            vision_output = self.vision_heads[i](vision_outputs[0])
+            vision_inputs.append(vision_output)
+            
 
         image_embeds = self.multimodal_head.get_vision_features(
-            vision_ori=vision_ori,
-            vision_inputs=vision_outputs[:, 1:, :],
+            vision_inputs=vision_inputs
         ) 
         
         return image_embeds 
