@@ -37,7 +37,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         assert manifold in [EUCLID, POINCARE, LORENTZ]
 
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
-        self.weight_i2t = nn.Parameter(torch.as_tensor(0.5), requires_grad=False) 
+        self.weight_i2t = self.config.weight_i2t 
         self.curv = torch.as_tensor(config.curv if manifold != EUCLID else 0)
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
@@ -50,11 +50,11 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
-            self.discriminator = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 256, 256, 1])
+            self.discriminator = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 1])
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
-            self.discriminator = LorentzDisModel(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 256,256])
+            self.discriminator = LorentzDisModel(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256])
         self.manifold_name =  manifold    
         self.vision_model = None 
         self.text_model = None 
@@ -122,12 +122,11 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         dim=0).view(-1,1).to(imgs.device)
 
         disc = self.discriminator(img_enc_all, cap_enc_all)
-        print(disc.shape)
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels)
         return loss_itm
 
 
-    def contrastive_loss(self, sims_i2t, sims_i2i):
+    def margin_loss(self, sims_i2t, sims_i2i):
         bsize = sims_i2t.shape[0] 
         ones = torch.ones(bsize, bsize).to(self.device)
         pos_mask = torch.eye(bsize).to(self.device) 
@@ -153,21 +152,21 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
     def itc_loss(self, image_embeds , text_embeds):
         bsize = text_embeds.shape[0]
         eye_mask = torch.eye(bsize).to(self.device) * 1e9
-        sims_i2t = self.dist_func(image_embeds, text_embeds)
+        sims_i2t = self.dist_func(image_embeds, text_embeds) 
         sims_t2i = sims_i2t.T
-        sims_i2i = self.dist_func(image_embeds, image_embeds)
-        sims_t2t = self.dist_func(text_embeds, text_embeds)
+        sims_i2i = self.dist_func(image_embeds, image_embeds) 
+        sims_t2t = self.dist_func(text_embeds, text_embeds) 
         target = torch.arange(bsize).to(self.device)
-        logits_i2t = torch.cat([sims_i2t/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
-        logits_t2i = torch.cat([sims_t2i/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
+        logits_i2t = torch.cat([sims_i2t/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
 
-        contrastive_loss = self.contrastive_loss(sims_i2t, sims_i2i - eye_mask) + self.contrastive_loss(sims_t2i, sims_t2t - eye_mask)
-        itc_loss =  F.cross_entropy(logits_i2t, target) + F.cross_entropy(logits_t2i, target) 
-        loss = itc_loss + contrastive_loss 
+        margin_loss = self.margin_loss(sims_i2t, sims_t2t - eye_mask)  +  2 * self.margin_loss(sims_t2i, sims_i2i - eye_mask)
+        itc_loss =  self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
+        loss = itc_loss + margin_loss 
         
         stats = {
-            "logits/weight_t2i": 1.0 - self.weight_i2t.item(),
-            "logits/contrastive_loss": contrastive_loss.item() if contrastive_loss is not None else 0.0,
+            "logits/weight_t2i": 1.0 - self.weight_i2t,
+            "logits/margin_loss": margin_loss.item() if margin_loss is not None else 0.0,
             "logits/itc_loss": itc_loss.item(),
             "logits/min": sims_i2t.min().item(),
             "logits/mean": sims_i2t.mean().item(),
@@ -189,7 +188,7 @@ class BaseModel(nn.Module, MomentumDistilationMixin, SharedQueueMixin):
         )
         
 
-        text_outputs = self.text_modeltext_model(
+        text_outputs = self.text_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,

@@ -16,6 +16,10 @@ class Manifold(object):
         """Squared distance between pairs of points."""
         raise NotImplementedError
 
+    def dist(self, p1, p2, c):
+        """Squared distance between pairs of points."""
+        raise NotImplementedError
+
     def egrad2rgrad(self, p, dp, c):
         """Converts Euclidean Gradient to Riemannian Gradients."""
         raise NotImplementedError
@@ -80,6 +84,16 @@ class Manifold(object):
             cur_dist = self.sqdist(p1_list[idx], p2_list, c).unsqueeze(0)
             dists = torch.cat([dists, cur_dist], dim=0)
         return dists
+
+    def dist_batch(self, p1_list, p2_list, c):
+        import torch
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        dists = torch.tensor([]).to(device)
+        for idx in range(p1_list.shape[0]):
+            cur_dist = self.dist(p1_list[idx], p2_list, c).unsqueeze(0)
+            dists = torch.cat([dists, cur_dist], dim=0)
+        return dists
+            
             
             
             

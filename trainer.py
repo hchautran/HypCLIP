@@ -71,9 +71,10 @@ class MyTrainer:
                     stabilize=10,
                 )
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer, step_size=config.lr_reduce_freq, gamma=config.gamma
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, 'max'
         )
+        
         (
             self.optimizer,
             self.train_loader,
@@ -125,7 +126,6 @@ class MyTrainer:
                             self.model.parameters(), self.config.grad_clip
                         )
                     self.optimizer.step()
-                    self.scheduler.step()
 
                     running_loss += loss.item()
 
@@ -143,6 +143,7 @@ class MyTrainer:
                     
                     # print('infer time', time.time() - start)
                 metrics = self.evaluate(mode='test')
+                self.scheduler.step(metrics["test/r_all"])
                 print(metrics)
                 self.log(metrics)
                 if best_r_all < metrics["test/r_all"]:

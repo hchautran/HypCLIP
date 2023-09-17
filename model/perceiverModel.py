@@ -15,21 +15,7 @@ POINCARE = 'poincare'
 LORENTZ = 'lorentz'
 
 
-class ConvPooler(nn.Module):
-    def __init__(self, config) -> None:
-        super().__init__()
-        self.pooler = nn.Conv1d(
-            in_channels=config.d_latents, 
-            out_channels=config.ft_out,
-            kernel_size=config.num_latents,
-            stride=config.num_latents,
-        )
-        
-    def forward(self, input:torch.Tensor):
-        input = input.transpose(-1, -2)
-        output = self.pooler(input)
-        return output.squeeze(-1)
-        
+
         
 
 class MyModel(nn.Module):

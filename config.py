@@ -91,7 +91,7 @@ config_args = {
             5000,
             "reduce lr every lr-reduce-freq or None to keep lr constant",
         ),
-        "gamma": (0.5, "gamma for lr scheduler"),
+        "gamma": (0.75, "gamma for lr scheduler"),
         "grad_clip": (
             None,
             "max norm for gradient clipping, or None for no gradient clipping",
@@ -110,7 +110,7 @@ config_args = {
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            5.0,
+            1.5,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
@@ -118,12 +118,14 @@ config_args = {
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_neg_margin": (
-            0.0,
+            0.5,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
-        "enable_log": (False, "enable log"),
+        
+        "queue_size": (64000, "enable log"),
+        "enable_log": (True, "enable log"),
         "batch_size": (150, "batch size"),
-        "eval_freq": (150, "how often to compute val metrics (in epochs)"),
+        "eval_freq": (450, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.3, "weight image to text")
     },
     "hybrid_model_config": {
@@ -133,14 +135,14 @@ config_args = {
             EUCLID,
             "which manifold to use [euclidean, lorentz]",
         ),
-        "curv": (10.0, "hyperbolic curvature"),
+        "curv": (1.0, "hyperbolic curvature"),
         "atol": (1e-3, "The relative tolerance parameter"),
         "rtol": (1e-3, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
-        "clip_radius": (5.0, "clipping radius"),
+        "clip_radius": (1.5, "clipping radius"),
         "vision_trainable_blocks": (0, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (0, "number of trainable blocks in text model"),
-        "ft_out": (256, "final project dimension"),
+        "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (True, "freeze embedding layers"),
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
@@ -151,7 +153,7 @@ config_args = {
         "num_self_attends_per_block": (3, 'num selft attenton per block'),
         "num_blocks": (1, 'multi modal blocks'),
         "num_cross_attention_heads": (2, 'multi modal blocks'),
-        "num_self_attention_heads": (4, 'multi modal blocks'),
+        "num_self_attention_heads": (2, 'multi modal blocks'),
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

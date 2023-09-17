@@ -55,8 +55,8 @@ if __name__ == "__main__":
             dataset["test"], 5, processor=processor, mode="test"
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=processor, mode="val")
-        # model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
-        model = MyModel(config) 
+        model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
+        # model = MyModel(config) 
         trainer = MyTrainer(
             model=model,
             config=config,
@@ -69,10 +69,6 @@ if __name__ == "__main__":
         trainer.train()
 
     print(config.enable_log)
-    for vision_trainable_blocks in [0,1,3]:
-        config.vision_trainable_blocks = vision_trainable_blocks
-        for text_trainable_blocks in [0,1,3]:
-            config.text_trainable_blocks = text_trainable_blocks
-            for manifold in [EUCLID, LORENTZ]:
-                config.manifold = manifold
-                inner_training_loop()
+    for manifold in [LORENTZ, EUCLID]:
+        config.manifold = manifold
+        inner_training_loop()

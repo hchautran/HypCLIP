@@ -18,6 +18,8 @@ from model.baseModel import BaseModel
 from .modules.utils import ManifoldMapper, LorentzCentroidPooler
 from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
 from transformers.activations import ACT2FN
+from peft import get_peft_model, LoraConfig, TaskType
+
 
 EUCLID = "euclidean"
 POINCARE = "poincare"
@@ -31,6 +33,27 @@ class HypBLIP(BaseModel):
         model = BlipForImageTextRetrieval.from_pretrained(
             self.model_ckt, cache_dir=config.cache_dir
         )
+        peft_config = LoraConfig(
+            task_type=TaskType.FEATURE_EXTRACTION, 
+            inference_mode=False, 
+            r=8, 
+            lora_alpha=32, 
+            lora_dropout=0.1, 
+            target_modules=[
+                'dense', 
+                'query', 
+                'value',
+                'key', 
+                'text_proj', 
+                'vision_proj',
+                '*.11.self_attn.qkv'
+                '*.11.self_attn.projection'
+                '*.11.mlp.fc1'
+                '*.11.mlp.fc2'
+            ]
+        )
+        print(model)
+        model = get_peft_model(model, peft_config) 
         text_body = model.text_encoder
         vision_body = model.vision_model
         text_head = nn.ModuleList([model.text_proj])
@@ -38,10 +61,10 @@ class HypBLIP(BaseModel):
         if self.manifold_name == LORENTZ:
             if config.use_lorentz_centroid:
                 text_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
                 )
                 vision_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=True)
                 )
                 text_head.append(
                     LorentzCentroidPooler(
@@ -55,29 +78,24 @@ class HypBLIP(BaseModel):
                 )
             else:
                 text_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
                 )
                 vision_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=True)
                 )
-            dim = model.config.image_text_hidden_size
-            # vision_head.append(nn.Sequential(
-                # LFC_Block(self.manifold, dim + 1, dim + 1, bias=False, activation=ACT2FN['relu'], normalization="batch_norm"),
-                # LFC_Block(self.manifold, dim + 1, dim + 1, bias=False, activation=ACT2FN['relu'], normalization="batch_norm"),
-                # LFC_Block(self.manifold, dim + 1, dim + 1),
-            # ))
+
 
         self.vision_model = BLIPVision(
             config,
             body=vision_body,
             head=vision_head,
-            num_trainable_blocks=config.vision_trainable_blocks,
-            freeze_embedding=config.freeze_embedding,
+            # num_trainable_blocks=config.vision_trainable_blocks,
+            # freeze_embedding=config.freeze_embedding,
         )
         self.text_model = BLIPText(
             config,
             body=text_body,
             head=text_head,
-            num_trainable_blocks=config.text_trainable_blocks,
-            freeze_embeddings=config.freeze_embedding,
+            # num_trainable_blocks=config.text_trainable_blocks,
+            # freeze_embeddings=config.freeze_embedding,
         )

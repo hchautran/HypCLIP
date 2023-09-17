@@ -23,6 +23,7 @@ from transformers import AutoModel, AutoTokenizer
 from peft import LoraConfig, TaskType
 if __name__ == "__main__":
     from config import parser
+    from config import BLIP_BASE_FLICKR
     # from config import EUCLID, LORENTZ, POINCARE
     config = parser.parse_args()
     # manifold = CustomLorentz(k=config.curv, atol=config.atol, rtol=config.rtol)
@@ -58,7 +59,7 @@ if __name__ == "__main__":
     dataset.set_format("numpy")
 
 
-    text_model = AutoModel.from_pretrained('bert-base-uncased')
+    text_model = AutoModel.from_pretrained(BLIP_BASE_FLICKR)
     tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
 
 
@@ -69,7 +70,7 @@ if __name__ == "__main__":
         r=8, 
         lora_alpha=32, 
         lora_dropout=0.1, 
-        target_modules=['query', 'value','key', 'dense']
+        target_modules=['query', 'value','key', 'dense', '*.11.self_attn.qkv', '*.10.self_attn.qkv', '*.11.mlp.projection', '*.12.mlp.fc*']
     )
 
     # clip_cfg = CLIPConfig.from_pretrained(config.model_ckt)
@@ -81,12 +82,8 @@ if __name__ == "__main__":
     print(text_model)
     text_model = get_peft_model(text_model, peft_config)
     text_model.print_trainable_parameters()
-    for batch in test_loader: 
-        output = text_model(batch['input_ids'], batch['attention_mask'])
-        print(output[0].shape)
-
-        
-        break
+    # for batch in test_loader: 
+        # output = text_model(batch['input_ids'], batch['attention_mask'])
 
 
 

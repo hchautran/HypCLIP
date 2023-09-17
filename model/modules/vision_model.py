@@ -5,12 +5,10 @@ from .utils import freeze_clip, freeze_blip
 from typing import Optional
 from .seq_linear import LorentzSeqLinear 
 
-
 class CLIPVision(nn.Module): 
     def __init__(self,config, body, head, num_trainable_blocks=0, freeze_embedding=True) -> None:
         super().__init__()
 
-        freeze_clip(vision_model=body, num_trainable_blocks=num_trainable_blocks, freeze_embeddings=freeze_embedding)
         self.body = body
         self.head = head 
         self.config = config
@@ -40,10 +38,9 @@ class CLIPVision(nn.Module):
 
 
 class BLIPVision(nn.Module): 
-    def __init__(self, config, body, head, num_trainable_blocks=0, freeze_embedding=True) -> None:
+    def __init__(self, config, body, head ) -> None:
         super().__init__()
 
-        freeze_blip(vision_model=body, num_trainable_blocks=num_trainable_blocks, freeze_embeddings=freeze_embedding)
         self.body = body
         self.head = head 
         self.config = config
@@ -64,11 +61,10 @@ class BLIPVision(nn.Module):
             pooled_output = last_hidden_state[:, 0, :]
         else:
             pooled_output = last_hidden_state
-
         for layer in self.head:
             pooled_output = layer(pooled_output)
+
         return last_hidden_state, pooled_output
-    
     
      
 

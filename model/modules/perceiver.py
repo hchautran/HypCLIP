@@ -3,8 +3,7 @@ import torch.nn as nn
 from transformers.models.perceiver.modeling_perceiver import PerceiverAttention, PerceiverMLP
 from transformers import PerceiverLayer
 from transformers import PerceiverConfig
-from transformers import Blip2Model
-
+import torch.nn.functional as F
 
 class MultiModalLayer(nn.Module):
     def __init__(self, config:PerceiverConfig, d_vision, d_text, num_self_attend=None) -> None:
@@ -109,8 +108,8 @@ class MultiModalHead(nn.Module):
 
         multimodal_layers = [MultiModalLayer(config=config, d_text=d_text, d_vision=d_vision) for _ in range(self.num_blocks)]
         self.layers = nn.ModuleList(multimodal_layers)
-        self.dropout= nn.Dropout(0.4) 
-        self.proj = nn.Linear(config.d_latents + d_out, d_out)
+        self.dropout= nn.Dropout(0.1) 
+        self.proj = nn.Linear(config.d_latents , d_out)
 
 
     def num_parameters(self, only_trainable=True):
@@ -128,10 +127,10 @@ class MultiModalHead(nn.Module):
         itm_text = []
         text_question = self.text_question.expand([bs, -1, -1])
         vision_question = self.vision_question.expand([bs, -1 ,-1]) 
+        res_text = text_question
+        res_vision = vision_question
 
         for i in range(self.num_blocks):
-            res_text = text_question
-            res_vision = vision_question
             text_question, vision_question, itm_text_state, itm_vision_state = self.layers[i](
                 text_inputs=text_inputs, 
                 vision_inputs=vision_inputs, 
@@ -148,10 +147,10 @@ class MultiModalHead(nn.Module):
         text_output = torch.mean(text_question, dim=1) 
         vision_output = torch.mean(vision_question, dim=1)
         
-        text_output = self.proj(self.dropout(torch.cat([text_ori, text_output], dim=-1)))
-        vision_output = self.proj(self.dropout(torch.cat([vision_ori, vision_output], dim=-1)))
-        itm_text = self.proj(self.dropout(torch.cat([text_ori, itm_text], dim=-1)))
-        itm_vision = self.proj(self.dropout(torch.cat([vision_ori, itm_vision], dim=-1)))
+        text_output = self.proj(self.dropout(text_output)) + text_ori
+        vision_output = self.proj(self.dropout(vision_output)) + vision_ori
+        itm_text = self.proj(self.dropout(itm_text)) + text_ori
+        itm_vision = self.proj(self.dropout(itm_vision)) + vision_ori
 
         return text_output, vision_output, itm_text, itm_vision
 
@@ -159,32 +158,88 @@ class MultiModalHead(nn.Module):
         bs = vision_inputs.size(0)
         vision_question = self.vision_question.expand([bs, -1, -1])
         text_question = self.text_question.expand([bs, -1, -1])
+        res_text = text_question 
 
         for i in range(self.num_blocks):
-            res_text = text_question 
             vision_question = self.layers[i].get_vision_features(vision_inputs, vision_question)
             vision_question = vision_question + res_text
 
         vision_ouput = torch.mean(vision_question, dim = 1)
-        vision_output = self.proj(self.dropout(torch.cat([vision_ori, vision_ouput], dim=-1)))
+        vision_output = self.proj(self.dropout(vision_ouput)) + vision_ori
         return vision_output
 
     def get_text_features(self, text_ori, text_inputs):
         bs = text_inputs.size(0)
         text_question = self.text_question.expand([bs, -1, -1])
         vision_question = self.vision_question.expand([bs, -1, -1])
+        res_vision = vision_question
         for i in range(self.num_blocks):
-            res_vision = vision_question
             text_question = self.layers[i].get_text_features(text_inputs, text_question)
             text_question = text_question + res_vision 
 
         text_output = torch.mean(text_question, dim = 1)
 
-        text_output = self.proj(self.dropout(torch.cat([text_ori, text_output], dim=-1)))
+        text_output = self.proj(self.dropout(text_output)) + text_ori
         return text_output
 
+class CoHead(nn.Module):
+    """This is the class for Hyperbolic Fourier-coattention mechanism."""
+    
+    def __init__(self, embedding_dim=768 , dim=256, fourier=True):
+        super(CoHead, self).__init__()
+
+        self.embedding_dim = embedding_dim 
+        self.latent_dim = dim  
+        self.k = 128
+        self.Wl = nn.Parameter(torch.Tensor((self.latent_dim, self.embedding_dim)))
+        self.Wc = nn.Parameter(torch.Tensor((self.k, self.latent_dim)))
+        self.Wi = nn.Parameter(torch.Tensor((self.k, self.latent_dim)))
+        self.wHi = nn.Parameter(torch.Tensor((1, self.k)))
+        self.whc = nn.Parameter(torch.Tensor((1, self.k)))
+
+        #register weights and biAi Ai params
+        self.register_parameter("Wl", self.Wl)
+        self.register_parameter("Wc", self.Wc)
+        self.register_parameter("Wi", self.Wi)
+        self.register_parameter("wHi", self.wHi)
+        self.register_parameter("whc", self.whc)
 
 
+        #initialize data of parameters
+        self.Wl.data = torch.randn((self.latent_dim, self.embedding_dim))
+        self.Wc.data = torch.randn((self.k, self.latent_dim))
+        self.Wi.data = torch.randn((self.k, self.latent_dim))
+        self.wHi.data = torch.randn((1, self.k))
+        self.whc.data = torch.randn((1, self.k))
+        self.fourier = fourier
+
+    def forward(self, img_rep, cap_rep, img_ori, cap_ori):
+        if self.fourier:
+            img_rep_fourier = torch.fft.fft2(img_rep).float()
+            cap_rep_fourier = torch.fft.fft2(cap_rep).float()
+            img_rep_trans = img_rep_fourier.transpose(-1, -2)#[bs, dim, len]
+            cap_rep_trans = cap_rep_fourier.transpose(-1, -2)#[bs, dim, len]
+            L = torch.tanh(torch.matmul(torch.matmul(img_rep_fourier, self.Wl), img_rep_trans))  
+            L_trans = L.transpose(-1, -2)
+        else:
+            img_rep_trans = img_rep.transpose(-1, -2)#[bs, dim, len]
+            cap_rep_trans = cap_rep.transpose(-1, -2)#[bs, dim, len]
+            L = torch.tanh(torch.matmul(torch.matmul(img_rep, self.Wl), img_rep_trans))  
+            L_trans = L.transpose(-1, -2)
+
+        Hi = torch.tanh(torch.matmul(self.Wi, img_rep_trans) + torch.matmul(torch.matmul(self.Wc, cap_rep_trans), L))
+        Hc = torch.tanh(torch.matmul(self.Wc, cap_rep_trans) + torch.matmul(torch.matmul(self.Wi, img_rep_trans), L_trans))
+        Ai = F.softmax(torch.matmul(self.wHi, Hi), dim=-1)
+        Ac = F.softmax(torch.matmul(self.whc, Hc), dim=-1)
+
+        co_s = torch.matmul(Ai,img_rep) # (1, dim)
+        co_c = torch.matmul(Ac,cap_rep) # (1, dim)
+        co_sc = torch.cat([co_s, co_c], dim = -1)
+        co_sc = torch.squeeze(co_sc) # [bs, dim*2], 
+        print(co_s.shape)
+        print(co_c.shape)
+        print(co_sc.shape)
+        return torch.sigmoid(self.disc(co_sc))
 
 class MixtureMultiModalLayer(nn.Module):
     def __init__(self, config:PerceiverConfig, d_visions=[256], d_texts=[256], num_self_attend=None) -> None:
@@ -298,6 +353,8 @@ class MixtureMultiModalLayer(nn.Module):
 
 
 class MixtureMultiModalHead(nn.Module):
+
+
     def __init__(self, config:PerceiverConfig, d_out, num_blocks, d_visions=[256], d_texts=[256]) -> None:
         super().__init__()
         self.num_blocks = num_blocks

@@ -35,14 +35,10 @@ class LorentzDiscriminator(nn.Module):
         self.mlr = LorentzMLR(manifold=manifold, num_features=layer_dims[-1], num_classes=1) 
 
     def forward(self, feat1, feat2):
-        # self.manifold.assert_check_point_on_manifold(feat1)
-        # self.manifold.assert_check_point_on_manifold(feat2)
+        self.manifold.assert_check_point_on_manifold(feat1)
+        self.manifold.assert_check_point_on_manifold(feat2)
         space = torch.cat([feat1.narrow(-1, 1, feat1.shape[-1] - 1), feat2.narrow(-1, 1, feat2.shape[-1] - 1)], dim=-1)
-        # time = torch.cat([feat1.narrow(-1, 0, 1),  feat2.narrow(-1, 0, 1)], dim=-1)
-        # time_rescaled = torch.sqrt(torch.sum(time**2, dim=-1, keepdim=True)+(((feat1.shape[0] + feat2.shape[0])-1)/self.manifold.k))
         out = self.manifold.add_time(space) 
-        # self.manifold.assert_check_point_on_manifold(out)
-
         return self.mlr(self.disc(out))
 
         
