@@ -57,21 +57,15 @@ class CustomLorentz(Lorentz):
 
         return self.expmap(x, z)
 
-    def sqdist_batch(self, p1_list, p2_list):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    def sqdist_batch(self, p1_list:torch.Tensor, p2_list:torch.Tensor):
+        device = torch.device("cuda:0" if p1_list.get_device() != -1 else "cpu")
         dists = torch.tensor([]).to(device)
         for idx in range(p1_list.shape[0]):
             cur_dist = self.sqdist(p1_list[idx], p2_list).unsqueeze(0)
             dists = torch.cat([dists, cur_dist], dim=0)
         return dists
 
-    def dist_batch(self, p1_list, p2_list):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        dists = torch.tensor([]).to(device)
-        for idx in range(p1_list.shape[0]):
-            cur_dist = self.dist(p1_list[idx], p2_list).unsqueeze(0)
-            dists = torch.cat([dists, cur_dist], dim=0)
-        return dists
+
 
 
 

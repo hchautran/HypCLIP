@@ -3,8 +3,11 @@ from transformers import (
     CLIPProcessor,
 )
 from datasets import load_dataset
-from model.hypCLIP import HypCLIP
-from model.hypBLIP import HypBLIP
+# from model.hypCLIP import HypCLIP
+# from model.hypBLIP import HypBLIP
+from model.hybridCLIP import HypCLIP 
+from model.hybridBLIP import HypBLIP 
+# from model.PoincareCLIP import  PoincareCLIP 
 from model.perceiverModel import MyModel
 # from model.perceiverMixtureModel import MyModel
 from transformers import CLIPProcessor, BlipProcessor
@@ -16,7 +19,8 @@ from utils.data_utils import get_flickr
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ 
+    from config import EUCLID, LORENTZ, POINCARE 
+    from config import EUCLID, LORENTZ, POINCARE 
 
     config = parser.parse_args()
     if "blip" in config.model_ckt:
@@ -67,8 +71,8 @@ if __name__ == "__main__":
             processor=processor,
         )
         trainer.train()
-
-    print(config.enable_log)
-    for manifold in [LORENTZ, EUCLID]:
-        config.manifold = manifold
-        inner_training_loop()
+    for curv in [10.0]:
+        config.curv = curv
+        for manifold in [POINCARE, LORENTZ]:
+            config.manifold = manifold
+            inner_training_loop()

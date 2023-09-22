@@ -12,7 +12,8 @@ from transformers import CLIPVisionConfig, CLIPTextConfig
 from hyptorch.lorentz.layers import (
     LorentzBatchNorm1d,
     LorentzBatchNorm2d,
-    LorentzConv2d,
+    LorentzLayerNorm
+    # LorentzConv2d,
 )
 from geoopt import ManifoldParameter
 from hyptorch.lorentz.manifold import CustomLorentz
@@ -54,7 +55,7 @@ class HypCLIPVisionEmbeddings(nn.Module):
     def forward(self, pixel_values: torch.FloatTensor) -> torch.Tensor:
         pixel_values = pixel_values.permute(0,2,3,1)
         pixel_values = F.pad(pixel_values, pad=(1,0), mode="constant", value=0)
-        pixel_values = self.manifold.expmap0(pixel_values)
+        pixel_values = self.manifold.projx(pixel_values)
 
 
         patch_embeds = self.batch_norm(self.patch_embedding(pixel_values))
@@ -111,8 +112,84 @@ class HypCLIPTextEmbeddings(nn.Module):
 
         return inputs_embeds
 
+class HybridCLIPVisionEmbeddings(nn.Module):
+    def __init__(self, manifold:CustomLorentz, config: CLIPVisionConfig):
+        super().__init__()
+        self.config = config
+        self.embed_dim = config.hidden_size
+        self.image_size = config.image_size
+        self.patch_size = config.patch_size
+        self.manifold = manifold
 
-class HypCLIPAttention(nn.Module):
+        self.class_embedding = nn.Parameter(torch.randn(self.embed_dim))
+
+        self.patch_embedding = nn.Conv2d(
+            in_channels=config.num_channels,
+            out_channels=self.embed_dim,
+            kernel_size=self.patch_size,
+            stride=self.patch_size,
+            bias=False,
+        )
+
+        self.num_patches = (self.image_size // self.patch_size) ** 2
+        self.num_positions = self.num_patches + 1
+        self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
+        self.register_buffer("position_ids", torch.arange(self.num_positions).expand((1, -1)), persistent=False)
+
+    def forward(self, pixel_values: torch.FloatTensor) -> torch.Tensor:
+        batch_size = pixel_values.shape[0]
+        patch_embeds = self.patch_embedding(pixel_values)  # shape = [*, width, grid, grid]
+        patch_embeds = patch_embeds.flatten(2).transpose(1, 2)
+
+        class_embeds = self.class_embedding.expand(batch_size, 1, -1)
+        embeddings = torch.cat([class_embeds, patch_embeds], dim=1)
+        embeddings = embeddings + self.position_embedding(self.position_ids)
+
+        embeddings = F.pad(embeddings, pad=(1,0), mode="constant", value=0)
+        embeddings = self.manifold.projx(embeddings)
+ 
+        return embeddings
+
+
+class CLIPTextEmbeddings(nn.Module):
+    def __init__(self, manifold:CustomLorentz ,config: CLIPTextConfig):
+        super().__init__()
+        embed_dim = config.hidden_size
+
+        self.token_embedding = nn.Embedding(config.vocab_size, embed_dim)
+        self.position_embedding = nn.Embedding(config.max_position_embeddings, embed_dim)
+        self.manifold = manifold
+
+        # position_ids (1, len position emb) is contiguous in memory and exported when serialized
+        self.register_buffer(
+            "position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)), persistent=False
+        )
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+    ) -> torch.Tensor:
+        seq_length = input_ids.shape[-1] if input_ids is not None else inputs_embeds.shape[-2]
+
+        if position_ids is None:
+            position_ids = self.position_ids[:, :seq_length]
+
+        if inputs_embeds is None:
+            inputs_embeds = self.token_embedding(input_ids)
+
+        position_embeddings = self.position_embedding(position_ids)
+        embeddings = inputs_embeds + position_embeddings
+
+        embeddings = F.pad(embeddings, pad=(1,0), mode="constant", value=0)
+        embeddings = self.manifold.projx(embeddings)
+
+        return embeddings
+
+
+
+class CLIPAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
     def __init__(self, manifold:CustomLorentz, config):
@@ -169,7 +246,7 @@ class HypCLIPAttention(nn.Module):
 
         src_len = key_states.size(1)
         attn_weights = (
-            2 + 2 * self.manifold.bmm(query_states, key_states.transpose(1, 2))
+            self.manifold.bmm(query_states, key_states.transpose(1, 2))
         ) * self.scale + self.bias
 
         if attn_weights.size() != (bsz * self.num_heads, tgt_len, src_len):
@@ -225,8 +302,8 @@ class HypCLIPMLP(nn.Module):
         self.config = config
         self.manifold = manifold
         self.activation_fn = ACT2FN[config.hidden_act]
-        self.fc1 = LorentzLinear(manifold, config.hidden_size + 1, config.intermediate_size + 1)
-        self.fc2 = LorentzLinear(manifold, config.intermediate_size + 1, config.hidden_size + 1)
+        self.fc1 = LorentzLinear(manifold, config.hidden_size + 1, config.hidden_size * 4+ 1)
+        self.fc2 = LorentzLinear(manifold, config.hidden_size* 4+ 1, config.hidden_size + 1)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = self.fc1(hidden_states)
@@ -240,8 +317,8 @@ class HypCLIPEncoderLayer(nn.Module):
         super().__init__()
         self.embed_dim = config.hidden_size
         self.self_attn = HypCLIPAttention(manifold, config)
-        self.batch_norm1 = LorentzBatchNorm1d(manifold, self.embed_dim+1)
-        self.batch_norm2 = LorentzBatchNorm1d(manifold, self.embed_dim+1)
+        self.batch_norm1 = LorentzLayerNorm(manifold, self.embed_dim+1)
+        self.batch_norm2 = LorentzLayerNorm(manifold, self.embed_dim+1)
         self.mlp = HypCLIPMLP(manifold, config)
         self.manifold = manifold
 

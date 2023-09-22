@@ -30,7 +30,7 @@ class CLIPText(nn.Module):
         last_hidden_state = text_outputs[0]
 
         if not self.config.use_lorentz_centroid or self.config.manifold != 'lorentz':
-            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = text_outputs[1]
         else:
             pooled_output = last_hidden_state
         for layer in self.head:

@@ -185,17 +185,22 @@ class MultiModalHead(nn.Module):
 class CoHead(nn.Module):
     """This is the class for Hyperbolic Fourier-coattention mechanism."""
     
-    def __init__(self, embedding_dim=768 , dim=256, fourier=True):
+    def __init__(self, embedding_dim_1=768, embedding_dim_2=512, dim=256, ft_out=256,fourier=True):
         super(CoHead, self).__init__()
 
-        self.embedding_dim = embedding_dim 
-        self.latent_dim = dim  
-        self.k = 128
-        self.Wl = nn.Parameter(torch.Tensor((self.latent_dim, self.embedding_dim)))
-        self.Wc = nn.Parameter(torch.Tensor((self.k, self.latent_dim)))
-        self.Wi = nn.Parameter(torch.Tensor((self.k, self.latent_dim)))
+        self.embedding_dim_1 = embedding_dim_1
+        self.embedding_dim_2 = embedding_dim_2 
+        self.k = dim 
+        self.Wl = nn.Parameter(torch.Tensor((self.embedding_dim_1, self.k)))
+        self.Wc = nn.Parameter(torch.Tensor((self.k, self.embedding_dim_2)))
+        self.Wi = nn.Parameter(torch.Tensor((self.k, self.embedding_dim_1)))
         self.wHi = nn.Parameter(torch.Tensor((1, self.k)))
         self.whc = nn.Parameter(torch.Tensor((1, self.k)))
+        self.dropout = nn.Dropout(0.3)
+        self.final_proj = nn.Linear((embedding_dim_1 + embedding_dim_2)*2,  ft_out)
+        self.disc = nn.Linear((embedding_dim_1 + embedding_dim_2)*2, 1)
+        self.gelu = nn.GELU()
+
 
         #register weights and biAi Ai params
         self.register_parameter("Wl", self.Wl)
@@ -206,25 +211,27 @@ class CoHead(nn.Module):
 
 
         #initialize data of parameters
-        self.Wl.data = torch.randn((self.latent_dim, self.embedding_dim))
-        self.Wc.data = torch.randn((self.k, self.latent_dim))
-        self.Wi.data = torch.randn((self.k, self.latent_dim))
+        self.Wl.data = torch.randn((self.embedding_dim_2, self.embedding_dim_1))
+        self.Wc.data = torch.randn((self.k, self.embedding_dim_2))
+        self.Wi.data = torch.randn((self.k, self.embedding_dim_1))
         self.wHi.data = torch.randn((1, self.k))
         self.whc.data = torch.randn((1, self.k))
         self.fourier = fourier
 
-    def forward(self, img_rep, cap_rep, img_ori, cap_ori):
+    def forward(self, rep_1, rep_2, rep_1_ori, rep_2_ori, itm_head=False):
         if self.fourier:
-            img_rep_fourier = torch.fft.fft2(img_rep).float()
-            cap_rep_fourier = torch.fft.fft2(cap_rep).float()
+            img_rep_fourier = torch.fft.fft2(rep_1).float()
+            cap_rep_fourier = torch.fft.fft2(rep_2).float()
             img_rep_trans = img_rep_fourier.transpose(-1, -2)#[bs, dim, len]
             cap_rep_trans = cap_rep_fourier.transpose(-1, -2)#[bs, dim, len]
-            L = torch.tanh(torch.matmul(torch.matmul(img_rep_fourier, self.Wl), img_rep_trans))  
+            L = self.gelu(torch.matmul(torch.matmul(img_rep_fourier, self.Wl), img_rep_trans))  
             L_trans = L.transpose(-1, -2)
         else:
-            img_rep_trans = img_rep.transpose(-1, -2)#[bs, dim, len]
-            cap_rep_trans = cap_rep.transpose(-1, -2)#[bs, dim, len]
-            L = torch.tanh(torch.matmul(torch.matmul(img_rep, self.Wl), img_rep_trans))  
+            # print(rep_1.shape)
+            # print(rep_2.shape)
+            img_rep_trans = rep_1.transpose(-1, -2) #[bs, dim, len]
+            cap_rep_trans = rep_2.transpose(-1, -2) #[bs, dim, len]
+            L = torch.tanh(torch.matmul(torch.matmul(rep_2, self.Wl), img_rep_trans))  
             L_trans = L.transpose(-1, -2)
 
         Hi = torch.tanh(torch.matmul(self.Wi, img_rep_trans) + torch.matmul(torch.matmul(self.Wc, cap_rep_trans), L))
@@ -232,14 +239,13 @@ class CoHead(nn.Module):
         Ai = F.softmax(torch.matmul(self.wHi, Hi), dim=-1)
         Ac = F.softmax(torch.matmul(self.whc, Hc), dim=-1)
 
-        co_s = torch.matmul(Ai,img_rep) # (1, dim)
-        co_c = torch.matmul(Ac,cap_rep) # (1, dim)
-        co_sc = torch.cat([co_s, co_c], dim = -1)
-        co_sc = torch.squeeze(co_sc) # [bs, dim*2], 
-        print(co_s.shape)
-        print(co_c.shape)
-        print(co_sc.shape)
-        return torch.sigmoid(self.disc(co_sc))
+        co_s = torch.matmul(Ai, rep_1).squeeze_(1) # (1, dim)
+        co_c = torch.matmul(Ac, rep_2).squeeze_(1) # (1, dim)
+        co_sc = torch.squeeze(torch.cat([rep_1_ori , co_s, co_c, rep_2_ori], dim = -1))
+        if not itm_head:
+            return self.final_proj(self.dropout(co_sc))
+        else :
+            return self.disc(self.dropout(co_sc))
 
 class MixtureMultiModalLayer(nn.Module):
     def __init__(self, config:PerceiverConfig, d_visions=[256], d_texts=[256], num_self_attend=None) -> None:

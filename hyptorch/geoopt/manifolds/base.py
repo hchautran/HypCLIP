@@ -282,6 +282,7 @@ class Manifold(torch.nn.Module, metaclass=abc.ABCMeta):
         self.assert_check_point(x)
         ok, reason = self._check_point_on_manifold(x, atol=atol, rtol=rtol)
         if not ok:
+            print(self.inner(x, x))
             raise ValueError(
                 "`x` seems to be a tensor "
                 "not lying on {} manifold.\nerror: {}".format(self.name, reason)

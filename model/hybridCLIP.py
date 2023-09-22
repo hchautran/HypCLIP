@@ -16,7 +16,7 @@ from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProject
 from transformers.models.clip.modeling_clip import CLIPOutput
 from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
 from .modules.utils import ManifoldMapper, LorentzCentroidPooler
-from model.baseModel import BaseModel
+from model.baseHybridModel import BaseModel
 from peft import get_peft_model, LoraConfig, TaskType
 
 EUCLID = "euclidean"
@@ -38,7 +38,7 @@ class HypCLIP(BaseModel):
             task_type=TaskType.FEATURE_EXTRACTION, 
             inference_mode=False, 
             r=16, 
-            lora_alpha=32, 
+            lora_alpha=16, 
             lora_dropout=0.1, 
             target_modules=[
                 # 'token_embedding',
@@ -67,7 +67,7 @@ class HypCLIP(BaseModel):
             task_type=TaskType.FEATURE_EXTRACTION, 
             inference_mode=False, 
             r=8, 
-            lora_alpha=32, 
+            lora_alpha=8, 
             lora_dropout=0.1, 
             target_modules=vision_target_modules
         )
@@ -83,31 +83,6 @@ class HypCLIP(BaseModel):
         text_head = nn.ModuleList([text_model.text_projection])
         vision_head = nn.ModuleList([vision_model.visual_projection])
 
-        if self.manifold_name !=  EUCLID:
-            if config.use_lorentz_centroid:
-                text_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-                )
-                vision_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-                )
-                text_head.append(
-                    LorentzCentroidPooler(
-                        self.manifold, curv=self.curv, clip_r=self.clip_r
-                    )
-                )
-                vision_head.append(
-                    LorentzCentroidPooler(
-                        self.manifold, curv=self.curv, clip_r=self.clip_r
-                    )
-                )
-            else:
-                text_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-                )
-                vision_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-                )
 
 
         self.vision_model = CLIPVision(

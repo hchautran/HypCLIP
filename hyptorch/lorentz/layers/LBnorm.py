@@ -99,6 +99,23 @@ class LorentzBatchNorm1d(LorentzBatchNorm):
     def forward(self, x, momentum=0.1):
         return super(LorentzBatchNorm1d, self).forward(x, momentum)
 
+class LorentzLayerNorm(nn.Module):
+    """1D Lorentz Batch Normalization with Centroid and Fréchet variance"""
+
+    def __init__(self, manifold: CustomLorentz, num_features: int):
+        super(LorentzLayerNorm, self).__init__()
+        self.manifold = manifold
+        self.layernorm = nn.LayerNorm(num_features - 1)  
+
+    def forward(self, x ):
+        # x = self.manifold.logmap0(x)
+        # print(x)
+        dn = x.shape[-1] - 1
+        x = self.layernorm(x.narrow(-1, 1, dn)) 
+        x = self.manifold.add_time(x) 
+        # x = self.manifold.expmap0(x) 
+        return x 
+        
 
 class LorentzBatchNorm2d(LorentzBatchNorm):
     """2D Lorentz Batch Normalization with Centroid and Fréchet variance"""

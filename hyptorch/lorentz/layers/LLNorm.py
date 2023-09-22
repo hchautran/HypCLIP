@@ -6,11 +6,11 @@ from hyptorch.geoopt import ManifoldParameter
 from hyptorch.lorentz.manifold import CustomLorentz
 
 
-class LorentzBatchNorm(nn.Module):
+class LorentzLayerNorm(nn.Module):
     """Lorentz Batch Normalization with Centroid and Fréchet variance"""
 
     def __init__(self, manifold: CustomLorentz, num_features: int):
-        super(LorentzBatchNorm, self).__init__()
+        super(LorentzLayerNorm, self).__init__()
         self.manifold = manifold
 
         self.beta = ManifoldParameter(

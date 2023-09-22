@@ -141,6 +141,8 @@ class Stereographic(Manifold):
     ) -> torch.Tensor:
         return math.dist(x, y, k=self.k, keepdim=keepdim, dim=dim)
 
+
+
     def dist2(
         self, x: torch.Tensor, y: torch.Tensor, *, keepdim=False, dim=-1
     ) -> torch.Tensor:
@@ -582,6 +584,7 @@ class StereographicExact(Stereographic):
         return "exact"
 
 
+
 class PoincareBall(Stereographic):
     __doc__ = r"""{}
 
@@ -609,6 +612,37 @@ class PoincareBall(Stereographic):
         k = self._parameters.pop("k")
         with torch.no_grad():
             self.isp_c = k.exp_().sub_(1).log_()
+
+    def _tensor_dot(self, x, y):
+        res = torch.einsum("ij,kj->ik", (x, y))
+        return res
+    
+    def mobius_addition_batch(self, x, y, k=1.0):
+        xy = self._tensor_dot(x, y)  # B x C
+        x2 = x.pow(2).sum(-1, keepdim=True)  # B x 1
+        y2 = y.pow(2).sum(-1, keepdim=True)  # C x 1
+        num = 1 + 2 * k * xy + k * y2.permute(1, 0)  # B x C
+        num = num.unsqueeze(2) * x.unsqueeze(1)
+        num = num + (1 - k * x2).unsqueeze(2) * y  # B x C x D
+        denom_part1 = 1 + 2 * k * xy  # B x C
+        denom_part2 = k ** 2 * x2 * y2.permute(1, 0)
+        denom = denom_part1 + denom_part2
+        res = num / (denom.unsqueeze(2) + 1e-5)
+        return res
+
+
+    def dist_batch(self, x, y, dim=-1, keepdim = False, device='gpu'):
+        device = torch.device('cuda:0' if device=='gpu' else 'cpu')
+        x = x.to(device)
+        y = y.to(device)
+        k = self.k.to(device)
+        
+        return 2.0 * math.artan_k(
+            self.mobius_addition_batch(-x, y, k=k).norm(dim=dim, p=2, keepdim=keepdim ), k 
+        )
+
+
+
 
 
 class PoincareBallExact(PoincareBall, StereographicExact):

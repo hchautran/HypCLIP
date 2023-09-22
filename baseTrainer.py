@@ -40,35 +40,34 @@ class MyTrainer:
         self.model = self.accelerator.prepare(model)
         self.dataset = dataset
 
-        if config.use_riemann == False:
-            if config.optimizer == "adam":
-                self.optimizer = torch.optim.AdamW(
-                    self.model.parameters(),
-                    lr=config.lr,
-                )
-            else:
-                self.optimizer = torch.optim.SGD(
-                    self.model.parameters(),
-                    lr=config.lr,
-                    momentum=config.momentum,
-                    weight_decay=config.weight_decay,
+        if config.optimizer == "adam":
+            self.optimizer = torch.optim.AdamW(
+                self.model.parameters(),
+                lr=config.lr,
             )
         else:
-            if config.optimizer == "adam":
-                self.optimizer = RiemannianAdam(
-                    self.model.parameters(),
-                    lr=config.lr,
-                    stabilize=10,
-                    weight_decay=config.weight_decay,
-                )
-            else:
-                self.optimizer = RiemannianSGD(
-                    self.model.parameters(),
-                    momentum=config.momentum,
-                    lr=config.lr,
-                    weight_decay=config.weight_decay,
-                    stabilize=10,
-                )
+            self.optimizer = torch.optim.SGD(
+                self.model.parameters(),
+                lr=config.lr,
+                momentum=config.momentum,
+                weight_decay=config.weight_decay,
+            )
+        # else:
+        #     if config.optimizer == "adam":
+        #         self.optimizer = RiemannianAdam(
+        #             self.model.parameters(),
+        #             lr=config.lr,
+        #             stabilize=10,
+        #             weight_decay=config.weight_decay,
+        #         )
+        #     else:
+        #         self.optimizer = RiemannianSGD(
+        #             self.model.parameters(),
+        #             momentum=config.momentum,
+        #             lr=config.lr,
+        #             weight_decay=config.weight_decay,
+        #             stabilize=10,
+        #         )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, 'max', factor=0.75, patience=2
@@ -196,15 +195,12 @@ class MyTrainer:
                 )
                 sims_t2i = sims_t2i.detach().numpy()
                 eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
-            elif self.config.manifold == LORENTZ:
+            else:
                 eu_sims_t2i, sims_t2i = (
                     self.model.dist_func(all_text_embeds, all_vision_embeds)
                 )
                 sims_t2i = sims_t2i.cpu().detach().numpy()
                 eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
-            else:
-                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-                sims_t2i = sims_t2i.cpu().detach().numpy()
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
             eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
             metrics["epoch"] = self.current_epoch

@@ -1,7 +1,6 @@
 import wandb
 from accelerate import Accelerator
-from utils.data_utils import get_dataloader
-from geoopt.optim import RiemannianAdam, RiemannianSGD
+from utils.data_utils import get_co_dataloader
 from utils.retrivial_utils import evaluate_recall
 from tqdm.auto import tqdm
 import torch
@@ -12,7 +11,7 @@ from transformers import Blip2Model
 
 class MyTrainer:
     def __init__(
-        self, config, model, dataset, train_loader, val_loader, test_loader, processor
+        self, config, model, dataset, train_loader, val_loader, test_loader, clip_processor, blip_processor
     ):
         self.config = config
         self.model_ckt = config.model_ckt
@@ -25,7 +24,8 @@ class MyTrainer:
         self.epochs = config.epochs
         self.cache_dir = config.cache_dir
         self.momentum = config.momentum
-        self.processor = processor
+        self.clip_processor = clip_processor
+        self.blip_processor = blip_processor
         self.device = torch.device(
             f"cuda:{config.cuda}"
             if (torch.cuda.is_available() and config.cuda >= 0)
@@ -40,38 +40,21 @@ class MyTrainer:
         self.model = self.accelerator.prepare(model)
         self.dataset = dataset
 
-        if config.use_riemann == False:
-            if config.optimizer == "adam":
-                self.optimizer = torch.optim.AdamW(
-                    self.model.parameters(),
-                    lr=config.lr,
-                )
-            else:
-                self.optimizer = torch.optim.SGD(
-                    self.model.parameters(),
-                    lr=config.lr,
-                    momentum=config.momentum,
-                    weight_decay=config.weight_decay,
+        if config.optimizer == "adam":
+            self.optimizer = torch.optim.AdamW(
+                self.model.parameters(),
+                lr=config.lr,
             )
         else:
-            if config.optimizer == "adam":
-                self.optimizer = RiemannianAdam(
-                    self.model.parameters(),
-                    lr=config.lr,
-                    stabilize=10,
-                    weight_decay=config.weight_decay,
-                )
-            else:
-                self.optimizer = RiemannianSGD(
-                    self.model.parameters(),
-                    momentum=config.momentum,
-                    lr=config.lr,
-                    weight_decay=config.weight_decay,
-                    stabilize=10,
-                )
-
+            self.optimizer = torch.optim.SGD(
+                self.model.parameters(),
+                lr=config.lr,
+                momentum=config.momentum,
+                weight_decay=config.weight_decay,
+        )
+      
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.75, patience=2
+            self.optimizer, 'max', factor=0.5, patience=2
         )
         
         (
@@ -114,9 +97,12 @@ class MyTrainer:
                     # assert len(img_ids) == len(set(img_ids))
 
                     loss, stats, _, _ = self.model(
-                        input_ids=data["input_ids"],
-                        attention_mask=data["attention_mask"],
-                        pixel_values=data["pixel_values"],
+                        clip_input_ids=data["clip_input_ids"],
+                        clip_attention_mask=data["clip_attention_mask"],
+                        clip_pixel_values=data["clip_pixel_values"],
+                        blip_input_ids=data["blip_input_ids"],
+                        blip_attention_mask=data["blip_attention_mask"],
+                        blip_pixel_values=data["blip_pixel_values"],
                     )
 
                     self.accelerator.backward(loss)
@@ -133,34 +119,35 @@ class MyTrainer:
                         print(stats)
                         print("Loss: {}".format(loss.item()))
                     if self.eval_freq != -1 and (current_step + 1) % self.eval_freq == 0:
-                        metrics, eu_metrics = self.evaluate(mode='val')
+                        metrics = self.evaluate(mode='val')
                         self.model.train()
                         print(metrics)
                         self.log(metrics)
-                        self.log({"val/eu_r_all": eu_metrics["val/r_all"]})
+                        # self.log({"val/eu_r_all": eu_metrics["val/r_all"]})
                     print('infer time', time.time() - start)
 
                     
                     # print('infer time', time.time() - start)
-                metrics, eu_metrics = self.evaluate(mode='test')
+                metrics = self.evaluate(mode='test')
                 self.scheduler.step(metrics["test/r_all"])
                 print(metrics)
                 self.log(metrics)
-                self.log({"test/eu_r_all": eu_metrics["test/r_all"]})
+                # self.log({"test/eu_r_all": eu_metrics["test/r_all"]})
                 if best_r_all < metrics["test/r_all"]:
                     waiting = 0
                     best_r_all = metrics["test/r_all"]
                     self.log({"best r_all": metrics["test/r_all"]})
-                    self.log({"euclid best r_all": eu_metrics["test/r_all"]})
+                    # self.log({"euclid best r_all": eu_metrics["test/r_all"]})
                     print("best r all", best_r_all)
                 elif epoch > self.config.min_epochs:
                     waiting += 1
                 if waiting < self.patience:
                     self.train_loader = self.accelerator.prepare(
-                        get_dataloader(
+                        get_co_dataloader(
                             self.dataset["train"],
                             self.config.batch_size,
-                            processor=self.processor,
+                            clip_processor=self.clip_processor,
+                            blip_processor=self.blip_processor,
                             mode="train",
                         )
                     )
@@ -177,11 +164,12 @@ class MyTrainer:
         with torch.no_grad():
             for data in tqdm(loader):
                 text_embeds = self.model.get_text_features(
-                    input_ids=data["input_ids"], attention_mask=data["attention_mask"]
+                    clip_input_ids=data["clip_input_ids"], clip_attention_mask=data["clip_attention_mask"],
+                    blip_input_ids=data["blip_input_ids"], blip_attention_mask=data["blip_attention_mask"]
                 )
-                # self.model.manifold.assert_check_point_on_manifold(text_embeds)
                 vision_embeds = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0].unsqueeze(0)
+                    clip_pixel_values=data["clip_pixel_values"][0].unsqueeze(0),
+                    blip_pixel_values=data["blip_pixel_values"][0].unsqueeze(0),
                 )
                 # self.model.manifold.assert_check_point_on_manifold(vision_embeds)
                 all_text_embeds.append(text_embeds)
@@ -189,27 +177,12 @@ class MyTrainer:
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
-            if self.config.manifold == POINCARE:
-                eu_sims_t2i, sims_t2i = (
-                    self.model.dist_func(all_text_embeds, all_vision_embeds, device='cpu')
-                
-                )
-                sims_t2i = sims_t2i.detach().numpy()
-                eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
-            elif self.config.manifold == LORENTZ:
-                eu_sims_t2i, sims_t2i = (
-                    self.model.dist_func(all_text_embeds, all_vision_embeds)
-                )
-                sims_t2i = sims_t2i.cpu().detach().numpy()
-                eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
-            else:
-                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-                sims_t2i = sims_t2i.cpu().detach().numpy()
+           
+            sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+            sims_t2i = sims_t2i.cpu().detach().numpy()
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
-            eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
             metrics["epoch"] = self.current_epoch
-            eu_metrics["epoch"] = self.current_epoch
-        return metrics, eu_metrics
+        return metrics
 
     def save(self):
         torch.save(self.model, f"{self.save_dir}/{self.name}.pth")

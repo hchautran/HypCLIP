@@ -27,7 +27,7 @@ class CLIPVision(nn.Module):
         last_hidden_state = vision_outputs[0]
 
         if not self.config.use_lorentz_centroid or self.config.manifold != 'lorentz':
-            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = vision_outputs[1]
         else:
             pooled_output = last_hidden_state
         for layer in self.head:

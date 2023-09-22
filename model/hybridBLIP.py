@@ -14,11 +14,11 @@ from transformers import BlipForImageTextRetrieval
 from typing import Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 from .modules.utils import ManifoldMapper
-from model.baseModel import BaseModel
 from .modules.utils import ManifoldMapper, LorentzCentroidPooler
 from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
 from transformers.activations import ACT2FN
 from peft import get_peft_model, LoraConfig, TaskType
+from model.baseHybridModel import BaseModel
 
 
 EUCLID = "euclidean"
@@ -58,44 +58,14 @@ class HypBLIP(BaseModel):
         vision_body = model.vision_model
         text_head = nn.ModuleList([model.text_proj])
         vision_head = nn.ModuleList([model.vision_proj])
-        if self.manifold_name == LORENTZ:
-            if config.use_lorentz_centroid:
-                text_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=True)
-                )
-                vision_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=True)
-                )
-                text_head.append(
-                    LorentzCentroidPooler(
-                        self.manifold, curv=self.curv, clip_r=self.clip_r
-                    )
-                )
-                vision_head.append(
-                    LorentzCentroidPooler(
-                        self.manifold, curv=self.curv, clip_r=self.clip_r
-                    )
-                )
-            else:
-                text_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=True)
-                )
-                vision_head.append(
-                    ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=True)
-                )
-
 
         self.vision_model = BLIPVision(
             config,
             body=vision_body,
             head=vision_head,
-            # num_trainable_blocks=config.vision_trainable_blocks,
-            # freeze_embedding=config.freeze_embedding,
         )
         self.text_model = BLIPText(
             config,
             body=text_body,
             head=text_head,
-            # num_trainable_blocks=config.text_trainable_blocks,
-            # freeze_embeddings=config.freeze_embedding,
         )

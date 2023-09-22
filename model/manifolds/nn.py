@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 from torch.nn.modules.module import Module
+from hyptorch.geoopt.manifolds import PoincareBall
 
 
 class HGCNLayer(nn.Module):
@@ -32,7 +33,7 @@ class HypLinear(nn.Module):
     Hyperbolic linear layer.
     """
 
-    def __init__(self, manifold, in_features, out_features, c, dropout=0.15, use_bias=True):
+    def __init__(self, manifold:PoincareBall, in_features, out_features, c, dropout=0.15, use_bias=True):
         super(HypLinear, self).__init__()
         self.manifold = manifold
         self.in_features = in_features
@@ -50,14 +51,11 @@ class HypLinear(nn.Module):
 
     def forward(self, x):
         weight = F.dropout(self.weight, self.dropout, training=self.training)
-        mv = self.manifold.mobius_matvec(m = weight, x = x, c = self.c)
-        res = self.manifold.proj(mv, self.c)
+        res = self.manifold.mobius_matvec(m = weight, x = x)
         if self.use_bias:
-            bias = self.manifold.proj_tan0(self.bias, self.c)
-            hyp_bias = self.manifold.expmap0(bias, self.c)
-            hyp_bias = self.manifold.proj(hyp_bias, self.c)
-            res = self.manifold.mobius_add(res, hyp_bias, c=self.c)
-            res = self.manifold.proj(res, self.c)
+            bias = self.bias 
+            hyp_bias = self.manifold.expmap0(bias)
+            res = self.manifold.mobius_add(res, hyp_bias)
         return res
 
     def extra_repr(self):
@@ -135,17 +133,14 @@ class HypAct(Module):
     Hyperbolic activation layer.
     """
 
-    def __init__(self, manifold, c_in, c_out, act):
+    def __init__(self, manifold:PoincareBall, act):
         super(HypAct, self).__init__()
         self.manifold = manifold
-        self.c_in = c_in
-        self.c_out = c_out
         self.act = act
 
     def forward(self, x):
-        xt = self.act(self.manifold.logmap0(x, c=self.c_in))
-        xt = self.manifold.proj_tan0(xt, c=self.c_out)
-        return self.manifold.proj(self.manifold.expmap0(xt, c=self.c_out), c=self.c_out)
+        xt = self.act(self.manifold.logmap0(x))
+        return self.manifold.expmap0(xt)
 
     def extra_repr(self):
         return 'c_in={}, c_out={}'.format(

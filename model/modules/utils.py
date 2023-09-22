@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from hyptorch.lorentz.manifold import CustomLorentz
-
+from hyptorch.geoopt.manifolds.stereographic import PoincareBall 
+from typing import Union
 
 def fr(m):
     for param in m.parameters():
@@ -56,13 +57,13 @@ def freeze_blip(
 
 
 class ManifoldMapper(nn.Module):
-    def __init__(self, manifold:CustomLorentz, curv, clip_r=None, use_normalize=False):
+    def __init__(self, manifold:Union[PoincareBall,CustomLorentz], curv, clip_r=None, use_normalize=False):
         super().__init__()
         self.manifold = manifold
         self.curv = curv
         self.clip_r = clip_r
         self.use_normalize = use_normalize
-        self.gamma = nn.Parameter(torch.tensor([1.0]), requires_grad=True)
+        self.gamma = nn.Parameter(torch.tensor([1.5]), requires_grad=True)
 
     def forward(self, x):
         if self.clip_r is not None and not self.use_normalize:
@@ -70,11 +71,15 @@ class ManifoldMapper(nn.Module):
             fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
             x = x * fac
         else:
-            print('current gamma:', self.gamma.item())
             x = F.normalize(x, p=2, dim=-1) * self.gamma
+            print('current gamma:', self.gamma.item())
         
-        x = F.pad(x, (1,0), "constant", 0)
-        out = self.manifold.projx(x)
+        
+        if isinstance(self.manifold, CustomLorentz): 
+            x = F.pad(x, (1,0), "constant", 0)
+            out = self.manifold.projx(x)
+        else:
+            out = self.manifold.expmap0(x)
         return out 
 
 

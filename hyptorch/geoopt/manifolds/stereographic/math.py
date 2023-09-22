@@ -1237,13 +1237,15 @@ def _mobius_matvec(m: torch.Tensor, x: torch.Tensor, k: torch.Tensor, dim: int =
     if dim != -1 or m.dim() == 2:
         mx = torch.tensordot(x, m, ([dim], [1]))
     else:
-        mx = torch.matmul(m, x.unsqueeze(-1)).squeeze(-1)
+        mx = x @ m.transpose(-1, -2)
     mx_norm = mx.norm(dim=dim, keepdim=True, p=2).clamp_min(1e-15)
     res_c = tan_k(mx_norm / x_norm * artan_k(x_norm, k), k) * (mx / mx_norm)
     cond = (mx == 0).prod(dim=dim, keepdim=True, dtype=torch.bool)
     res_0 = torch.zeros(1, dtype=res_c.dtype, device=res_c.device)
     res = torch.where(cond, res_0, res_c)
     return res
+
+
 
 
 # TODO: check if this extends to gyrovector spaces for positive curvature
@@ -1952,7 +1954,7 @@ def weighted_midpoint(
     )
 
 
-@torch.jit.script
+# @torch.jit.script
 def _weighted_midpoint(
     xs: torch.Tensor,
     k: torch.Tensor,
@@ -1963,6 +1965,7 @@ def _weighted_midpoint(
     lincomb: bool = False,
     posweight: bool = False,
 ):
+
     if reducedim is None:
         reducedim = list_range(xs.dim())
         reducedim.pop(dim)

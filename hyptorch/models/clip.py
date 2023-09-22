@@ -16,15 +16,18 @@ from hyptorch.lorentz.layers.LCLIP import (
     HypCLIPAttention,
     HypCLIPMLP,
     HypCLIPTextEmbeddings, 
-    HypCLIPVisionEmbeddings
+    HypCLIPVisionEmbeddings,
+    HybridCLIPTextEmbeddings, 
+    HybridCLIPVisionEmbeddings,
 )
-from hyptorch.lorentz.layers.LCLIP import (
-    LorentzBatchNorm1d
+from hyptorch.lorentz.layers import (
+    LorentzLayerNorm
 )
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from hyptorch.lorentz.manifold import CustomLorentz
 from transformers import PreTrainedModel
 from typing import Optional, Tuple, Union
+from transformers import CLIPPreTrainedModel 
 
 
 
@@ -49,8 +52,8 @@ class HypCLIPTextTransformer(nn.Module):
         super().__init__()
         self.config = config
         embed_dim = config.hidden_size
-        self.final_layer_norm = LorentzBatchNorm1d(manifold, embed_dim + 1)
-        self.embeddings = HypCLIPTextEmbeddings(manifold ,config)
+        self.final_layer_norm = LorentzLayerNorm(manifold, embed_dim + 1)
+        self.embeddings = HybridCLIPTextEmbeddings(manifold ,config)
         self.encoder = HypCLIPEncoder(manifold, config)
         self.manifold = manifold
 
@@ -126,9 +129,9 @@ class HypCLIPVisionTransformer(nn.Module):
         super().__init__()
         self.config = config
         embed_dim = config.hidden_size
-        self.embeddings = HypCLIPVisionEmbeddings(manifold, config)
+        self.embeddings = HybridCLIPVisionEmbeddings(manifold, config)
         self.encoder = HypCLIPEncoder(manifold, config)
-        self.post_layernorm = LorentzBatchNorm1d(manifold, embed_dim+1)
+        self.post_layernorm = LorentzLayerNorm(manifold, embed_dim+1)
         self.manifold = manifold
 
     def forward(
@@ -177,56 +180,13 @@ class HypCLIPVisionTransformer(nn.Module):
             attentions=encoder_outputs.attentions,
         )
 
-class HypCLIPPreTrainedModel(PreTrainedModel):
-    """
-    An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
-    models.
-    """
-    config_class = CLIPConfig
-    base_model_prefix = "clip"
-    supports_gradient_checkpointing = True
-
-    def _init_weights(self, module):
-        """Initialize the weights"""
-        factor = self.config.initializer_factor
-        if isinstance(module, HypCLIPAttention):
-            factor = self.config.initializer_factor
-            in_proj_std = (module.embed_dim**-0.5) * ((2 * module.config.num_hidden_layers) ** -0.5) * factor
-            out_proj_std = (module.embed_dim**-0.5) * factor
-            nn.init.normal_(module.q_proj.weight, std=in_proj_std)
-            nn.init.normal_(module.k_proj.weight, std=in_proj_std)
-            nn.init.normal_(module.v_proj.weight, std=in_proj_std)
-            nn.init.normal_(module.out_proj.weight, std=out_proj_std)
-        elif isinstance(module, HypCLIPMLP):
-            factor = self.config.initializer_factor
-            in_proj_std = (
-                (module.config.hidden_size**-0.5) * ((2 * module.config.num_hidden_layers) ** -0.5) * factor
-            )
-            fc_std = (2 * module.config.hidden_size) ** -0.5 * factor
-            nn.init.normal_(module.fc1.weight, std=fc_std)
-            nn.init.normal_(module.fc2.weight, std=in_proj_std)
-        elif isinstance(module, HypCLIPModel):
-            nn.init.normal_(
-                module.text_projection.weight,
-                std=module.text_embed_dim**-0.5 * self.config.initializer_factor,
-            )
-            nn.init.normal_(
-                module.visual_projection.weight,
-                std=module.vision_embed_dim**-0.5 * self.config.initializer_factor,
-            )
 
 
-    def _set_gradient_checkpointing(self, module, value=False):
-        if isinstance(module, HypCLIPEncoder):
-            module.gradient_checkpointing = value
-
-
-class HypCLIPModel(PreTrainedModel):
+class HypCLIPModel(CLIPPreTrainedModel):
     config_class = CLIPConfig
 
-    def __init__(self, manifold,config: CLIPConfig):
+    def __init__(self, config: CLIPConfig):
         super().__init__(config)
-
         if not isinstance(config.text_config, CLIPTextConfig):
             raise ValueError(
                 "config.text_config is expected to be of type CLIPTextConfig but is of type"
@@ -241,7 +201,7 @@ class HypCLIPModel(PreTrainedModel):
 
         text_config = config.text_config
         vision_config = config.vision_config
-        self.manifold = manifold
+        self.manifold = config.manifold 
 
         self.projection_dim = config.projection_dim
         self.text_embed_dim = text_config.hidden_size
@@ -253,6 +213,8 @@ class HypCLIPModel(PreTrainedModel):
         self.visual_projection = LorentzLinear(self.manifold, self.vision_embed_dim + 1, self.projection_dim + 1, bias=False)
         self.text_projection = LorentzLinear(self.manifold, self.text_embed_dim + 1, self.projection_dim + 1, bias=False)
         self.logit_scale = nn.Parameter(torch.tensor(self.config.logit_scale_init_value))
+        self.temp = nn.Parameter(torch.tensor([0.07]))
+        self.weight_i2t = 0.7
         self.post_init()
 
 
@@ -297,8 +259,9 @@ class HypCLIPModel(PreTrainedModel):
             return_dict=return_dict,
         )
 
-        pooled_output = text_outputs[1]
+        pooled_output = text_outputs[0]
         text_features = self.text_projection(pooled_output)
+        text_features = self.manifold.centroid(text_features)
 
         return text_features
 
@@ -345,14 +308,15 @@ class HypCLIPModel(PreTrainedModel):
             return_dict=return_dict,
         )
 
-        pooled_output = vision_outputs[1]  # pooled_output
+        pooled_output = vision_outputs[0]  # pooled_output
         image_features = self.visual_projection(pooled_output)
+        image_features = self.manifold.centroid(image_features)
 
         return image_features
 
     def dist_func(self, x, y):
-        logit_scale = self.logit_scale.exp()
-        return -self.manifold.sqdist_batch(x, y) * logit_scale
+        # logit_scale = self.logit_scale.exp()
+        return -self.manifold.sqdist_batch(x, y) 
 
     def margin_loss(self, sims_i2t, sims_i2i):
         bsize = sims_i2t.shape[0] 
@@ -378,12 +342,22 @@ class HypCLIPModel(PreTrainedModel):
         sims_i2i = self.dist_func(image_embeds, image_embeds)
         sims_t2t = self.dist_func(text_embeds, text_embeds)
         target = torch.arange(bsize).to(self.device)
-        logits_i2t = sims_i2t/self.temp
-        logits_t2i = sims_t2i/self.temp
-        m_loss = (self.margin_loss(sims_i2t, sims_i2i - eye_mask) + self.margin_loss(sims_t2i, sims_t2t - eye_mask))/2
+        logits_i2t = torch.cat([sims_i2t/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
+        # m_loss = (self.margin_loss(sims_i2t, sims_i2i - eye_mask) + self.margin_loss(sims_t2i, sims_t2t - eye_mask))/2
         itc_loss =  (nn.functional.cross_entropy(logits_i2t, target) + nn.functional.cross_entropy(logits_t2i, target))/2
-        loss = itc_loss + m_loss 
-        return loss
+        loss = itc_loss 
+        stats = {
+            "logits/weight_t2i": 1.0 - self.weight_i2t,
+            # "logits/margin_loss": m_loss.item() if m_loss is not None else 0.0,
+            "logits/itc_loss": itc_loss.item(),
+            "logits/min": sims_i2t.min().item(),
+            "logits/mean": sims_i2t.mean().item(),
+            "logits/max": sims_i2t.max().item(),
+            "logits/acc": (sims_i2t.argmax(-1) == target).float().mean().item(),
+            "logits/curvature": self.manifold.k.item(),
+        }
+        return loss, stats
 
     def forward(
         self,
@@ -443,23 +417,27 @@ class HypCLIPModel(PreTrainedModel):
             return_dict=return_dict,
         )
 
-        image_embeds = vision_outputs[1]
+        image_embeds = vision_outputs[0]
         image_embeds = self.visual_projection(image_embeds)
+        image_embeds = self.manifold.centroid(image_embeds)
 
-        text_embeds = text_outputs[1]
+        text_embeds = text_outputs[0]
         text_embeds = self.text_projection(text_embeds)
+        text_embeds = self.manifold.centroid(text_embeds)
 
 
         loss = None
+        stats = None
         if return_loss:
-            loss = self.clip_loss(text_embeds, image_embeds)
+            loss, stats = self.clip_loss(image_embeds=image_embeds, text_embeds=text_embeds)
 
         if not return_dict:
             output = (text_embeds, image_embeds, text_outputs, vision_outputs)
             return ((loss,) + output) if loss is not None else output
 
-        return CLIPOutput(
+        return dict(
             loss=loss,
+            stats=stats,
             text_embeds=text_embeds,
             image_embeds=image_embeds,
             text_model_output=text_outputs,

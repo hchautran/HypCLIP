@@ -25,6 +25,24 @@ class Flickr_dataset(Dataset):
         }
         return out
 
+class CoFlickr_dataset(Dataset):
+    def __init__(self, dataset):  
+        self.dataset = dataset
+        self.dataset_len = len(dataset)
+        self.cap_per_img = 5
+
+    def __len__(self):
+        return self.dataset_len  * self.cap_per_img
+    
+    def __getitem__(self, index): 
+        data = self.dataset[int(index / self.cap_per_img)]
+        out = {
+            'img_id': data['img_id'],
+            'clip_pixel_values': data['clip_pixel_values'],
+            'blip_pixel_values': data['blip_pixel_values'],
+            'caption': data['caption'][int(index % self.cap_per_img)],
+        }
+        return out
 class UniqueClassSampler(Sampler):
     def __init__(self, data_source, batch_size):
         self.data_source = data_source
@@ -73,6 +91,33 @@ def collate_func(batch, processor):
 
 
 
+def co_collate_func(batch, clip_processor, blip_processor):
+    # print(batch)
+    df = pd.DataFrame(batch)
+    data = {} 
+    clip_data = clip_processor(
+        text=list(df['caption']), 
+        padding=True, 
+        return_tensors='pt',
+        truncation=True
+    )
+    blip_data = blip_processor(
+        text=list(df['caption']), 
+        padding=True, 
+        return_tensors='pt',
+        truncation=True
+    )
+    data['clip_input_ids'] = clip_data['input_ids'] 
+    data['clip_attention_mask'] = clip_data['attention_mask'] 
+    data['blip_input_ids'] = blip_data['input_ids'] 
+    data['blip_attention_mask'] = blip_data['attention_mask'] 
+    data['clip_pixel_values'] = torch.from_numpy(np.concatenate(list(df['clip_pixel_values']), 0))
+    data['blip_pixel_values'] = torch.from_numpy(np.concatenate(list(df['blip_pixel_values']), 0))
+    data['img_id'] = torch.tensor(list(df['img_id'])) 
+    return data
+
+
+
 def get_dataloader(dataset, batch_size, processor, mode='train', use_random_sampler=False):
     flickr_dataset = Flickr_dataset(dataset) 
     custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
@@ -100,21 +145,45 @@ def get_dataloader(dataset, batch_size, processor, mode='train', use_random_samp
             shuffle=False
         )
 
+def get_co_dataloader(dataset, batch_size, clip_processor, blip_processor,mode='train', use_random_sampler=False):
+    flickr_dataset = CoFlickr_dataset(dataset) 
+    custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
+    if mode == 'train':
+        if use_random_sampler:
+            return DataLoader(
+                flickr_dataset, 
+                batch_size=batch_size, 
+                collate_fn = lambda batch: co_collate_func(batch, clip_processor, blip_processor),
+                shuffle=True
+            )
+ 
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn = lambda batch: co_collate_func(batch, clip_processor, blip_processor),
+            sampler=custom_sampler,
+        ) 
+    else:
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn = lambda batch: co_collate_func(batch, clip_processor, blip_processor),
+            shuffle=False
+        )
         
 
 def preprocess_img(sample, processor:CLIPProcessor):
     sample['pixel_values'] = processor(images=sample['image'])['pixel_values']
     return sample
 
-def preprocess_img_lavis(sample, lavis_vis_processor):
-    sample['pixel_values'] = lavis_vis_processor['eval'](sample['image']).unsqueeze(0)
+def co_preprocess_img(sample, clip_processor, blip_processor):
+    sample['clip_pixel_values'] = clip_processor(images=sample['image'])['pixel_values']
+    sample['blip_pixel_values'] = blip_processor(images=sample['image'])['pixel_values']
     return sample
 
 def parse_int(sample):
     sample['img_id'] = int(sample['img_id'])
     return sample
-    
-
     
 def get_flickr(flickr_ckt, cache_dir):
     flickr30k = load_dataset(flickr_ckt, cache_dir=cache_dir).remove_columns(['sentids', 'filename']).map(parse_int)
@@ -124,13 +193,3 @@ def get_flickr(flickr_ckt, cache_dir):
         'val' : flickr30k.filter(lambda x: x['split'] == 'val')['test'], 
     }) 
     return ds
-
-
-
-
-
-
-
-    
-    
-    

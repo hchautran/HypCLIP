@@ -1,5 +1,5 @@
 import argparse
-
+from transformers import GraphormerModel
 
 def add_flags_from_config(parser, config_dict):
     """
@@ -66,15 +66,14 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-# CACHE_DIR = "/Volumes/ExtraSpace/.cache"
 CACHE_DIR = '/mnt/data/.cache'
 
 config_args = {
     "training_config": {
         "lr": (1e-4, "learning rate"),
         "dropout": (0.0, "dropout probability"),
-        "cuda": (0, "which cuda device to use (-1 for cpu training)"),
-        "epochs": (100, "maximum number of epochs to train for"),
+        "cuda": (-1, "which cuda device to use (-1 for cpu training)"),
+        "epochs": (10, "maximum number of epochs to train for"),
         "weight_decay": (0.0, "l2 regularization strength"),
         "optimizer": ("adam", "which optimizer to use, can be any of [sgd, adam]"),
         "momentum": (0.999, "momentum in optimizer"),
@@ -110,37 +109,42 @@ config_args = {
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            1.5,
+            0.5,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
             1.0,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
-        "euclid_neg_margin": (
+        "euclid_text_neg_margin": (
+            0.75,
+            "decision margin for euclid manifold (0.0 for no margin)",
+        ),
+        "euclid_img_neg_margin": (
             0.5,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         
         "queue_size": (64000, "enable log"),
-        "enable_log": (True, "enable log"),
         "batch_size": (150, "batch size"),
-        "eval_freq": (450, "how often to compute val metrics (in epochs)"),
-        "weight_i2t": (0.3, "weight image to text")
+        "eval_freq": (410, "how often to compute val metrics (in epochs)"),
+        "weight_i2t": (0.4, "weight image to text"),
+        "enable_log": (True, "enable log"),
     },
     "hybrid_model_config": {
-        # "model_ckt": (CLIP_LARGE_PATCH_14, "model checkpoin on Hugging Face"),
+        # "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoin on Hugging Face"),
         "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
         "manifold": (
             EUCLID,
             "which manifold to use [euclidean, lorentz]",
         ),
-        "curv": (1.0, "hyperbolic curvature"),
-        "atol": (1e-3, "The relative tolerance parameter"),
-        "rtol": (1e-3, "The absolute tolerance parameter"),
+        "use_riemann": (True, "use Riemannian Optimizer"),
+        "curv": (10.0, "hyperbolic curvature"),
+        "atol": (1e-2, "The relative tolerance parameter"),
+        "rtol": (1e-2, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
-        "clip_radius": (1.5, "clipping radius"),
-        "vision_trainable_blocks": (0, "number of trainable blocks in vision model"),
+        "clip_radius": (2.5, "clipping radius"),
+        "vision_trainable_blocks": (1, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (0, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
