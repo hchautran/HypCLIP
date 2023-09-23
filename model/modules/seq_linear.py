@@ -1,9 +1,10 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from model.manifolds.poincare import PoincareBall
-from model.manifolds.nn import HypLinear, HypAct 
 from hyptorch.lorentz.blocks.layer_blocks import LFC_Block 
+from hyptorch.geoopt import PoincareBall
+from hyptorch.poincare.layers import MobiusLinear, MobiusAct 
+
 import math
 import torch
 import torch.nn as nn
@@ -68,12 +69,12 @@ class HypSeqLinear(nn.Module):
         self.act = []
         for idx in range(len(layer_dims)):
             if idx == 0:
-                self.linear.append(HypLinear(manifold, ft_in, layer_dims[idx], manifold.k))
+                self.linear.append(MobiusLinear(ft_in, layer_dims[idx], manifold=manifold))
             else:
-                self.linear.append(HypLinear(manifold, layer_dims[idx-1], layer_dims[idx], manifold.k))
+                self.linear.append(MobiusLinear(layer_dims[idx-1], layer_dims[idx], manifold=manifold))
             if idx != len(layer_dims)-1:
                 self.norm.append(nn.LayerNorm([layer_dims[idx]]))
-                self.act.append(HypAct(manifold, get_activate_func(act_func)))
+                self.act.append(MobiusAct(manifold=manifold, act=get_activate_func(act_func)))
             self.dropout.append(nn.Dropout(p=dropout))
             
         self.linear = nn.ModuleList(self.linear)
@@ -112,10 +113,6 @@ class LorentzSeqLinear(nn.Module):
         return x  
 
         
-        
-        
-        
-
 class PoincareMLR(nn.Module):
     r"""
     Module which performs softmax classification

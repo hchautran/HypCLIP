@@ -1,19 +1,15 @@
 import torch
 import torch.nn as nn
-from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .modules.hyp_discriminator import HypDiscriminator 
-from .manifolds.euclidean import Euclidean 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
 from hyptorch.geoopt.manifolds.lorentz import math as lmath 
 
 from hyptorch.geoopt.manifolds.stereographic import PoincareBall 
 # from model.manifolds.lorentz import Lorentz 
-from .modules.seq_linear import SeqLinear
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
-import time
 
 
 EUCLID = 'euclidean'

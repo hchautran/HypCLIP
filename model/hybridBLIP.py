@@ -2,20 +2,7 @@ import torch
 import torch.nn as nn
 from .modules.text_model import BLIPText
 from .modules.vision_model import BLIPVision
-from .modules.discriminator import Discriminator as DisModel
-from .modules.seq_linear import LorentzSeqLinear, HypSeqLinear
-from .modules.hyp_discriminator import HypDiscriminator as HypDisModel
-from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
-from .manifolds.euclidean import Euclidean
-from .manifolds.hyperboloid import Hyperboloid
-from .manifolds.lorentz import Lorentz
-from .manifolds.poincare import PoincareBall
 from transformers import BlipForImageTextRetrieval
-from typing import Optional, Tuple, Union
-from transformers.models.clip.modeling_clip import CLIPOutput
-from .modules.utils import ManifoldMapper
-from .modules.utils import ManifoldMapper, LorentzCentroidPooler
-from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
 from transformers.activations import ACT2FN
 from peft import get_peft_model, LoraConfig, TaskType
 from model.baseHybridModel import BaseModel

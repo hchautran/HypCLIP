@@ -6,10 +6,8 @@ from torch_geometric.nn import GraphConv
 from torch_geometric.nn import global_mean_pool
 from torch.nn import AdaptiveAvgPool1d
 from torch_geometric.data import Data, Batch
+from peft import get_peft_model, LoraConfig, TaskType
 
-model_ckt = 'microsoft/swinv2-base-patch4-window12-192-22k'
-
-processor = AutoImageProcessor.from_pretrained(model_ckt)
 
 def build_visual_graphs(hidden_states ,proj_layers, factor=4):
   proj_outs = proj_layers(hidden_states)
@@ -89,23 +87,33 @@ class VisModel(nn.Module):
   def __init__(self, model_ckt, proj_dim, num_stages=3):
     super(VisModel, self).__init__()
     
-    self.backbone = AutoModel.from_pretrained(model_ckt)
-    self.init_stage = len(self.backbone.encoder.layers) - num_stages  
-    self.factor = self.backbone.config.mlp_ratio 
-    self.init_embed_size = self.backbone.config.embed_dim 
+    self.body = AutoModel.from_pretrained(model_ckt)
+    # text_peft_config = LoraConfig(
+    #   task_type=TaskType.FEATURE_EXTRACTION, 
+    #   inference_mode=False, 
+    #   r=16, 
+    #   lora_alpha=32, 
+    #   lora_dropout=0.1, 
+    #   target_modules=['query', 'key', 'value']
+      
+    # )
+    # self.body = get_peft_model(self.body , text_peft_config)
+
+    self.init_stage = len(self.body.encoder.layers) - num_stages  
+    self.factor = self.body.config.mlp_ratio 
+    self.init_embed_size = self.body.config.embed_dim 
     self.backbone_hidden_sizes = [self.init_embed_size * 2**i for i in range(4)]
     self.backbone_hidden_sizes.append(self.init_embed_size * 8) 
-
-    self.proj_layers = ProjLayers(sizes=self.backbone_hidden_sizes[self.init_stage:], proj_size=proj_dim, last_pooler=self.backbone.pooler)
-    self.gnn = GNN(proj_dim, proj_dim, proj_dim)
+    self.proj_layers = ProjLayers(sizes=self.backbone_hidden_sizes[self.init_stage:], proj_size=proj_dim, last_pooler=self.body.pooler)
+    self.head = GNN(proj_dim, proj_dim, proj_dim)
     
   def num_parameters(self):
     return sum(p.numel() for p in self.gnn.parameters() if p.requires_grad)
     
-  def forward(self, inputs):
-    outputs = self.backbone(**inputs, output_hidden_states=True)
+  def forward(self, pixel_values):
+    outputs = self.body(pixel_values=pixel_values, output_hidden_states=True)
     graphs = build_visual_graphs(hidden_states=outputs.hidden_states[self.init_stage:], proj_layers=self.proj_layers)
-    output = self.gnn(x=graphs.x, edge_index=graphs.edge_index, batch=graphs.batch)
+    output = self.head(x=graphs.x, edge_index=graphs.edge_index, batch=graphs.batch)
     return output 
 
 

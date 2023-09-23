@@ -66,8 +66,9 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-CACHE_DIR = '/mnt/data/.cache'
-
+# CACHE_DIR = '/mnt/data/.cache'
+CACHE_DIR = '/Volumes/ExtraSpace/.cache'
+SWIN_V2_BASE = 'microsoft/swinv2-base-patch4-window12-192-22k'
 config_args = {
     "training_config": {
         "lr": (1e-4, "learning rate"),
@@ -129,11 +130,11 @@ config_args = {
         "batch_size": (150, "batch size"),
         "eval_freq": (410, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.4, "weight image to text"),
-        "enable_log": (True, "enable log"),
+        "enable_log": (False, "enable log"),
     },
     "hybrid_model_config": {
-        # "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoin on Hugging Face"),
-        "model_ckt": (BLIP_BASE_FLICKR, "model checkpoin on Hugging Face"),
+        "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoint on Hugging Face"),
+        # "model_ckt": (BLIP_BASE_FLICKR, "model checkpoint on Hugging Face"),
         "manifold": (
             EUCLID,
             "which manifold to use [euclidean, lorentz]",

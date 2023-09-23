@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from .seq_linear import HypSeqLinear, LorentzSeqLinear
 from hyptorch.lorentz.layers import LorentzMLR 
 from hyptorch.lorentz.manifold import CustomLorentz 
-from model.manifolds.nn import HypAct
+from hyptorch.poincare.layers import MobiusAct, MobiusLinear 
 from hyptorch.poincare.layers.PMLR import UnidirectionalPoincareMLR
 class HypDiscriminator(nn.Module):
     def __init__(self, manifold, dim=512, layer_dims=[512], dropout=0.5, act_func='relu', fourier=False):
@@ -82,8 +82,8 @@ class CoAttention(nn.Module):
         self.concat_m2.data = torch.randn((1, 1))
         self.concat_b.data = torch.randn((1, self.embedding_dim))
         self.c = combined_curvature
-        self.map_comments = HypAct(manifold, self.comment_curvature, self.c, act = torch.tanh)
-        self.map_content = HypAct(manifold, self.content_curvature, self.c, act = torch.tanh)
+        self.map_comments = MobiusAct(manifold, act = torch.tanh)
+        self.map_content = MobiusLinear(manifold)
         self.fourier = fourier
 
     def forward(self, sentence_rep, comment_rep):

@@ -3,7 +3,6 @@ import torch.nn as nn
 from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .modules.hyp_discriminator import HypDiscriminator 
-from .manifolds.euclidean import Euclidean 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
 from hyptorch.geoopt.manifolds.lorentz import math as lmath 
 
@@ -49,7 +48,7 @@ class BaseModel(nn.Module):
         if manifold == EUCLID:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
-            self.manifold = Euclidean()
+            self.manifold = None
             self.discriminator = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 1])
         elif manifold == POINCARE:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
