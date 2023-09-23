@@ -1,5 +1,5 @@
 import argparse
-from transformers import GraphormerModel
+from transformers import SwinBackbone 
 
 def add_flags_from_config(parser, config_dict):
     """
