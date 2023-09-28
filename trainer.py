@@ -1,7 +1,7 @@
 import wandb
 from accelerate import Accelerator
 from utils.data_utils import get_dataloader
-from geoopt.optim import RiemannianAdam, RiemannianSGD
+from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import evaluate_recall
 from tqdm.auto import tqdm
 import torch

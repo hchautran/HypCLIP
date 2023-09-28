@@ -67,7 +67,8 @@ CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
 # CACHE_DIR = '/mnt/data/.cache'
-CACHE_DIR = '/Volumes/ExtraSpace/.cache'
+# CACHE_DIR = '/Volumes/ExtraSpace/.cache'
+CACHE_DIR = '.cache'
 SWIN_V2_BASE = 'microsoft/swinv2-base-patch4-window12-192-22k'
 config_args = {
     "training_config": {

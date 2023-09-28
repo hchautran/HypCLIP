@@ -6,10 +6,6 @@ from .modules.discriminator import Discriminator as DisModel
 from .modules.seq_linear import LorentzSeqLinear, HypSeqLinear
 from .modules.hyp_discriminator import HypDiscriminator as HypDisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
-from .manifolds.euclidean import Euclidean
-from .manifolds.hyperboloid import Hyperboloid
-from .manifolds.lorentz import Lorentz
-from .manifolds.poincare import PoincareBall
 from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
 # from hyptorch.lorentz.modeling_clip import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
 

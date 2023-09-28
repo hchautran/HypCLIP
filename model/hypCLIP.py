@@ -2,11 +2,9 @@ import torch
 import torch.nn as nn
 from .modules.text_model import CLIPText
 from .modules.vision_model import CLIPVision
-from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
-# from hyptorch.lorentz.modeling_clip import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
+from loralib.lora_clip import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
+from loralib.utils import mark_only_lora_as_trainable 
 
-from transformers.models.clip.modeling_clip import CLIPOutput
-from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
 from .modules.utils import ManifoldMapper, LorentzCentroidPooler
 from model.baseModel import BaseModel
 from peft import get_peft_model, LoraConfig, TaskType
@@ -26,47 +24,10 @@ class HypCLIP(BaseModel):
         vision_model = CLIPVisionModelWithProjection.from_pretrained(
             self.model_ckt, cache_dir=config.cache_dir
         )
-        text_peft_config = LoraConfig(
-            task_type=TaskType.FEATURE_EXTRACTION, 
-            inference_mode=False, 
-            r=16, 
-            lora_alpha=32, 
-            lora_dropout=0.1, 
-            target_modules=[
-                # 'token_embedding',
-                'k_proj', 
-                'v_proj', 
-                'q_proj', 
-                'out_proj', 
-                'fc1', 
-                'fc2', 
-                'text_projection'
-                ]
-        )
-        vision_target_modules = ['visual_projection']
-        for i in range(config.vision_trainable_blocks): 
-            index = 11 - i
-            vision_target_modules.extend([
-                # 'patch_embedding',
-                f'*{index}.mlp.fc1', 
-                f'*{index}.mlp.fc2', 
-                f'*{index}.self_attn.out_proj',
-                f'*{index}.self_attn.q_proj',
-                f'*{index}.self_attn.k_proj',
-                f'*{index}.self_attn.v_proj', 
-            ])
-        vision_peft_config = LoraConfig(
-            task_type=TaskType.FEATURE_EXTRACTION, 
-            inference_mode=False, 
-            r=8, 
-            lora_alpha=32, 
-            lora_dropout=0.1, 
-            target_modules=vision_target_modules
-        )
-        text_model = get_peft_model(text_model, text_peft_config)
-        print(text_model.print_trainable_parameters())
-        vision_model = get_peft_model(vision_model, vision_peft_config)
-        print(vision_model.print_trainable_parameters())
+        mark_only_lora_as_trainable(model=text_model)
+        mark_only_lora_as_trainable(model=vision_model)
+        
+
 
         text_body = text_model.text_model
         vision_body = vision_model.vision_model

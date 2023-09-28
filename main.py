@@ -3,10 +3,10 @@ from transformers import (
     CLIPProcessor,
 )
 from datasets import load_dataset
-# from model.hypCLIP import HypCLIP
-# from model.hypBLIP import HypBLIP
-from model.hybridCLIP import HypCLIP 
-from model.hybridBLIP import HypBLIP 
+from model.hypCLIP import HypCLIP
+from model.hypBLIP import HypBLIP
+# from model.hybridCLIP import HypCLIP 
+# from model.hybridBLIP import HypBLIP 
 # from model.PoincareCLIP import  PoincareCLIP 
 from model.perceiverModel import MyModel
 # from model.perceiverMixtureModel import MyModel
@@ -71,6 +71,7 @@ if __name__ == "__main__":
             processor=processor,
         )
         trainer.train()
+
     for curv in [10.0]:
         config.curv = curv
         for manifold in [POINCARE, LORENTZ]:

@@ -3,10 +3,10 @@ from transformers import (
     CLIPProcessor,
 )
 from datasets import load_dataset
-# from model.hypCLIP import HypCLIP
-# from model.hypBLIP import HypBLIP
+from model.hypCLIP import HypCLIP
+from model.hypBLIP import HypBLIP
 from model.hypSwin import HypSwin 
-from model.hybridBLIP import HypBLIP 
+# from model.hybridBLIP import HypBLIP 
 # from model.PoincareCLIP import  PoincareCLIP 
 from model.perceiverModel import MyModel
 # from model.perceiverMixtureModel import MyModel
@@ -19,8 +19,8 @@ from utils.data_utils import get_flickr
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ, POINCARE 
-    from config import EUCLID, LORENTZ, POINCARE, SWIN_V2_BASE 
+    from config import EUCLID 
+    from config import EUCLID, SWIN_V2_BASE 
 
     config = parser.parse_args()
  
@@ -55,8 +55,8 @@ if __name__ == "__main__":
             dataset["test"], 5, processor=processor, mode="test"
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=processor, mode="val")
-        # model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
-        model = HypSwin(config) 
+        model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
+        # model = HypSwin(config) 
         trainer = MyTrainer(
             model=model,
             config=config,
