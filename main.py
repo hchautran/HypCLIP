@@ -74,6 +74,6 @@ if __name__ == "__main__":
 
     for curv in [10.0]:
         config.curv = curv
-        for manifold in [POINCARE, LORENTZ]:
+        for manifold in [LORENTZ, POINCARE]:
             config.manifold = manifold
             inner_training_loop()

@@ -37,8 +37,10 @@ def freeze_clip(
 def freeze_blip(
     vision_model: BlipVisionModel = None,
     text_model: BlipTextModel = None,
+    vision_head: BlipVisionModel = None,
+    text_head: BlipTextModel = None,
     freeze_embeddings=True,
-    num_trainable_blocks=-1,
+    num_trainable_blocks=0,
 ):
     if num_trainable_blocks == -1:
         return
@@ -46,12 +48,17 @@ def freeze_blip(
     if vision_model is not None:
         if freeze_embeddings:
             fr(vision_model.embeddings)
+        if vision_head is not None:
+            fr(vision_head)
         for idx in range(len(vision_model.encoder.layers) - num_trainable_blocks):
             fr(vision_model.encoder.layers[idx])
+            
 
     if text_model is not None:
         if freeze_embeddings:
             fr(text_model.embeddings)
+        if text_head is not None:
+            fr(text_head)
         for idx in range(len(text_model.encoder.layer) - num_trainable_blocks):
             fr(text_model.encoder.layer[idx])
 

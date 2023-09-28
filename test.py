@@ -52,7 +52,7 @@ if __name__ == "__main__":
             use_random_sampler=False,
         )
         test_loader = get_dataloader(
-            dataset["test"], 5, processor=processor, mode="test"
+            dataset["test"], 5, processor=tokenizer, mode="test"
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=processor, mode="val")
         model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
@@ -64,7 +64,7 @@ if __name__ == "__main__":
             train_loader=train_loader,
             val_loader=val_loader,
             test_loader=test_loader,
-            processor=processor,
+            processor=tokenizer,
         )
         trainer.train()
 

@@ -27,7 +27,7 @@ class MyModel(nn.Module):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.weight_i2t = config.weight_i2t
         self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
-        self.discriminator = DisModel(dim=self.ft_out, layer_dims=[512, 1])
+        self.discriminator = DisModel(dim=config.d_latents, layer_dims=[1], dropout=0.1)
         model = BlipForImageTextRetrieval.from_pretrained(self.model_ckt)
 
         head_config = PerceiverConfig(
@@ -40,10 +40,21 @@ class MyModel(nn.Module):
         peft_config = LoraConfig(
             task_type=TaskType.FEATURE_EXTRACTION, 
             inference_mode=False, 
-            r=8, 
-            lora_alpha=32, 
+            r=16, 
+            lora_alpha=16, 
             lora_dropout=0.1, 
-            target_modules=['dense', 'query', 'value','key']
+            target_modules=[
+                # 'dense', 
+                'query', 
+                # 'value',
+                'key', 
+                # 'text_proj', 
+                # 'vision_proj',
+                # 'qkv'
+                # '*.11.self_attn.projection'
+                # '*.11.mlp.fc1'
+                # '*.11.mlp.fc2'
+            ]
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
@@ -85,7 +96,7 @@ class MyModel(nn.Module):
     def dist_func(self, x, y):
         x = F.normalize(x,p=2, dim=-1) 
         y = F.normalize(y,p=2, dim=-1) 
-        return torch.matmul(x, y.t()) 
+        return torch.matmul(x, y.t()), torch.matmul(x, y.t())  
 
 
     def itm_loss(self, imgs, cap, sims_i2t):
@@ -131,7 +142,7 @@ class MyModel(nn.Module):
         neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
         sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
         if self.config.manifold == EUCLID:
-            neg_margin = self.config.euclid_neg_margin * neg_mask 
+            neg_margin = self.config.euclid_text_neg_margin * neg_mask 
             pos_margin = self.config.euclid_pos_margin * pos_mask 
             sims_i2t = sims_i2t - neg_margin 
             sims_i2i = sims_i2i - neg_margin 
@@ -150,10 +161,10 @@ class MyModel(nn.Module):
     def itc_loss(self, image_embeds , text_embeds):
         bsize = text_embeds.shape[0]
         eye_mask = torch.eye(bsize).to(self.device) * 1e9
-        sims_i2t = self.dist_func(image_embeds, text_embeds)
+        sims_i2t, _ = self.dist_func(image_embeds, text_embeds)
         sims_t2i = sims_i2t.T
-        sims_i2i = self.dist_func(image_embeds, image_embeds)
-        sims_t2t = self.dist_func(text_embeds, text_embeds)
+        sims_i2i,_ = self.dist_func(image_embeds, image_embeds)
+        sims_t2t, _ = self.dist_func(text_embeds, text_embeds)
         target = torch.arange(bsize).to(self.device)
         logits_i2t = torch.cat([sims_i2t/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
         logits_t2i = torch.cat([sims_t2i/self.temp, sims_i2i/self.temp - eye_mask], dim=1)

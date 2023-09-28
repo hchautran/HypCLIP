@@ -66,16 +66,15 @@ CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 FLICKR = "nlphuji/flickr30k"
-# CACHE_DIR = '/mnt/data/.cache'
+CACHE_DIR = '/mnt/data/.cache'
 # CACHE_DIR = '/Volumes/ExtraSpace/.cache'
-CACHE_DIR = '.cache'
 SWIN_V2_BASE = 'microsoft/swinv2-base-patch4-window12-192-22k'
 config_args = {
     "training_config": {
         "lr": (1e-4, "learning rate"),
         "dropout": (0.0, "dropout probability"),
         "cuda": (-1, "which cuda device to use (-1 for cpu training)"),
-        "epochs": (10, "maximum number of epochs to train for"),
+        "epochs": (50, "maximum number of epochs to train for"),
         "weight_decay": (0.0, "l2 regularization strength"),
         "optimizer": ("adam", "which optimizer to use, can be any of [sgd, adam]"),
         "momentum": (0.999, "momentum in optimizer"),
@@ -123,19 +122,19 @@ config_args = {
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_img_neg_margin": (
-            0.5,
+            0.75,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         
         "queue_size": (64000, "enable log"),
-        "batch_size": (150, "batch size"),
+        "batch_size": (120, "batch size"),
         "eval_freq": (410, "how often to compute val metrics (in epochs)"),
-        "weight_i2t": (0.4, "weight image to text"),
+        "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (False, "enable log"),
     },
     "hybrid_model_config": {
         "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoint on Hugging Face"),
-        # "model_ckt": (BLIP_BASE_FLICKR, "model checkpoint on Hugging Face"),
+        # "model_ckt": (BLIP_BASE_FLICKR, "model ceckpoint on Hugging Face"),
         "manifold": (
             EUCLID,
             "which manifold to use [euclidean, lorentz]",
@@ -145,8 +144,8 @@ config_args = {
         "atol": (1e-2, "The relative tolerance parameter"),
         "rtol": (1e-2, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
-        "clip_radius": (2.5, "clipping radius"),
-        "vision_trainable_blocks": (1, "number of trainable blocks in vision model"),
+        "clip_radius": (2, "clipping radius"),
+        "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (0, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
@@ -154,12 +153,12 @@ config_args = {
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
     },
     "perceiver": {
-        "d_latents": (512, 'latent dimentsion'),
-        "num_latents": (32, 'number of latent query'),
-        "num_self_attends_per_block": (3, 'num selft attenton per block'),
+        "d_latents": (768, 'latent dimentsion'),
+        "num_latents": (128, 'number of latent query'),
+        "num_self_attends_per_block": (1, 'num selft attenton per block'),
         "num_blocks": (1, 'multi modal blocks'),
-        "num_cross_attention_heads": (2, 'multi modal blocks'),
-        "num_self_attention_heads": (2, 'multi modal blocks'),
+        "num_cross_attention_heads": (4, 'multi modal blocks'),
+        "num_self_attention_heads": (4, 'multi modal blocks'),
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

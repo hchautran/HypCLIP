@@ -138,12 +138,12 @@ class MyTrainer:
                         print(metrics)
                         self.log(metrics)
                         self.log({"val/eu_r_all": eu_metrics["val/r_all"]})
+                        self.scheduler.step(metrics["val/r_all"])
                     print('infer time', time.time() - start)
 
                     
                     # print('infer time', time.time() - start)
                 metrics, eu_metrics = self.evaluate(mode='test')
-                self.scheduler.step(metrics["test/r_all"])
                 print(metrics)
                 self.log(metrics)
                 self.log({"test/eu_r_all": eu_metrics["test/r_all"]})
@@ -203,8 +203,10 @@ class MyTrainer:
                 sims_t2i = sims_t2i.cpu().detach().numpy()
                 eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             else:
-                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+                eu_sims_t2i, sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
                 sims_t2i = sims_t2i.cpu().detach().numpy()
+                eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
+
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
             eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
             metrics["epoch"] = self.current_epoch

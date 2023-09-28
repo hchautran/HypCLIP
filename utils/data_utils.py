@@ -129,7 +129,6 @@ def get_dataloader(dataset, batch_size, processor, mode='train', use_random_samp
                 collate_fn = lambda batch: collate_func(batch, processor),
                 shuffle=True
             )
- 
 
         return DataLoader(
             flickr_dataset, 

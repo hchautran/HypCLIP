@@ -98,18 +98,25 @@ class MultiModalLayer(nn.Module):
         return text_output[0]
 
 class MultiModalHead(nn.Module):
-    def __init__(self, config:PerceiverConfig, d_vision, d_text, d_out, num_blocks) -> None:
+    def __init__(self, config:PerceiverConfig, d_vision, d_text, d_out, num_blocks, share_question=True) -> None:
         super().__init__()
         self.num_blocks = num_blocks
-        self.text_question = nn.Parameter(torch.empty(config.num_latents, config.d_latents))
-        self.vision_question= nn.Parameter(torch.empty(config.num_latents, config.d_latents))
-        nn.init.kaiming_normal_(self.text_question, mode='fan_out', nonlinearity='leaky_relu')
-        nn.init.kaiming_normal_(self.vision_question, mode='fan_out', nonlinearity='leaky_relu')
+        
+        if share_question:
+            self.text_question = nn.Parameter(torch.empty(config.num_latents, config.d_latents))
+            nn.init.kaiming_normal_(self.text_question, mode='fan_out', nonlinearity='leaky_relu')
+            self.vision_question = self.text_question 
+        else:
+            self.text_question = nn.Parameter(torch.empty(config.num_latents, config.d_latents))
+            self.vision_question= nn.Parameter(torch.empty(config.num_latents, config.d_latents))
+            nn.init.kaiming_normal_(self.text_question, mode='fan_out', nonlinearity='leaky_relu')
+            nn.init.kaiming_normal_(self.vision_question, mode='fan_out', nonlinearity='leaky_relu')
 
         multimodal_layers = [MultiModalLayer(config=config, d_text=d_text, d_vision=d_vision) for _ in range(self.num_blocks)]
         self.layers = nn.ModuleList(multimodal_layers)
-        self.dropout= nn.Dropout(0.1) 
-        self.proj = nn.Linear(config.d_latents , d_out)
+        self.dropout= nn.Dropout(0.3) 
+        self.proj_text = nn.Linear(1024, d_out)
+        self.proj_vision= nn.Linear(1024, d_out)
 
 
     def num_parameters(self, only_trainable=True):
@@ -127,8 +134,6 @@ class MultiModalHead(nn.Module):
         itm_text = []
         text_question = self.text_question.expand([bs, -1, -1])
         vision_question = self.vision_question.expand([bs, -1 ,-1]) 
-        res_text = text_question
-        res_vision = vision_question
 
         for i in range(self.num_blocks):
             text_question, vision_question, itm_text_state, itm_vision_state = self.layers[i](
@@ -138,19 +143,15 @@ class MultiModalHead(nn.Module):
                 vision_question = vision_question,
                 self_attend_mask=self_attend_mask
             )
-            text_question = text_question + res_vision
-            vision_question = vision_question + res_text
 
         itm_text = torch.mean(itm_text_state, dim=1)
         itm_vision = torch.mean(itm_vision_state, dim=1)
 
-        text_output = torch.mean(text_question, dim=1) 
-        vision_output = torch.mean(vision_question, dim=1)
+        text_output = torch.cat([torch.mean(text_question, dim=1), text_ori], dim=-1)
+        vision_output = torch.cat([torch.mean(vision_question, dim=1), vision_ori], dim=-1)
         
-        text_output = self.proj(self.dropout(text_output)) + text_ori
-        vision_output = self.proj(self.dropout(vision_output)) + vision_ori
-        itm_text = self.proj(self.dropout(itm_text)) + text_ori
-        itm_vision = self.proj(self.dropout(itm_vision)) + vision_ori
+        text_output = self.proj_text(self.dropout(text_output)) 
+        vision_output = self.proj_vision(self.dropout(vision_output)) 
 
         return text_output, vision_output, itm_text, itm_vision
 
@@ -158,28 +159,25 @@ class MultiModalHead(nn.Module):
         bs = vision_inputs.size(0)
         vision_question = self.vision_question.expand([bs, -1, -1])
         text_question = self.text_question.expand([bs, -1, -1])
-        res_text = text_question 
 
         for i in range(self.num_blocks):
             vision_question = self.layers[i].get_vision_features(vision_inputs, vision_question)
-            vision_question = vision_question + res_text
+            vision_question = vision_question 
 
-        vision_ouput = torch.mean(vision_question, dim = 1)
-        vision_output = self.proj(self.dropout(vision_ouput)) + vision_ori
+        vision_output = torch.cat([torch.mean(vision_question, dim=1), vision_ori], dim=-1)
+        vision_output = self.proj_vision(self.dropout(vision_output)) 
         return vision_output
 
     def get_text_features(self, text_ori, text_inputs):
         bs = text_inputs.size(0)
         text_question = self.text_question.expand([bs, -1, -1])
-        vision_question = self.vision_question.expand([bs, -1, -1])
-        res_vision = vision_question
         for i in range(self.num_blocks):
             text_question = self.layers[i].get_text_features(text_inputs, text_question)
-            text_question = text_question + res_vision 
+            text_question = text_question
 
-        text_output = torch.mean(text_question, dim = 1)
 
-        text_output = self.proj(self.dropout(text_output)) + text_ori
+        text_output = torch.cat([torch.mean(text_question, dim=1), text_ori], dim=-1)
+        text_output = self.proj_text(self.dropout(text_output)) 
         return text_output
 
 class CoHead(nn.Module):

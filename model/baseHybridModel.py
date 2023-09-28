@@ -29,14 +29,12 @@ class BaseModel(nn.Module):
         self.momentum = config.momentum
         self.queue_size = config.queue_size
         self.use_lorentz_centroid = config.use_lorentz_centroid
- 
+        self.logit_scale = nn.Parameter(torch.tensor(1 / config.temp).log())
 
         manifold = config.manifold
     
         assert manifold in [EUCLID, POINCARE, LORENTZ]
 
-        self.temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
-        self.eu_temp = nn.Parameter(torch.as_tensor(config.temp), requires_grad=config.temp != 0) 
         self.weight_i2t = self.config.weight_i2t 
         self.curv = torch.as_tensor(config.curv if manifold != EUCLID else 0)
         if not torch.is_floating_point(self.curv):
@@ -88,7 +86,7 @@ class BaseModel(nn.Module):
         else: 
             hyp_x = self.mapper(x) 
             hyp_y = self.mapper(y) 
-            hyp_dis = -self.manifold.sqdist_batch(hyp_x, hyp_y)
+            hyp_dis = -self.manifold.dist_batch(hyp_x, hyp_y)
 
         eu_x = F.normalize(x,p=2, dim=-1) 
         eu_y = F.normalize(y,p=2, dim=-1) 
@@ -97,7 +95,6 @@ class BaseModel(nn.Module):
 
 
     def itm_loss(self, imgs, cap, sims_i2t):
-            
         bs = imgs.shape[0]
         weights_i2t = F.softmax(sims_i2t, dim=1)
         weights_t2i = F.softmax(sims_i2t.T, dim=1)
@@ -154,21 +151,21 @@ class BaseModel(nn.Module):
     def itc_loss(self, image_embeds , text_embeds):
         bsize = text_embeds.shape[0]
         eye_mask = torch.eye(bsize).to(self.device) * 1e9
+        self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
+        _scale = self.logit_scale.exp()
+
         eu_sims_i2t, sims_i2t = self.dist_func(image_embeds, text_embeds) 
-        eu_sims_t2i, sims_t2i = eu_sims_i2t.T,sims_i2t.T
+        eu_sims_t2i, sims_t2i = eu_sims_i2t.T, sims_i2t.T
         eu_sims_i2i, sims_i2i = self.dist_func(image_embeds, image_embeds) 
         eu_sims_t2t, sims_t2t = self.dist_func(text_embeds, text_embeds) 
         neg_text_margin = self.config.euclid_text_neg_margin
         neg_image_margin = self.config.euclid_img_neg_margin 
         target = torch.arange(bsize).to(self.device)
-        logits_i2t = torch.cat([sims_i2t/self.temp, sims_t2t/self.temp - eye_mask], dim=1)
-        logits_t2i = torch.cat([sims_t2i/self.temp, sims_i2i/self.temp - eye_mask], dim=1)
-        # eu_i2t = torch.cat([eu_sims_i2t/self.eu_temp, eu_sims_t2t/self.eu_temp - eye_mask], dim=1)
-        # eu_t2i = torch.cat([eu_sims_t2i/self.eu_temp, eu_sims_i2i/self.eu_temp - eye_mask], dim=1)
+        logits_i2t = torch.cat([sims_i2t * _scale, sims_t2t * _scale - eye_mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i * _scale, sims_i2i* _scale - eye_mask], dim=1)
 
         margin_loss = self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask, neg_margin=neg_text_margin)  +  self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask, neg_margin=neg_image_margin)
         itc_loss = self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
-        # eu_itc_loss = self.weight_i2t * F.cross_entropy(eu_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(eu_t2i, target) 
 
         loss = itc_loss + margin_loss 
 

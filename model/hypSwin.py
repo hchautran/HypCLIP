@@ -1,12 +1,15 @@
 import torch
 import torch.nn as nn
 from model.baseModel import BaseModel
-from .modules.text_model import CLIPText
+from .modules.text_model import BLIPText
+from .modules.vision_model import BLIPVision, CLIPVision
 from .modules.swin_model import VisModel 
-from transformers import CLIPTextModelWithProjection
+from transformers import BlipForImageTextRetrieval 
 from transformers.models.clip.modeling_clip import CLIPOutput
+from .modules.discriminator import Discriminator as DisModel
 from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
+from .modules.utils import freeze_blip
 
 EUCLID = "euclidean"
 POINCARE = "poincare"
@@ -16,41 +19,41 @@ LORENTZ = "lorentz"
 class HypSwin(BaseModel):
     def __init__(self, config) -> None:
         super(HypSwin, self).__init__(config)
+        self.ft_out = config.ft_out
 
-        text_model = CLIPTextModelWithProjection.from_pretrained(
+        blip = BlipForImageTextRetrieval.from_pretrained(
             self.model_ckt, cache_dir=config.cache_dir
         )
  
-        text_peft_config = LoraConfig(
-            task_type=TaskType.FEATURE_EXTRACTION, 
-            inference_mode=False, 
-            r=16, 
-            lora_alpha=32, 
-            lora_dropout=0.1, 
-            target_modules=['k_proj', 'v_proj', 'q_proj']
-        )
+        # text_peft_config = LoraConfig(
+        #     task_type=TaskType.FEATURE_EXTRACTION, 
+        #     inference_mode=False, 
+        #     r=8, 
+        #     lora_alpha=4, 
+        #     lora_dropout=0.1, 
+        #     target_modules=['key', 'query']
+        # )
     
-        text_model = get_peft_model(text_model, text_peft_config)
-        print(text_model.print_trainable_parameters())
+        # blip = get_peft_model(blip, text_peft_config)
+        # print(blip.print_trainable_parameters())
 
-        text_body = text_model.text_model
-        text_head = nn.ModuleList([text_model.text_projection])
+        text_body = blip.text_encoder
+        text_head = nn.ModuleList([blip.text_proj])
+        freeze_blip(text_model=text_body, text_head=text_head)
+        self.discriminator = DisModel(dim=256, layer_dims=[512, 1])
+  
         model_ckt = 'microsoft/swinv2-base-patch4-window12-192-22k'
 
         self.vision_model = VisModel(model_ckt, proj_dim=256, num_stages=2)
-        self.text_model = CLIPText(
+        self.text_model = BLIPText(
             config=config,
             body=text_body,
             head=text_head,
-            num_trainable_blocks=config.text_trainable_blocks,
-            freeze_embeddings=config.freeze_embedding,
         )
 
     
     def get_vision_features(self, pixel_values:torch.Tensor):
-        vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
-        )
+        vision_outputs = self.vision_model(pixel_values=pixel_values),
         return vision_outputs 
     
     
@@ -62,9 +65,7 @@ class HypSwin(BaseModel):
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CLIPOutput]:
 
-        vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
-        )
+        vision_outputs = self.vision_model(pixel_values=pixel_values) 
 
         text_outputs = self.text_model(
             input_ids=input_ids,

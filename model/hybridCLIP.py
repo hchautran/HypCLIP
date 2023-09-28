@@ -9,9 +9,6 @@ from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
 # from hyptorch.lorentz.modeling_clip import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
 
-from transformers.models.clip.modeling_clip import CLIPOutput
-from hyptorch.lorentz.blocks.layer_blocks import LFC_Block
-from .modules.utils import ManifoldMapper, LorentzCentroidPooler
 from model.baseHybridModel import BaseModel
 from peft import get_peft_model, LoraConfig, TaskType
 
