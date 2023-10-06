@@ -108,22 +108,22 @@ class HypGraphCLIP(BaseModel):
         vision_body = vision_model.vision_model
         text_head = text_model.text_projection
         vision_head = vision_model.visual_projection
-        self.mapper = None
+        mapper = None
         if self.manifold_name !=  EUCLID:
-            self.mapper =  ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
+            mapper =  ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
 
 
-        self.vision_model = CLIPVision(
+        self.vision_model = CLIPGraphVision(
             config=config,
             body=vision_body,
             head=vision_head,
-            num_trainable_blocks=config.vision_trainable_blocks,
-            freeze_embedding=config.freeze_embedding,
+            mapper=mapper,
+            num_layers=config.vision_trainable_blocks,
         )
-        self.text_model = CLIPText(
+        self.text_model = CLIPGraphText(
             config=config,
             body=text_body,
             head=text_head,
-            num_trainable_blocks=config.text_trainable_blocks,
-            freeze_embeddings=config.freeze_embedding,
+            manifold_mapper=mapper,
+            num_layers=config.text_trainable_blocks,
         )
