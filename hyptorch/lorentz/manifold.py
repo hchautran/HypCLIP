@@ -75,9 +75,6 @@ class CustomLorentz(Lorentz):
 
 
 
-
-
-
     #################################################
     #       Reshaping operations
     #################################################
@@ -91,14 +88,17 @@ class CustomLorentz(Lorentz):
         x = torch.cat([time_rescaled, space], dim=-1)
         return x
 
-
+    def get_space(self, x):
+        return x.narrow(-1, 1, x.shape[-1] - 1)
+    
+    def get_time(self, x):
+        return x.narrow(-1, 0, 1)
 
     def lorentz_reshape_img(self, x: torch.Tensor, img_dim) -> torch.Tensor:
         """Implements reshaping a flat tensor to an image directly on the manifold. Based on Lorentz Direct Split (Qu et al., 2022)"""
         space = x.narrow(-1, 1, x.shape[-1] - 1)
         space = space.view((-1, img_dim[0], img_dim[1], img_dim[2] - 1))
         img = self.add_time(space)
-
         return img
 
     #################################################

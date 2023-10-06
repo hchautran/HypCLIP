@@ -8,6 +8,7 @@ from model.baseModel import BaseModel
 from .modules.utils import ManifoldMapper, LorentzCentroidPooler
 from transformers.activations import ACT2FN
 from peft import get_peft_model, LoraConfig, TaskType
+from torch_geometric.nn import GATv2Conv
 
 
 EUCLID = "euclidean"
