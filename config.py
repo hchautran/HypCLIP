@@ -127,10 +127,12 @@ config_args = {
         ),
         
         "queue_size": (64000, "enable log"),
-        "batch_size": (120, "batch size"),
+        "batch_size": (60, "batch size"),
         "eval_freq": (410, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
-        "enable_log": (False, "enable log"),
+        "enable_log": (True, "enable log"),
+        "use_margin_loss": (True, "use margin loss"),
+        "use_entailment_loss": (False, "use entailment loss")
     },
     "hybrid_model_config": {
         "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoint on Hugging Face"),
@@ -140,11 +142,11 @@ config_args = {
             "which manifold to use [euclidean, lorentz]",
         ),
         "use_riemann": (True, "use Riemannian Optimizer"),
-        "curv": (10.0, "hyperbolic curvature"),
-        "atol": (1e-2, "The relative tolerance parameter"),
-        "rtol": (1e-2, "The absolute tolerance parameter"),
+        "curv": (2.0, "hyperbolic curvature"),
+        "atol": (1e-1, "The relative tolerance parameter"),
+        "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
-        "clip_radius": (2, "clipping radius"),
+        "clip_radius": (None, "clipping radius"),
         "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (0, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
@@ -152,14 +154,7 @@ config_args = {
         "freeze_embedding": (True, "freeze embedding layers"),
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
     },
-    "perceiver": {
-        "d_latents": (768, 'latent dimentsion'),
-        "num_latents": (128, 'number of latent query'),
-        "num_self_attends_per_block": (1, 'num selft attenton per block'),
-        "num_blocks": (1, 'multi modal blocks'),
-        "num_cross_attention_heads": (4, 'multi modal blocks'),
-        "num_self_attention_heads": (4, 'multi modal blocks'),
-    },
+ 
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),
         "cache_dir": (CACHE_DIR, "cache_dir"),

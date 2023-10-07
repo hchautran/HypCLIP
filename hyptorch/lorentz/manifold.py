@@ -136,3 +136,70 @@ class CustomLorentz(Lorentz):
         else:
             reason = None
         return ok, reason
+    
+    def half_aperture(
+        self, x: torch.Tensor, min_radius: float = 0.1, eps: float = 1e-8
+    ) -> torch.Tensor:
+        """
+        Compute the half aperture angle of the entailment cone formed by vectors on
+        the hyperboloid. The given vector would meet the apex of this cone, and the
+        cone itself extends outwards to infinity.
+
+        Args:
+            x: Tensor of shape `(B, D)` giving a batch of space components of
+                vectors on the hyperboloid.
+            min_radius: Radius of a small neighborhood around vertex of the hyperboloid
+                where cone aperture is left undefined. Input vectors lying inside this
+                neighborhood (having smaller norm) will be projected on the boundary.
+            eps: Small float number to avoid numerical instability.
+
+        Returns:
+            Tensor of shape `(B, )` giving the half-aperture of entailment cones
+            formed by input vectors. Values of this tensor lie in `(0, pi/2)`.
+        """
+
+        # Ensure numerical stability in arc-sin by clamping input.
+        x_space = x.narrow(-1, 1, x.shape[-1] - 1)
+        asin_input = 2 * min_radius / (torch.norm(x_space, dim=-1) * self.k**0.5 + eps)
+        _half_aperture = torch.asin(torch.clamp(asin_input, min=-1 + eps, max=1 - eps))
+
+        return _half_aperture
+
+
+    def oxy_angle(self, x: torch.Tensor, y: torch.Tensor, eps: float = 1e-8):
+        """
+        Given two vectors `x` and `y` on the hyperboloid, compute the exterior
+        angle at `x` in the hyperbolic triangle `Oxy` where `O` is the origin
+        of the hyperboloid.
+
+        This expression is derived using the Hyperbolic law of cosines.
+
+        Args:
+            x: Tensor of shape `(B, D)` giving a batch of space components of
+                vectors on the hyperboloid.
+            y: Tensor of same shape as `x` giving another batch of vectors.
+
+        Returns:
+            Tensor of shape `(B, )` giving the required angle. Values of this
+            tensor lie in `(0, pi)`.
+        """
+
+        # Calculate time components of inputs (multiplied with `sqrt(curv)`):
+        x_space = x.narrow(-1, 1, x.shape[-1] - 1)
+        y_space = y.narrow(-1, 1, y.shape[-1] - 1)
+        x_time = x.narrow(-1, 0, 1)
+        y_time = x.narrow(-1, 0, 1)
+
+        # Calculate lorentzian inner product multiplied with curvature. We do not use
+        # the `pairwise_inner` implementation to save some operations (since we only
+        # need the diagonal elements).
+        c_xyl = self.k * (torch.sum(x_space * y_space, dim=-1) - x_time * y_time)
+
+        # Make the numerator and denominator for input to arc-cosh, shape: (B, )
+        acos_numer = y_time + c_xyl * x_time
+        acos_denom = torch.sqrt(torch.clamp(c_xyl**2 - 1, min=eps))
+
+        acos_input = acos_numer / (torch.norm(x_space, dim=-1) * acos_denom + eps)
+        _angle = torch.acos(torch.clamp(acos_input, min=-1 + eps, max=1 - eps))
+
+        return _angle

@@ -7,6 +7,7 @@ from hyptorch.lorentz.manifold import CustomLorentz as Lorentz
 from hyptorch.geoopt.manifolds.lorentz import math as lmath 
 
 from hyptorch.geoopt.manifolds.stereographic import PoincareBall 
+from hyptorch.geoopt import Euclidean 
 # from model.manifolds.lorentz import Lorentz 
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
@@ -48,7 +49,7 @@ class BaseModel(nn.Module):
         if manifold == EUCLID:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
-            self.manifold = None
+            self.manifold = Euclidean()
             self.discriminator = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 1])
         elif manifold == POINCARE:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
@@ -56,7 +57,7 @@ class BaseModel(nn.Module):
             self.discriminator = HypDiscriminator(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[512, 1])
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
-            self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable)
+            self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
             self.discriminator = LorentzDisModel(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256])
         self.manifold_name =  manifold    
         self.vision_model = None 
@@ -100,6 +101,17 @@ class BaseModel(nn.Module):
             y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
             eu_dis = torch.matmul(x, y.t()) 
             return eu_dis, hyp_dist
+    
+    def etailment_loss(self, text_feats:torch.Tensor, image_feats:torch.Tensor):
+        entailment_loss = torch.tensor(0.0) 
+        if isinstance(self.manifold, Lorentz):
+            angle = self.manifold.oxy_angle(text_feats, image_feats)
+            aperture = self.manifold.half_aperture(text_feats)
+            entailment_loss = torch.clamp(angle - aperture, min=0).mean()
+        
+        return entailment_loss
+        
+
 
 
     def itm_loss(self, imgs, cap, sims_i2t):
@@ -164,18 +176,25 @@ class BaseModel(nn.Module):
         eu_sims_t2i, sims_t2i = eu_sims_i2t.T, sims_i2t.T
         eu_sims_i2i, sims_i2i = self.dist_func(image_embeds, image_embeds) 
         eu_sims_t2t, sims_t2t = self.dist_func(text_embeds, text_embeds) 
-        target = torch.arange(bsize).to(self.device)
-        logits_i2t = torch.cat([sims_i2t * _scale, sims_t2t *_scale - eye_mask], dim=1)
-        logits_t2i = torch.cat([sims_t2i * _scale, sims_i2i* _scale - eye_mask], dim=1)
 
-        margin_loss = 0.5 * (self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask) + self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask))
+        target = torch.arange(bsize).to(self.device)
+        logits_i2t = torch.cat([sims_i2t * _scale, sims_t2t* _scale - eye_mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i * _scale, sims_i2i* _scale - eye_mask], dim=1)
+        margin_loss = torch.tensor(0.0)
+        entailment_loss = torch.tensor(0.0)
+        if self.config.use_entailment_loss:
+            entailment_loss = self.etailment_loss(text_feats=text_embeds, image_feats=image_embeds)
+        if self.config.use_margin_loss:
+            margin_loss = 0.5 * (self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask) + self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask))
+        
         itc_loss =  self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
         
-        loss = itc_loss 
+        loss = itc_loss + entailment_loss + margin_loss
         
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
-            "logits/margin_loss": margin_loss.item() if margin_loss is not None else 0.0,
+            "logits/margin_loss": margin_loss.item(),
+            "logits/etailment_loss": entailment_loss.item(),
             "logits/itc_loss": itc_loss.item(),
             "logits/min": sims_i2t.min().item(),
             "logits/mean": sims_i2t.mean().item(),
@@ -212,7 +231,7 @@ class BaseModel(nn.Module):
         itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
         itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
         stats["logits/itm_loss"] = itm_loss.item() 
-        loss = itm_loss + itc_loss
+        loss = itm_loss + itc_loss 
         return loss, stats, itc_loss, itm_loss
 
     def get_text_features(

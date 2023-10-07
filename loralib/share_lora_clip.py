@@ -34,7 +34,6 @@ from transformers.utils import (
 )
 from transformers.models.clip.configuration_clip import CLIPConfig, CLIPTextConfig, CLIPVisionConfig
 from .layers import Linear as Loralinear
-from .layers import ShareLinear as SharedClip 
 
 
 logger = logging.get_logger(__name__)
@@ -254,10 +253,10 @@ class CLIPAttention(nn.Module):
         self.scale = self.head_dim**-0.5
         self.dropout = config.attention_dropout
 
-        self.k_proj = Loralinear(self.embed_dim, self.embed_dim)
-        self.v_proj = Loralinear(self.embed_dim, self.embed_dim)
-        self.q_proj = Loralinear(self.embed_dim, self.embed_dim)
-        self.out_proj = Loralinear(self.embed_dim, self.embed_dim)
+        self.k_proj = Loralinear(self.embed_dim, self.embed_dim, r=config.r)
+        self.v_proj = Loralinear(self.embed_dim, self.embed_dim, r=config.r)
+        self.q_proj = Loralinear(self.embed_dim, self.embed_dim, r=config.r)
+        self.out_proj = Loralinear(self.embed_dim, self.embed_dim, r=config.r)
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
@@ -346,8 +345,10 @@ class CLIPMLP(nn.Module):
         super().__init__()
         self.config = config
         self.activation_fn = ACT2FN[config.hidden_act]
-        self.fc1 = Loralinear(config.hidden_size, config.intermediate_size)
-        self.fc2 = Loralinear(config.intermediate_size, config.hidden_size)
+        self.fc1 = Loralinear(config.hidden_size, config.intermediate_size, r=config.r)
+        self.fc2 = Loralinear(config.intermediate_size, config.hidden_size, r=config.r)
+        # self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
+        # self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = self.fc1(hidden_states)
@@ -994,8 +995,8 @@ class CLIPModel(CLIPPreTrainedModel):
         self.text_model = CLIPTextTransformer(text_config)
         self.vision_model = CLIPVisionTransformer(vision_config)
 
-        self.visual_projection = Loralinear(self.vision_embed_dim, self.projection_dim, bias=False)
-        self.text_projection = Loralinear(self.text_embed_dim, self.projection_dim, bias=False)
+        self.visual_projection = Loralinear(self.vision_embed_dim, self.projection_dim, bias=False, r=config.r)
+        self.text_projection = Loralinear(self.text_embed_dim, self.projection_dim, bias=False, r=config.r)
         self.logit_scale = nn.Parameter(torch.tensor(self.config.logit_scale_init_value))
 
         # Initialize weights and apply final processing
@@ -1207,7 +1208,7 @@ class CLIPTextModelWithProjection(CLIPPreTrainedModel):
 
         self.text_model = CLIPTextTransformer(config)
 
-        self.text_projection = Loralinear(config.hidden_size, config.projection_dim, bias=False)
+        self.text_projection = Loralinear(config.hidden_size, config.projection_dim, bias=False, r=config.r)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1287,7 +1288,7 @@ class CLIPVisionModelWithProjection(CLIPPreTrainedModel):
 
         self.vision_model = CLIPVisionTransformer(config)
 
-        self.visual_projection = Loralinear(config.hidden_size, config.projection_dim, bias=False)
+        self.visual_projection = Loralinear(config.hidden_size, config.projection_dim, bias=False, r=config.r)
 
         # Initialize weights and apply final processing
         self.post_init()

@@ -2,9 +2,12 @@ import torch
 import torch.nn as nn
 from .modules.text_model import CLIPText, CLIPGraphText
 from .modules.vision_model import CLIPVision, CLIPGraphVision
+from loralib.share_lora_clip import CLIPTextModelWithProjection as LoraCLIPText
+from loralib.share_lora_clip import CLIPVisionModelWithProjection as LoraCLIPVision
 from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
-# from hyptorch.lorentz.modeling_clip import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
+from loralib.utils import mark_only_lora_as_trainable 
 
+from transformers import CLIPConfig 
 from .modules.utils import ManifoldMapper
 from model.baseModel import BaseModel
 from peft import get_peft_model, LoraConfig, TaskType
@@ -17,12 +20,15 @@ LORENTZ = "lorentz"
 class HypCLIP(BaseModel):
     def __init__(self, config) -> None:
         super(HypCLIP, self).__init__(config)
+        clip_config = CLIPConfig.from_pretrained(self.model_ckt) 
+        clip_config.text_config.r =  32 
+        clip_config.vision_config.r = 32 
 
-        text_model = CLIPTextModelWithProjection.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir
+        text_model = LoraCLIPText.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir, config=clip_config.text_config
         )
-        vision_model = CLIPVisionModelWithProjection.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir
+        vision_model = LoraCLIPVision.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir, config=clip_config.vision_config
         )
         mark_only_lora_as_trainable(model=text_model)
         mark_only_lora_as_trainable(model=vision_model)

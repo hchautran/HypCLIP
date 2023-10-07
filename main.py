@@ -5,11 +5,7 @@ from transformers import (
 from datasets import load_dataset
 from model.hypCLIP import HypCLIP
 from model.hypBLIP import HypBLIP
-# from model.hybridCLIP import HypCLIP 
-# from model.hybridBLIP import HypBLIP 
-# from model.PoincareCLIP import  PoincareCLIP 
 from model.perceiverModel import MyModel
-# from model.perceiverMixtureModel import MyModel
 from transformers import CLIPProcessor, BlipProcessor
 from utils.data_utils import get_dataloader, preprocess_img
 from trainer import MyTrainer
@@ -72,8 +68,9 @@ if __name__ == "__main__":
         )
         trainer.train()
 
-    for curv in [10.0]:
+    for curv in [1.0, 2.0, 5.0]:
         config.curv = curv
-        for manifold in [LORENTZ, POINCARE]:
+        for manifold in [LORENTZ, EUCLID ,POINCARE]:
             config.manifold = manifold
             inner_training_loop()
+    

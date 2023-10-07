@@ -73,13 +73,13 @@ class ManifoldMapper(nn.Module):
         self.gamma = nn.Parameter(torch.tensor([1.5]), requires_grad=True)
 
     def forward(self, x):
-        if self.clip_r is not None and not self.use_normalize:
+        if self.clip_r is not None:
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
             fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
             x = x * fac
-        else:
+
+        if self.use_normalize:
             x = F.normalize(x, p=2, dim=-1) * self.gamma
-            print('current gamma:', self.gamma.item())
         
         
         if isinstance(self.manifold, CustomLorentz): 

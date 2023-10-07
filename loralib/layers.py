@@ -12,6 +12,8 @@ from typing import Optional, List
 
 class SharedLoRALayer():
     lora_A_matrices = {}
+    lora_B_matrices = {}
+    lora_C_matrices = {}
     def __init__(
         self, 
         r: int, 
@@ -178,7 +180,7 @@ class Linear(nn.Linear, LoRALayer):
             return F.linear(x, T(self.weight), bias=self.bias)
 
 
-class ShareLinear(nn.Linear, SharedLoRALayer):
+class SharedLinear(nn.Linear, SharedLoRALayer):
     # LoRA implemented in a dense layer
     def __init__(
         self, 
@@ -190,6 +192,7 @@ class ShareLinear(nn.Linear, SharedLoRALayer):
         lora_dropout: float = 0.,
         fan_in_fan_out: bool = False, # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
         merge_weights: bool = True,
+        shared_C_module: str = None,
         **kwargs
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
@@ -199,10 +202,19 @@ class ShareLinear(nn.Linear, SharedLoRALayer):
         self.fan_in_fan_out = fan_in_fan_out
         # Actual trainable parameters
         if r > 0:
+            if module_name not in SharedLoRALayer.lora_B_matrices:
+                SharedLoRALayer.lora_B_matrices[module_name] = nn.Parameter(self.weight.new_zeros((out_features, r)))
             if module_name not in SharedLoRALayer.lora_A_matrices:
                 SharedLoRALayer.lora_A_matrices[module_name] = nn.Parameter(self.weight.new_zeros((r, in_features)))
-            self.lora_A = SharedLoRALayer.lora_A_matrices[module_name]
-            self.lora_B = nn.Parameter(self.weight.new_zeros((out_features, r)))
+            if shared_C_module is not None:
+                if shared_C_module not in SharedLoRALayer.lora_C_matrices: 
+                    SharedLoRALayer.lora_C_matrices[shared_C_module] = nn.Parameter(self.weight.new_zeros((r, r)))
+                self.register_parameter('lora_C', SharedLoRALayer.lora_C_matrices[shared_C_module])
+            else:
+                self.lora_C = nn.Parameter(self.weight.new_zeros((r, r)))
+
+            self.register_parameter('lora_B', SharedLoRALayer.lora_B_matrices[module_name])
+            self.register_parameter('lora_A', SharedLoRALayer.lora_A_matrices[module_name])
             
             self.scaling = self.lora_alpha / self.r
             # Freezing the pre-trained weight matrix
@@ -216,6 +228,7 @@ class ShareLinear(nn.Linear, SharedLoRALayer):
         if hasattr(self, 'lora_A'):
             # initialize A the same way as the default for nn.Linear and B to zero
             nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+            nn.init.kaiming_uniform_(self.lora_C, a=math.sqrt(5))
             nn.init.zeros_(self.lora_B)
 
     def train(self, mode: bool = True):
@@ -226,13 +239,13 @@ class ShareLinear(nn.Linear, SharedLoRALayer):
             if self.merge_weights and self.merged:
                 # Make sure that the weights are not merged
                 if self.r > 0:
-                    self.weight.data -= T(self.lora_B @ self.lora_A) * self.scaling
+                    self.weight.data -= T(self.lora_B @ self.lora_C @self.lora_A) * self.scaling
                 self.merged = False
         else:
             if self.merge_weights and not self.merged:
                 # Merge the weights and mark it
                 if self.r > 0:
-                    self.weight.data += T(self.lora_B @ self.lora_A) * self.scaling
+                    self.weight.data += T(self.lora_B @ self.lora_C @self.lora_A) * self.scaling
                 self.merged = True       
 
     def forward(self, x: torch.Tensor):
@@ -240,7 +253,7 @@ class ShareLinear(nn.Linear, SharedLoRALayer):
             return w.transpose(0, 1) if self.fan_in_fan_out else w
         if self.r > 0 and not self.merged:
             result = F.linear(x, T(self.weight), bias=self.bias)            
-            result += (self.lora_dropout(x) @ self.lora_A.transpose(0, 1) @ self.lora_B.transpose(0, 1)) * self.scaling
+            result += (self.lora_dropout(x) @ self.lora_A.transpose(0, 1) @ self.lora_C.transpose(0, 1) @ self.lora_B.transpose(0, 1)) * self.scaling
 
             return result
         else:
@@ -404,10 +417,10 @@ class Conv3d(ConvLoRA):
         super(Conv3d, self).__init__(nn.Conv3d, *args, **kwargs)
 
 if __name__ == '__main__':
-    linear1 = ShareLinear(512, 10, 'fc1', r=10)
-    linear2 = ShareLinear(512, 10, 'fc1', r=10)
-    linear3 = ShareLinear(512, 10, 'fc2', r=10)
-    linear4 = ShareLinear(512, 10, 'fc2', r=10)
+    linear1 = SharedLinear(512, 10, 'fc1', r=10)
+    linear2 = SharedLinear(512, 10, 'fc1', r=10)
+    linear3 = SharedLinear(512, 10, 'fc2', r=10)
+    linear4 = SharedLinear(512, 10, 'fc2', r=10)
     input = torch.rand(100, 512)
     out1 = linear1(input)
     out2 = linear2(input)
