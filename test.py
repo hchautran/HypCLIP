@@ -3,40 +3,26 @@ from transformers import (
     CLIPProcessor,
 )
 from datasets import load_dataset
-from model.hypCLIP import HypCLIP
-from model.hypBLIP import HypBLIP
-from model.hypSwin import HypSwin 
-# from model.hybridBLIP import HypBLIP 
-# from model.PoincareCLIP import  PoincareCLIP 
-from model.perceiverModel import MyModel
-# from model.perceiverMixtureModel import MyModel
-from transformers import CLIPProcessor, BlipProcessor, AutoTokenizer, AutoImageProcessor
-from utils.data_utils import get_dataloader, preprocess_img
+# from model.hypBLIP import HypBLIP, HypGraphBLIP, LavisBLIP
+from model.hypCLIP import HypGraphCLIPWithQueue 
+from utils.data_utils import get_dataloader, lavis_preprocess_img
 from trainer import MyTrainer
+from trainer_lavis import MyTrainer as LavisTrainer
 from accelerate import find_executable_batch_size
 from utils.data_utils import get_flickr
 
+from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID 
-    from config import EUCLID, SWIN_V2_BASE 
+    from config import EUCLID, LORENTZ, POINCARE 
 
     config = parser.parse_args()
- 
-    print("Getting swin processor...")
-    processor = AutoImageProcessor.from_pretrained(
-        SWIN_V2_BASE, cache_dir=config.cache_dir
-    )
-    tokenizer = AutoTokenizer.from_pretrained(config.model_ckt)
-
-    if "flickr" in config.dataset:
-        dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
-    else:
-        dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=True)
+    dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
 
     dataset = dataset.map(
-        lambda sample: preprocess_img(sample, processor=processor)
+        lambda sample: lavis_preprocess_img(sample, processor=vis_processors['eval'])
     ).remove_columns(["image"])
     dataset.set_format("numpy")
 
@@ -47,27 +33,35 @@ if __name__ == "__main__":
         train_loader = get_dataloader(
             dataset["train"],
             config.batch_size,
-            processor=tokenizer,
+            processor=model.tokenizer,
             mode="train",
             use_random_sampler=False,
         )
         test_loader = get_dataloader(
-            dataset["test"], 5, processor=tokenizer, mode="test"
+            dataset["test"], 5, processor=model.tokenizer, mode="test"
         )
-        val_loader = get_dataloader(dataset["val"], 5, processor=processor, mode="val")
-        model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
-        # model = HypSwin(config) 
-        trainer = MyTrainer(
-            model=model,
+        val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
+        queue_model = HypGraphCLIPWithQueue(config)
+
+        trainer = LavisTrainer(
+            model=queue_model,
             config=config,
             dataset=dataset,
             train_loader=train_loader,
             val_loader=val_loader,
             test_loader=test_loader,
-            processor=tokenizer,
+            processor=model.tokenizer,
         )
+        # metric = trainer.evaluate(mode='test')
+        # print(metric)
+        # metric = trainer.evaluate(mode='val')
+        # print(metric)
         trainer.train()
+    # print(model)
+    # inner_training_loop()
 
-    for manifold in [EUCLID]:
-        config.manifold = manifold
+    for curv in [2.0, 5.0 ,10.0]:
+        config.curv = curv
+        config.manifold = LORENTZ 
         inner_training_loop()
+    

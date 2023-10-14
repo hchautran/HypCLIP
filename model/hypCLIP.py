@@ -1,20 +1,65 @@
 import torch
 import torch.nn as nn
-from .modules.text_model import CLIPText, CLIPGraphText
-from .modules.vision_model import CLIPVision, CLIPGraphVision
+from .modules.text_model import CLIPText
+from .modules.vision_model import CLIPVision
+from .modules.graphs import CLIPGraphHead, LorentzCLIPGraphHead
 from loralib.share_lora_clip import CLIPTextModelWithProjection as LoraCLIPText
 from loralib.share_lora_clip import CLIPVisionModelWithProjection as LoraCLIPVision
 from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
 from loralib.utils import mark_only_lora_as_trainable 
-
+import torch.nn.functional as F
 from transformers import CLIPConfig 
 from .modules.utils import ManifoldMapper
 from model.baseModel import BaseModel
+from model.baseQueueModel import BaseModelWithQueue 
 from peft import get_peft_model, LoraConfig, TaskType
+from typing import  Optional, Tuple, Union
+from transformers.models.clip.modeling_clip import CLIPOutput
+from copy import deepcopy
 
 EUCLID = "euclidean"
 POINCARE = "poincare"
 LORENTZ = "lorentz"
+
+
+def get_lora_clip(config, vision_model, text_model):
+    text_peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=32, 
+        lora_alpha=32, 
+        lora_dropout=0.1, 
+        target_modules=[
+            'k_proj', 'v_proj', 'q_proj', 'out_proj', 'fc1', 'fc2', 'text_projection'
+            # 'k_proj', 'v_proj', 'q_proj', 'text_projection'
+        ]
+    )
+    vision_target_modules = ['visual_projection']
+    for i in range(config.vision_trainable_blocks): 
+        index = 11 - i
+        vision_target_modules.extend([
+            f'*{index}.self_attn.out_proj',
+            f'*{index}.self_attn.q_proj',
+            f'*{index}.self_attn.k_proj',
+            f'*{index}.self_attn.v_proj', 
+            f'*{index}.mlp.fc1', 
+            f'*{index}.mlp.fc2', 
+        ])
+    vision_peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=32, 
+        lora_alpha=32, 
+        lora_dropout=0.1, 
+        target_modules=vision_target_modules
+    )
+    text_lora_model = get_peft_model(text_model, text_peft_config)
+    vision_lora_model = get_peft_model(vision_model, vision_peft_config)
+    print('trainable params in vision model:',vision_lora_model.print_trainable_parameters())
+    print('trainable params in text model:',text_lora_model.print_trainable_parameters())
+    return vision_lora_model, text_lora_model
+
+
 
 
 class HypCLIP(BaseModel):
@@ -32,7 +77,7 @@ class HypCLIP(BaseModel):
         )
         mark_only_lora_as_trainable(model=text_model)
         mark_only_lora_as_trainable(model=vision_model)
-        
+
 
 
         text_body = text_model.text_model
@@ -68,7 +113,7 @@ class HypCLIP(BaseModel):
 
 class HypGraphCLIP(BaseModel):
     def __init__(self, config) -> None:
-        super(HypCLIP, self).__init__(config)
+        super(HypGraphCLIP, self).__init__(config)
 
         text_model = CLIPTextModelWithProjection.from_pretrained(
             self.model_ckt, cache_dir=config.cache_dir
@@ -84,6 +129,7 @@ class HypGraphCLIP(BaseModel):
             lora_dropout=0.1, 
             target_modules=[
                 'k_proj', 'v_proj', 'q_proj', 'out_proj', 'fc1', 'fc2', 'text_projection'
+                # 'k_proj', 'v_proj', 'q_proj', 'text_projection'
             ]
         )
         vision_target_modules = ['visual_projection']
@@ -105,31 +151,255 @@ class HypGraphCLIP(BaseModel):
             lora_dropout=0.1, 
             target_modules=vision_target_modules
         )
-        text_model = get_peft_model(text_model, text_peft_config)
-        vision_model = get_peft_model(vision_model, vision_peft_config)
-        print(text_model.print_trainable_parameters())
-        print(vision_model.print_trainable_parameters())
+        text_body = get_peft_model(text_model, text_peft_config)
+        vision_body = get_peft_model(vision_model, vision_peft_config)
+        print(text_body.print_trainable_parameters())
+        print(vision_body.print_trainable_parameters())
 
         text_body = text_model.text_model
         vision_body = vision_model.vision_model
+
         text_head = text_model.text_projection
         vision_head = vision_model.visual_projection
         mapper = None
         if self.manifold_name !=  EUCLID:
             mapper =  ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
+            self.vision_model = LorentzCLIPGraphHead(
+                manifold=self.manifold,
+                ft_in=vision_model.config.hidden_size,
+                ft_out=vision_model.config.projection_dim,
+                config=config,
+                body=vision_body,
+                head=vision_head,
+                manifold_mapper=mapper,
+                num_layers=config.num_vision_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6,
+            )
+            self.text_model = LorentzCLIPGraphHead(
+                manifold=self.manifold,
+                ft_in=text_model.config.hidden_size,
+                ft_out=text_model.config.projection_dim,
+                config=config,
+                body=text_body,
+                head=text_head,
+                manifold_mapper=mapper,
+                num_layers=config.num_text_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6
+            )
+        else:
+            self.vision_model = CLIPGraphHead(
+                ft_in=vision_model.config.hidden_size,
+                ft_out=vision_model.config.projection_dim,
+                config=config,
+                body=vision_body,
+                head=vision_head,
+                manifold_mapper=mapper,
+                num_layers=config.num_vision_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6
+            )
+            self.text_model = CLIPGraphHead(
+                ft_in=text_model.config.hidden_size,
+                ft_out=text_model.config.projection_dim,
+                config=config,
+                body=text_body,
+                head=text_head,
+                manifold_mapper=mapper,
+                num_layers=config.num_text_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6,
+            )
+
+    def eval(self):
+        self.vision_model.eval()
+        self.text_model.eval()
+
+    def train(self):
+        self.vision_model.train()
+        self.text_model.train()
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        pixel_values: Optional[torch.FloatTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+    ) -> Union[Tuple, CLIPOutput]:
+
+        vision_outputs = self.vision_model(
+            pixel_values=pixel_values,
+        )
+
+        text_outputs = self.text_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+        )
+
+        image_embeds = vision_outputs[1]
+        text_embeds = text_outputs[1]
+        graph_image_embeds = vision_outputs[2]
+        graph_text_embeds = text_outputs[2]
+        self.manifold.assert_check_point_on_manifold(image_embeds)
+        self.manifold.assert_check_point_on_manifold(text_embeds)
+        self.manifold.assert_check_point_on_manifold(graph_image_embeds)
+        self.manifold.assert_check_point_on_manifold(graph_text_embeds)
+        itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds, graph_image_embeds, graph_text_embeds)
+        itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
+        stats["logits/itm_loss"] = itm_loss.item() 
+        loss = itm_loss + itc_loss 
+        return loss, stats, itc_loss, itm_loss
+
+    def itc_loss(self, image_embeds , text_embeds, graph_image, graph_text):
+        bsize = text_embeds.shape[0]
+        margin_loss = torch.tensor(0.0)
+        g_margin_loss = torch.tensor(0.0)
+        g_itc_loss= torch.tensor(0.0)
+        eye_mask = torch.eye(bsize).to(self.device) * 1e9
+        self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
+        target = torch.arange(bsize).to(self.device)
+        _scale = self.logit_scale.exp()
 
 
-        self.vision_model = CLIPGraphVision(
-            config=config,
-            body=vision_body,
-            head=vision_head,
-            mapper=mapper,
-            num_layers=config.vision_trainable_blocks,
+        if self.config.use_graph_loss:
+            eu_sims_i2t, sims_i2t = self.dist_func(graph_image, graph_text) 
+            eu_sims_t2i, sims_t2i = eu_sims_i2t.T, sims_i2t.T
+            eu_sims_i2i, sims_i2i = self.dist_func(graph_image, graph_image) 
+            eu_sims_t2t, sims_t2t = self.dist_func(graph_text, graph_text) 
+            # logits_i2t = torch.cat([sims_i2t * _scale, sims_i2i* _scale - eye_mask], dim=1)
+            # logits_t2i = torch.cat([sims_t2i * _scale, sims_t2t* _scale - eye_mask], dim=1)
+            # if self.config.use_margin_loss:
+            g_margin_loss = 0.5 * (self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask) + self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask))
+            # g_itc_loss =  self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
+
+        eu_sims_i2t, sims_i2t = self.dist_func(image_embeds, text_embeds) 
+        eu_sims_t2i, sims_t2i = eu_sims_i2t.T, sims_i2t.T
+        eu_sims_i2i, sims_i2i = self.dist_func(image_embeds, image_embeds) 
+        eu_sims_t2t, sims_t2t = self.dist_func(text_embeds, text_embeds) 
+        logits_i2t = torch.cat([sims_i2t * _scale, sims_t2t* _scale - eye_mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i * _scale, sims_i2i* _scale - eye_mask], dim=1)
+        if self.config.use_margin_loss:
+            margin_loss = 0.5 * (self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask) + self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask))
+        itc_loss =  self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
+        loss = itc_loss + margin_loss + g_itc_loss + g_margin_loss
+        
+        stats = {
+            "logits/weight_t2i": 1.0 - self.weight_i2t,
+            "logits/margin_loss": margin_loss.item(),
+            "logits/itc_loss": itc_loss.item(),
+            "logits/g_margin_loss": g_margin_loss.item(),
+            "logits/g_itc_loss": g_itc_loss.item(),
+            "logits/min": sims_i2t.min().item(),
+            "logits/mean": sims_i2t.mean().item(),
+            "logits/max": sims_i2t.max().item(),
+            "logits/acc": (sims_i2t.argmax(-1) == target).float().mean().item(),
+            "logits/eu_acc": (eu_sims_i2t.argmax(-1) == target).float().mean().item(),
+            # "logits/curvature": self.manifold.k.item(),
+        }
+        return loss, stats, sims_i2t
+
+        
+        
+class HypGraphCLIPWithQueue(BaseModelWithQueue):
+    def __init__(self, config) -> None:
+        super(HypGraphCLIPWithQueue, self).__init__(config)
+
+        text_model = CLIPTextModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
         )
-        self.text_model = CLIPGraphText(
-            config=config,
-            body=text_body,
-            head=text_head,
-            manifold_mapper=mapper,
-            num_layers=config.text_trainable_blocks,
+        vision_model = CLIPVisionModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
         )
+        vision_model, text_model = get_lora_clip(config, vision_model=vision_model, text_model=text_model)
+      
+        text_body = text_model.text_model
+        vision_body = vision_model.vision_model
+        text_head = text_model.text_projection
+        vision_head = vision_model.visual_projection
+
+        if self.config.manifold !=  EUCLID:
+            self.vision_model = LorentzCLIPGraphHead(
+                manifold=self.manifold,
+                ft_in=vision_model.config.hidden_size,
+                ft_out=vision_model.config.projection_dim,
+                config=config,
+                body=vision_body,
+                head=vision_head,
+                manifold_mapper=self.mapper,
+                num_layers=config.num_vision_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6,
+            )
+            self.text_model = LorentzCLIPGraphHead(
+                manifold=self.manifold,
+                ft_in=text_model.config.hidden_size,
+                ft_out=text_model.config.projection_dim,
+                config=config,
+                body=text_body,
+                head=text_head,
+                manifold_mapper=self.mapper,
+                num_layers=config.num_text_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6
+            )
+        else:
+            self.vision_model = CLIPGraphHead(
+                ft_in=vision_model.config.hidden_size,
+                ft_out=vision_model.config.projection_dim,
+                config=config,
+                body=vision_body,
+                head=vision_head,
+                manifold_mapper=self.mapper,
+                num_layers=config.num_vision_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6
+            )
+            self.text_model = CLIPGraphHead(
+                ft_in=text_model.config.hidden_size,
+                ft_out=text_model.config.projection_dim,
+                config=config,
+                body=text_body,
+                head=text_head,
+                manifold_mapper=self.mapper,
+                num_layers=config.num_text_hidden_states,
+                hidden_size=512,
+                num_hidden_layers=6,
+            )
+        self.vision_model_m= deepcopy(self.vision_model) 
+        self.text_model_m= deepcopy(self.text_model) 
+        self.model_pairs = [
+            [self.vision_model, self.vision_model_m],
+            [self.text_model, self.text_model_m],
+        ]
+        self.copy_params()
+        self.ft_out = vision_model.config.projection_dim if config.manifold != LORENTZ else vision_model.config.projection_dim + 1 
+          # create the queue
+        if config.manifold == EUCLID:
+            self.register_buffer("image_queue", torch.randn(self.queue_size, self.ft_out).T)
+            self.register_buffer("text_queue", torch.randn(self.queue_size, self.ft_out).T)
+            self.image_queue = nn.functional.normalize(self.image_queue, dim=1)
+            self.text_queue = nn.functional.normalize(self.text_queue, dim=1)
+        else:
+            self.register_buffer("image_queue", self.manifold.random(self.queue_size, self.ft_out).T)
+            self.register_buffer("text_queue", self.manifold.random(self.queue_size, self.ft_out).T)
+            self.manifold.assert_check_point_on_manifold(self.image_queue.T)
+            self.manifold.assert_check_point_on_manifold(self.text_queue.T)
+
+        self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
+        self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+
+
+    def eval(self):
+        self.vision_model_m.eval()
+        self.text_model_m.eval()
+        self.vision_model_m.eval()
+        self.text_model_m.eval()
+
+    def train(self):
+        self.vision_model.train()
+        self.text_model.train()
+        self.vision_model_m.train()
+        self.text_model_m.train()
+

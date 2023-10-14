@@ -1,11 +1,9 @@
 import argparse
-from transformers import SwinBackbone 
 
 def add_flags_from_config(parser, config_dict):
     """
     Adds a flag (and default value) to an ArgumentParser for each parameter in a config
     """
-
     def OrNone(default):
         def func(x):
             # Convert "none" to proper None object
@@ -17,7 +15,6 @@ def add_flags_from_config(parser, config_dict):
             # Otherwise, default has non-None type; convert x to that type
             else:
                 return type(default)(x)
-
         return func
 
     for param in config_dict:
@@ -37,9 +34,6 @@ def add_flags_from_config(parser, config_dict):
                     )
                 else:
                     pass
-                    parser.add_argument(
-                        f"--{param}", action="append", default=default, help=description
-                    )
             else:
                 pass
                 parser.add_argument(
@@ -55,16 +49,17 @@ def add_flags_from_config(parser, config_dict):
     return parser
 
 
+LORENTZ = "lorentz"
 EUCLID = "euclidean"
 POINCARE = "poincare"
-LORENTZ = "lorentz"
-BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
-BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
 BLIP_BASE_COCO = "Salesforce/blip-itm-base-coco"
 BLIP_LARGE_COCO = "Salesforce/blip-itm-large-coco"
 CLIP_BASE_PATCH_32 = "openai/clip-vit-base-patch32"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
+BLIP_BASE = "Salesforce/blip-image-captioning-base"
+BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
+BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
 FLICKR = "nlphuji/flickr30k"
 CACHE_DIR = '/mnt/data/.cache'
 # CACHE_DIR = '/Volumes/ExtraSpace/.cache'
@@ -74,10 +69,10 @@ config_args = {
         "lr": (1e-4, "learning rate"),
         "dropout": (0.0, "dropout probability"),
         "cuda": (-1, "which cuda device to use (-1 for cpu training)"),
-        "epochs": (50, "maximum number of epochs to train for"),
+        "epochs": (20, "maximum number of epochs to train for"),
         "weight_decay": (0.0, "l2 regularization strength"),
         "optimizer": ("adam", "which optimizer to use, can be any of [sgd, adam]"),
-        "momentum": (0.999, "momentum in optimizer"),
+        "momentum": (0.995, "momentum in optimizer"),
         "patience": (5, "patience for early stopping"),
         "seed": (42, "seed for training"),
         "log_freq": (1, "how often to compute print train/val metrics (in epochs)"),
@@ -96,7 +91,7 @@ config_args = {
             None,
             "max norm for gradient clipping, or None for no gradient clipping",
         ),
-        "min_epochs": (10, "do not early stop before min-epochs"),
+        "min_epochs": (5, "do not early stop before min-epochs"),
         "mixed_precision": (
             "fp16",
             "Whether or not to use mixed precision training. Choose from 'no','fp16','bf16' or 'fp8'",
@@ -110,7 +105,7 @@ config_args = {
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            0.5,
+            1.0,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
@@ -125,36 +120,40 @@ config_args = {
             0.75,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
-        
-        "queue_size": (64000, "enable log"),
+        "max_txt_len": (35, "max_txt_len"),
+        "negative_all_rank": (False, "negative_all_rank"),
+        "alpha": (0.4, "alpha"),
+        "queue_size": (60000, "queue size"),
         "batch_size": (60, "batch size"),
-        "eval_freq": (410, "how often to compute val metrics (in epochs)"),
+        "eval_freq": (1000, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (True, "enable log"),
         "use_margin_loss": (True, "use margin loss"),
-        "use_entailment_loss": (False, "use entailment loss")
+        "use_graph_loss": (False, "use margin loss for graph"),
+        "use_entailment_loss": (False, "use entailment loss"),
+        "hyp_margin_loss_weight": (0.0, "hyperbolic margin loss weight")
     },
     "hybrid_model_config": {
         "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoint on Hugging Face"),
-        # "model_ckt": (BLIP_BASE_FLICKR, "model ceckpoint on Hugging Face"),
+        # "model_ckt": (BLIP_BASE, "model checkpoint on Hugging Face"),
         "manifold": (
             EUCLID,
             "which manifold to use [euclidean, lorentz]",
         ),
-        "use_riemann": (True, "use Riemannian Optimizer"),
         "curv": (2.0, "hyperbolic curvature"),
         "atol": (1e-1, "The relative tolerance parameter"),
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (None, "clipping radius"),
-        "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
-        "text_trainable_blocks": (0, "number of trainable blocks in text model"),
+        "vision_trainable_blocks": (2, "number of trainable blocks in vision model"),
+        "text_trainable_blocks": (12, "number of trainable blocks in text model"),
+        "num_vision_hidden_states": (2, "number of trainable blocks in vision model"),
+        "num_text_hidden_states": (3, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (True, "freeze embedding layers"),
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
     },
- 
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),
         "cache_dir": (CACHE_DIR, "cache_dir"),

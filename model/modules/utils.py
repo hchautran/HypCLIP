@@ -81,7 +81,6 @@ class ManifoldMapper(nn.Module):
         if self.use_normalize:
             x = F.normalize(x, p=2, dim=-1) * self.gamma
         
-        
         if isinstance(self.manifold, CustomLorentz): 
             x = F.pad(x, (1,0), "constant", 0)
             out = self.manifold.projx(x)

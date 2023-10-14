@@ -3,6 +3,7 @@ from accelerate import Accelerator
 from utils.data_utils import get_dataloader
 from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import evaluate_recall
+from model.baseQueueModel import BaseModelWithQueue
 from tqdm.auto import tqdm
 import torch
 from config import EUCLID, POINCARE, LORENTZ
@@ -96,15 +97,15 @@ class MyTrainer:
 
     def train(self):
         # loop over the dataset multiple times
-        current_step = 0
         best_r_all = 0.0
         waiting = 0
         for epoch in range(self.epochs):
+            current_step = 0
             with self.accelerator.accumulate(self.model):
                 self.model.train()
                 self.current_epoch = epoch
-
                 running_loss = 0.0
+                print('train loader length:', len(self.train_loader))
                 for data in tqdm(self.train_loader):
                     start = time.time()
                     self.accelerator.free_memory()
@@ -112,11 +113,16 @@ class MyTrainer:
                     current_step += 1
                     # assert len(img_ids) == len(set(img_ids))
 
-                    loss, stats, _, _ = self.model(
+                    stats, output = self.model(
                         input_ids=data["input_ids"],
                         attention_mask=data["attention_mask"],
                         pixel_values=data["pixel_values"],
+                        image_id=data['img_id'],
+                        epoch=epoch,
+                        iters=current_step,
+                        num_iters_per_epoch=len(self.train_loader),
                     )
+                    loss = output.loss
 
                     self.accelerator.backward(loss)
                     if self.config.grad_clip is not None:
@@ -132,25 +138,22 @@ class MyTrainer:
                         print(stats)
                         print("Loss: {}".format(loss.item()))
                     if self.eval_freq != -1 and (current_step + 1) % self.eval_freq == 0:
-                        metrics, eu_metrics = self.evaluate(mode='val')
+                        metrics = self.evaluate(mode='val')
                         self.model.train()
                         print(metrics)
                         self.log(metrics)
-                        self.log({"val/eu_r_all": eu_metrics["val/r_all"]})
                         self.scheduler.step(metrics["val/r_all"])
                     print('infer time', time.time() - start)
 
                     
                     # print('infer time', time.time() - start)
-                metrics, eu_metrics = self.evaluate(mode='test')
+                metrics= self.evaluate(mode='test')
                 print(metrics)
                 self.log(metrics)
-                self.log({"test/eu_r_all": eu_metrics["test/r_all"]})
                 if best_r_all < metrics["test/r_all"]:
                     waiting = 0
                     best_r_all = metrics["test/r_all"]
                     self.log({"best r_all": metrics["test/r_all"]})
-                    self.log({"euclid best r_all": eu_metrics["test/r_all"]})
                     print("best r all", best_r_all)
                 elif epoch > self.config.min_epochs:
                     waiting += 1
@@ -190,28 +193,23 @@ class MyTrainer:
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
             if self.config.manifold == POINCARE:
-                eu_sims_t2i, sims_t2i = (
-                    self.model.dist_func(all_text_embeds, all_vision_embeds, device='cpu')
-                
-                )
+                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds.T, device='cpu')
                 sims_t2i = sims_t2i.detach().numpy()
-                eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
+                # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             elif self.config.manifold == LORENTZ:
-                eu_sims_t2i, sims_t2i = (
-                    self.model.dist_func(all_text_embeds, all_vision_embeds)
-                )
+                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds.T)
                 sims_t2i = sims_t2i.cpu().detach().numpy()
-                eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
+                # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             else:
-                eu_sims_t2i, sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds.T)
                 sims_t2i = sims_t2i.cpu().detach().numpy()
-                eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
+                # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
 
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
-            eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
+            # eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
             metrics["epoch"] = self.current_epoch
-            eu_metrics["epoch"] = self.current_epoch
-        return metrics, eu_metrics
+            # eu_metrics["epoch"] = self.current_epoch
+        return metrics
 
     def save(self):
         torch.save(self.model, f"{self.save_dir}/{self.name}.pth")

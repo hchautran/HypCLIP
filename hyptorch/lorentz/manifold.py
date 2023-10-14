@@ -1,5 +1,6 @@
 import torch
 from hyptorch.geoopt import Lorentz
+from hyptorch import geoopt
 from hyptorch.geoopt.manifolds.lorentz import math
 from typing import Tuple, Optional
 
@@ -29,7 +30,7 @@ class CustomLorentz(Lorentz):
     def bmm(self, x: torch.Tensor, y: torch.Tensor):
         x = x.clone()
         x.narrow(-1, 0, 1).mul_(-1)
-        return x @ y
+        return x @ y.T
 
     def centroid(self, x, w=None, eps=1e-8):
         """Centroid implementation. Adapted the code from Chen et al. (2022)"""
@@ -57,21 +58,24 @@ class CustomLorentz(Lorentz):
 
         return self.expmap(x, z)
 
-    def sqdist_batch(self, p1_list:torch.Tensor, p2_list:torch.Tensor):
-        device = torch.device("cuda:0" if p1_list.get_device() != -1 else "cpu")
-        dists = torch.tensor([]).to(device)
-        for idx in range(p1_list.shape[0]):
-            cur_dist = self.sqdist(p1_list[idx], p2_list).unsqueeze(0)
-            dists = torch.cat([dists, cur_dist], dim=0)
-        return dists
+    def sqdist_batch(self, p1_list:torch.Tensor, p2_list:torch.Tensor, dim=-1):
+        # device = torch.device("cuda:0" if p1_list.get_device() != -1 else "cpu")
+        # dists = torch.tensor([]).to(device)
+        # for idx in range(p1_list.shape[0]):
+            # cur_dist = self.sqdist(p1_list[idx], p2_list).unsqueeze(0)
+        #     dists = torch.cat([dists, cur_dist], dim=0)
+        # return dists
+        return -2 * self.k - 2 * self.bmm(p1_list, p2_list)
     
     def dist_batch(self, p1_list:torch.Tensor, p2_list:torch.Tensor):
-        device = torch.device("cuda:0" if p1_list.get_device() != -1 else "cpu")
-        dists = torch.tensor([]).to(device)
-        for idx in range(p1_list.shape[0]):
-            cur_dist = self.dist(p1_list[idx], p2_list).unsqueeze(0)
-            dists = torch.cat([dists, cur_dist], dim=0)
-        return dists
+        # device = torch.device("cuda:0" if p1_list.get_device() != -1 else "cpu")
+        # dists = torch.tensor([]).to(device)
+        # for idx in range(p1_list.shape[0]):
+        #     cur_dist = self.dist(p1_list[idx], p2_list).unsqueeze(0)
+        #     dists = torch.cat([dists, cur_dist], dim=0)
+        d = - self.bmm(p1_list, p2_list)
+        return torch.sqrt(self.k) * math.arcosh(d / self.k)
+        # return self.dist(p1_list, p2_list)
 
 
 
@@ -202,4 +206,41 @@ class CustomLorentz(Lorentz):
         acos_input = acos_numer / (torch.norm(x_space, dim=-1) * acos_denom + eps)
         _angle = torch.acos(torch.clamp(acos_input, min=-1 + eps, max=1 - eps))
 
+
         return _angle
+
+    def random(
+        self, *size, mean=0, std=1, dtype=None, device=None
+    ) -> "geoopt.ManifoldTensor":
+        r"""
+        Create a point on the manifold, measure is induced by uniform distribution on the tangent space of zero.
+
+        Parameters
+        ----------
+        size : shape
+            the desired shape
+        dtype: torch.dtype
+            target dtype for sample, if not None, should match Manifold dtype
+        device: torch.device
+            target device for sample, if not None, should match Manifold device
+
+        Returns
+        -------
+        ManifoldTensor
+            random points on Hyperboloid
+
+        Notes
+        -----
+        The device and dtype will match the device and dtype of the Manifold
+        """
+        if device is not None and device != self.k.device:
+            raise ValueError(
+                "`device` does not match the projector `device`, set the `device` argument to None"
+            )
+        if dtype is not None and dtype != self.k.dtype:
+            raise ValueError(
+                "`dtype` does not match the projector `dtype`, set the `dtype` arguement to None"
+            )
+        tens = torch.randn(*size, device=self.k.device, dtype=self.k.dtype) 
+        tens /= tens.norm(dim=-1, keepdim=True)
+        return geoopt.ManifoldTensor(self.expmap0(tens), manifold=self)

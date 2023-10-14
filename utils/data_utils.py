@@ -175,6 +175,11 @@ def preprocess_img(sample, processor:CLIPProcessor):
     sample['pixel_values'] = processor(images=sample['image'])['pixel_values']
     return sample
 
+def lavis_preprocess_img(sample, processor):
+    sample['pixel_values'] = processor(sample['image']).unsqueeze(0)
+    return sample
+
+
 def co_preprocess_img(sample, clip_processor, blip_processor):
     sample['clip_pixel_values'] = clip_processor(images=sample['image'])['pixel_values']
     sample['blip_pixel_values'] = blip_processor(images=sample['image'])['pixel_values']

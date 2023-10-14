@@ -42,9 +42,6 @@ class BaseModel(nn.Module):
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
         
-        self.visual_encoder_m = None
-        self.text_encoder_m = None
-        self.model_pairs = None 
     
         if manifold == EUCLID:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)

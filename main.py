@@ -3,10 +3,11 @@ from transformers import (
     CLIPProcessor,
 )
 from datasets import load_dataset
-from model.hypCLIP import HypCLIP
-from model.hypBLIP import HypBLIP
+from model.hypCLIP import HypCLIP, HypGraphCLIP, HypGraphCLIPWithQueue
+from model.hypBLIP import HypBLIP, HypGraphBLIP
 from model.perceiverModel import MyModel
 from transformers import CLIPProcessor, BlipProcessor
+from trainer_lavis import MyTrainer as LavisTrainer
 from utils.data_utils import get_dataloader, preprocess_img
 from trainer import MyTrainer
 from accelerate import find_executable_batch_size
@@ -15,7 +16,6 @@ from utils.data_utils import get_flickr
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ, POINCARE 
     from config import EUCLID, LORENTZ, POINCARE 
 
     config = parser.parse_args()
@@ -55,9 +55,11 @@ if __name__ == "__main__":
             dataset["test"], 5, processor=processor, mode="test"
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=processor, mode="val")
-        model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
+        model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIP(config)
+        # model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
+
         # model = MyModel(config) 
-        trainer = MyTrainer(
+        trainer = LavisTrainer(
             model=model,
             config=config,
             dataset=dataset,
@@ -68,9 +70,11 @@ if __name__ == "__main__":
         )
         trainer.train()
 
-    for curv in [1.0, 2.0, 5.0]:
+    # for model_ckt in [BLIP_BASE_FLICKR, CLIP_BASE_PATCH_16]:
+    # config.model_ckt=BLIP_BASE_FLICKR
+    for curv in [2.0, 5.0]:
         config.curv = curv
-        for manifold in [LORENTZ, EUCLID ,POINCARE]:
+        for manifold in [LORENTZ, EUCLID]:
             config.manifold = manifold
             inner_training_loop()
     
