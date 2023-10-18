@@ -77,7 +77,7 @@ if __name__ == "__main__":
         config.epochs = 5 
         config.enable_log = True 
         config.model_ckt = model_ckt
-        for use_graph in [False, False]:
+        for use_graph in [False, True]:
             config.use_graph = use_graph
             for use_margin_loss in [True, False]:
                 config.use_margin_loss = use_margin_loss

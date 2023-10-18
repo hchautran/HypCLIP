@@ -105,7 +105,7 @@ config_args = {
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            1.0,
+            4.0,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
@@ -123,9 +123,9 @@ config_args = {
         "max_txt_len": (35, "max_txt_len"),
         "negative_all_rank": (False, "negative_all_rank"),
         "alpha": (0.4, "alpha"),
-        "queue_size": (60000, "queue size"),
+        "queue_size": (66000, "queue size"),
         "batch_size": (60, "batch size"),
-        "eval_freq": (1000, "how often to compute val metrics (in epochs)"),
+        "eval_freq": (1100, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (True, "enable log"),
         "use_margin_loss": (True, "use margin loss"),

@@ -3,13 +3,13 @@ import torch.nn as nn
 from torch_geometric.data import Data, Batch
 from .seq_linear import SeqLinear, LorentzSeqLinear
 from torch_geometric.nn import GATv2Conv, global_mean_pool
-from .HypGAT import LorentzGCN, LorentzGAT
+from .HypGAT import LorentzGAT
 from torch_geometric.utils import add_self_loops
 from torch_geometric.typing import SparseTensor 
 import torch.nn.functional as F
 from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
-from hyptorch.lorentz.layers import LorentzLinear, LorentzAct, LorentzBatchNorm1d
+from hyptorch.lorentz.layers import LorentzLinear, LorentzAct
 from torch_geometric.utils import dropout_edge 
 class ProjLayers(nn.Module):
   def __init__(self,  sizes=[768], hidden_sizes=[512],  dropout=0.1, shared=False):

@@ -353,7 +353,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 
         sim_t2i = self.dist_func(text_feat, image_feat_m_all.T) 
-        margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
+        margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat, image_world=image_feat)
 
 
         loss_i2t = -torch.sum(
