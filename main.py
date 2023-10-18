@@ -19,7 +19,7 @@ if __name__ == "__main__":
     from config import EUCLID, LORENTZ, POINCARE 
     from config import CLIP_BASE_PATCH_16, BLIP_BASE_FLICKR, CLIP_LARGE_PATCH_14
     config = parser.parse_args()
-    for model_ckt in [CLIP_LARGE_PATCH_14]:
+    for model_ckt in [CLIP_BASE_PATCH_16]:
         config.model_ckt = model_ckt
         if "blip" in config.model_ckt:
             print("Getting BLIP processor...")

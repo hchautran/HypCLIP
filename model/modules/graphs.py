@@ -5,7 +5,6 @@ from .seq_linear import SeqLinear, LorentzSeqLinear
 from torch_geometric.nn import GATv2Conv, global_mean_pool
 from .HypGAT import LorentzGAT
 from torch_geometric.utils import add_self_loops
-from torch_geometric.typing import SparseTensor 
 import torch.nn.functional as F
 from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
@@ -175,10 +174,10 @@ class LorentzGNN(torch.nn.Module):
 
     def forward(self, graphs, batch_size):
         x, edge_index, _ = graphs.x, graphs.edge_index, graphs.batch
-        adj = SparseTensor(row=edge_index[0], col=edge_index[1], sparse_sizes=(graphs.x.shape[0], graphs.x.shape[0]) ) 
-        x = self.manifold.projx(self.conv1(x, adj))
+        # adj = SparseTensor(row=edge_index[0], col=edge_index[1], sparse_sizes=(graphs.x.shape[0], graphs.x.shape[0]) ) 
+        x = self.manifold.projx(self.conv1(x, edge_index))
         x = self.act1(x)
-        x = self.manifold.projx(self.conv2(x, adj))
+        x = self.manifold.projx(self.conv2(x, edge_index))
         # self.manifold.assert_check_point_on_manifold(x)
         # x = self.act2(x)
         # x = self.conv3(x, edge_index)
