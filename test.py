@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     config.epochs = 5 
     config.enable_log = True 
-    config.hyp_margin_loss_weight=0.0
+    config.hyp_margin_loss_weight=1.0
     for curv in [2.0]:
         config.curv = curv
         for use_graph in [False]:
