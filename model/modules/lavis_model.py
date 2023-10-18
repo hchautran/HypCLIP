@@ -12,11 +12,13 @@ class Text(object):
     pass
 
 class LavisEncoder(nn.Module): 
-    def __init__(self, config, body, head ) -> None:
+    def __init__(self, config, body, head, mapper=None, use_normalized=False ) -> None:
         super().__init__()
         self.body = body
         self.head = head 
         self.config = config
+        self.mapper = mapper
+        self.use_normalized = use_normalized
 
     def forward(
             self,
@@ -39,13 +41,14 @@ class LavisEncoder(nn.Module):
             last_hidden_state = outputs.last_hidden_state
 
         pooled_output = last_hidden_state[:, 0, :]
-        for layer in self.head:
-            pooled_output = layer(pooled_output)
+        pooled_output = self.head(pooled_output)
+        if self.mapper is not None:
+            pooled_output = self.mapper(pooled_output, use_normalized=self.use_normalized)
 
         return last_hidden_state, pooled_output
 
 
-class BLIPGraphHead(nn.Module): 
+class LavisBLIPGraphHead(nn.Module): 
     def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2) -> None:
         super().__init__()
         self.config = config
@@ -68,16 +71,14 @@ class BLIPGraphHead(nn.Module):
     ) -> torch.FloatTensor:
 
         if pixel_values is not None:
-            with torch.no_grad():
-                outputs = self.body.forward_features(pixel_values)
-                last_hidden_state = outputs
+            outputs = self.body.forward_features(pixel_values)
+            last_hidden_state = outputs
         else:
-            with torch.no_grad():
-                text = Text() 
-                text.input_ids=input_ids
-                text.attention_mask=attention_mask
-                outputs = self.body.forward_text(text)
-                last_hidden_state = outputs.last_hidden_state
+            text = Text() 
+            text.input_ids=input_ids
+            text.attention_mask=attention_mask
+            outputs = self.body.forward_text(text)
+            last_hidden_state = outputs.last_hidden_state
 
         pooled_output = last_hidden_state[:, 0, :]
         pooled_output = self.head(pooled_output)
@@ -90,7 +91,7 @@ class BLIPGraphHead(nn.Module):
         return last_hidden_state, output, graph_output
 
 
-class LorentzBLIPGraphHead(nn.Module): 
+class LavisLorentzBLIPGraphHead(nn.Module): 
     def __init__(self, manifold:CustomLorentz ,ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2) -> None:
         super().__init__()
         self.config = config
@@ -116,19 +117,17 @@ class LorentzBLIPGraphHead(nn.Module):
     ) -> torch.FloatTensor:
 
         if pixel_values is not None:
-            with torch.no_grad():
-                outputs = self.body.forward_features(
-                    pixel_values,
-                )
-                last_hidden_state = outputs
+            outputs = self.body.forward_features(
+                pixel_values,
+            )
+            last_hidden_state = outputs
         else:
-            with torch.no_grad():
-                text = Text() 
-                text.input_ids=input_ids
-                text.attention_mask=attention_mask
-                outputs = self.body.forward_text(text)
+            text = Text() 
+            text.input_ids=input_ids
+            text.attention_mask=attention_mask
+            outputs = self.body.forward_text(text)
 
-                last_hidden_state = outputs.last_hidden_state
+            last_hidden_state = outputs.last_hidden_state
 
         pooled_output = last_hidden_state[:, 0, :]
         pooled_output = self.head(pooled_output)

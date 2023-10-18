@@ -64,24 +64,21 @@ def freeze_blip(
 
 
 class ManifoldMapper(nn.Module):
-    def __init__(self, manifold:Union[PoincareBall,CustomLorentz], curv, clip_r=None, use_normalize=False):
+    def __init__(self, manifold:Union[PoincareBall,CustomLorentz], curv, clip_r=None):
         super().__init__()
         self.manifold = manifold
         self.curv = curv
         self.clip_r = clip_r
-        self.use_normalize = use_normalize
-        self.gamma = nn.Parameter(torch.tensor([1.5]), requires_grad=True)
 
-    def forward(self, x):
+    def forward(self, x, use_normalized=False):
         if self.clip_r is not None:
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
             fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
             x = x * fac
-
-        if self.use_normalize:
-            x = F.normalize(x, p=2, dim=-1) * self.gamma
         
         if isinstance(self.manifold, CustomLorentz): 
+            if use_normalized:
+                x = F.normalize(x, p=2, dim=-1) 
             x = F.pad(x, (1,0), "constant", 0)
             out = self.manifold.projx(x)
         else:

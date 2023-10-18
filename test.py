@@ -3,15 +3,15 @@ from transformers import (
     CLIPProcessor,
 )
 from datasets import load_dataset
-# from model.hypBLIP import HypBLIP, HypGraphBLIP, LavisBLIP
-from model.hypCLIP import HypGraphCLIPWithQueue 
+from model.hypBLIP import LavisBLIP, LavisHypGraphBLIPWithQueue 
+# from model.hypCLIP import HypGraphCLIPWithQueue 
 from utils.data_utils import get_dataloader, lavis_preprocess_img
 from trainer import MyTrainer
 from trainer_lavis import MyTrainer as LavisTrainer
 from accelerate import find_executable_batch_size
 from utils.data_utils import get_flickr
 
-from lavis.models import load_model_and_preprocess
+from lavis.models import load_model_and_preprocess, load_model
 
 if __name__ == "__main__":
     from config import parser
@@ -41,7 +41,8 @@ if __name__ == "__main__":
             dataset["test"], 5, processor=model.tokenizer, mode="test"
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
-        queue_model = HypGraphCLIPWithQueue(config)
+        queue_model = LavisBLIP(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
+        config.model_ckt = 'lavis/blip-base'
 
         trainer = LavisTrainer(
             model=queue_model,
@@ -60,8 +61,14 @@ if __name__ == "__main__":
     # print(model)
     # inner_training_loop()
 
-    for curv in [2.0, 5.0 ,10.0]:
+    config.epochs = 5 
+    config.enable_log = True 
+    config.hyp_margin_loss_weight=0.0
+    for curv in [2.0]:
         config.curv = curv
-        config.manifold = LORENTZ 
-        inner_training_loop()
+        for use_graph in [False]:
+            config.use_graph=use_graph
+            for manifold in [LORENTZ, EUCLID]:
+                config.manifold = manifold 
+                inner_training_loop()
     

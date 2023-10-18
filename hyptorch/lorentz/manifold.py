@@ -242,5 +242,5 @@ class CustomLorentz(Lorentz):
                 "`dtype` does not match the projector `dtype`, set the `dtype` arguement to None"
             )
         tens = torch.randn(*size, device=self.k.device, dtype=self.k.dtype) 
-        tens /= tens.norm(dim=-1, keepdim=True)
-        return geoopt.ManifoldTensor(self.expmap0(tens), manifold=self)
+        # tens /= tens.norm(dim=-1, keepdim=True)
+        return geoopt.ManifoldTensor(self.projx(tens), manifold=self)

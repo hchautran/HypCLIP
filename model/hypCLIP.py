@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from .modules.text_model import CLIPText
 from .modules.vision_model import CLIPVision
-from .modules.graphs import CLIPGraphHead, LorentzCLIPGraphHead
+from .modules.graphs import GraphModel, LorentzGraphModel
 from loralib.share_lora_clip import CLIPTextModelWithProjection as LoraCLIPText
 from loralib.share_lora_clip import CLIPVisionModelWithProjection as LoraCLIPVision
 from transformers import CLIPTextModelWithProjection, CLIPVisionModelWithProjection
@@ -23,21 +23,22 @@ LORENTZ = "lorentz"
 
 
 def get_lora_clip(config, vision_model, text_model):
-    text_peft_config = LoraConfig(
-        task_type=TaskType.FEATURE_EXTRACTION, 
-        inference_mode=False, 
-        r=32, 
-        lora_alpha=32, 
-        lora_dropout=0.1, 
-        target_modules=[
-            'k_proj', 'v_proj', 'q_proj', 'out_proj', 'fc1', 'fc2', 'text_projection'
-            # 'k_proj', 'v_proj', 'q_proj', 'text_projection'
-        ]
-    )
     vision_target_modules = ['visual_projection']
+    text_target_modules = ['text_projection']
+  
     for i in range(config.vision_trainable_blocks): 
         index = 11 - i
         vision_target_modules.extend([
+            f'*{index}.self_attn.out_proj',
+            f'*{index}.self_attn.q_proj',
+            f'*{index}.self_attn.k_proj',
+            f'*{index}.self_attn.v_proj', 
+            f'*{index}.mlp.fc1', 
+            f'*{index}.mlp.fc2', 
+        ])
+    for i in range(config.text_trainable_blocks): 
+        index = 11 - i
+        text_target_modules.extend([
             f'*{index}.self_attn.out_proj',
             f'*{index}.self_attn.q_proj',
             f'*{index}.self_attn.k_proj',
@@ -52,6 +53,14 @@ def get_lora_clip(config, vision_model, text_model):
         lora_alpha=32, 
         lora_dropout=0.1, 
         target_modules=vision_target_modules
+    )
+    text_peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=32, 
+        lora_alpha=32, 
+        lora_dropout=0.1, 
+        target_modules=text_target_modules
     )
     text_lora_model = get_peft_model(text_model, text_peft_config)
     vision_lora_model = get_peft_model(vision_model, vision_peft_config)
@@ -164,7 +173,7 @@ class HypGraphCLIP(BaseModel):
         mapper = None
         if self.manifold_name !=  EUCLID:
             mapper =  ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-            self.vision_model = LorentzCLIPGraphHead(
+            self.vision_model = LorentzGraphModel(
                 manifold=self.manifold,
                 ft_in=vision_model.config.hidden_size,
                 ft_out=vision_model.config.projection_dim,
@@ -176,7 +185,7 @@ class HypGraphCLIP(BaseModel):
                 hidden_size=512,
                 num_hidden_layers=6,
             )
-            self.text_model = LorentzCLIPGraphHead(
+            self.text_model = LorentzGraphModel(
                 manifold=self.manifold,
                 ft_in=text_model.config.hidden_size,
                 ft_out=text_model.config.projection_dim,
@@ -189,7 +198,7 @@ class HypGraphCLIP(BaseModel):
                 num_hidden_layers=6
             )
         else:
-            self.vision_model = CLIPGraphHead(
+            self.vision_model = GraphModel(
                 ft_in=vision_model.config.hidden_size,
                 ft_out=vision_model.config.projection_dim,
                 config=config,
@@ -200,7 +209,7 @@ class HypGraphCLIP(BaseModel):
                 hidden_size=512,
                 num_hidden_layers=6
             )
-            self.text_model = CLIPGraphHead(
+            self.text_model = GraphModel(
                 ft_in=text_model.config.hidden_size,
                 ft_out=text_model.config.projection_dim,
                 config=config,
@@ -300,7 +309,55 @@ class HypGraphCLIP(BaseModel):
         }
         return loss, stats, sims_i2t
 
-        
+
+class HypCLIPWithQueue(BaseModelWithQueue):
+    def __init__(self, config) -> None:
+        super(HypCLIP, self).__init__(config)
+        clip_config = CLIPConfig.from_pretrained(self.model_ckt) 
+        clip_config.text_config.r =  32 
+        clip_config.vision_config.r = 32 
+
+        text_model = CLIPTextModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
+        )
+        vision_model = CLIPVisionModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
+        )
+        vision_model, text_model = get_lora_clip(config, vision_model=vision_model, text_model=text_model)
+
+
+        text_body = text_model.text_model
+        vision_body = vision_model.vision_model
+        text_head = nn.ModuleList([])
+        vision_head = nn.ModuleList([])
+        text_head = nn.ModuleList([text_model.text_projection])
+        vision_head = nn.ModuleList([vision_model.visual_projection])
+
+        if self.manifold_name !=  EUCLID:
+            text_head.append(
+                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+            )
+            vision_head.append(
+                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+            )
+
+
+        self.vision_model = CLIPVision(
+            config=config,
+            body=vision_body,
+            head=vision_head,
+            num_trainable_blocks=config.vision_trainable_blocks,
+            freeze_embedding=config.freeze_embedding,
+        )
+        self.text_model = CLIPText(
+            config=config,
+            body=text_body,
+            head=text_head,
+            num_trainable_blocks=config.text_trainable_blocks,
+            freeze_embeddings=config.freeze_embedding,
+        )        
+
+        self._init_queue(config, vision_model.config.projection_dim)
         
 class HypGraphCLIPWithQueue(BaseModelWithQueue):
     def __init__(self, config) -> None:
@@ -320,7 +377,7 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
         vision_head = vision_model.visual_projection
 
         if self.config.manifold !=  EUCLID:
-            self.vision_model = LorentzCLIPGraphHead(
+            self.vision_model = LorentzGraphModel(
                 manifold=self.manifold,
                 ft_in=vision_model.config.hidden_size,
                 ft_out=vision_model.config.projection_dim,
@@ -329,10 +386,11 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 head=vision_head,
                 manifold_mapper=self.mapper,
                 num_layers=config.num_vision_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6,
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
+                shared_proj_layers=config.shared_proj_layers
             )
-            self.text_model = LorentzCLIPGraphHead(
+            self.text_model = LorentzGraphModel(
                 manifold=self.manifold,
                 ft_in=text_model.config.hidden_size,
                 ft_out=text_model.config.projection_dim,
@@ -341,11 +399,12 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 head=text_head,
                 manifold_mapper=self.mapper,
                 num_layers=config.num_text_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
+                shared_proj_layers=config.shared_proj_layers
             )
         else:
-            self.vision_model = CLIPGraphHead(
+            self.vision_model = GraphModel(
                 ft_in=vision_model.config.hidden_size,
                 ft_out=vision_model.config.projection_dim,
                 config=config,
@@ -353,10 +412,11 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 head=vision_head,
                 manifold_mapper=self.mapper,
                 num_layers=config.num_vision_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
+                shared_proj_layers=config.shared_proj_layers
             )
-            self.text_model = CLIPGraphHead(
+            self.text_model = GraphModel(
                 ft_in=text_model.config.hidden_size,
                 ft_out=text_model.config.projection_dim,
                 config=config,
@@ -364,31 +424,12 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 head=text_head,
                 manifold_mapper=self.mapper,
                 num_layers=config.num_text_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6,
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
+                shared_proj_layers=config.shared_proj_layers
             )
-        self.vision_model_m= deepcopy(self.vision_model) 
-        self.text_model_m= deepcopy(self.text_model) 
-        self.model_pairs = [
-            [self.vision_model, self.vision_model_m],
-            [self.text_model, self.text_model_m],
-        ]
-        self.copy_params()
-        self.ft_out = vision_model.config.projection_dim if config.manifold != LORENTZ else vision_model.config.projection_dim + 1 
-          # create the queue
-        if config.manifold == EUCLID:
-            self.register_buffer("image_queue", torch.randn(self.queue_size, self.ft_out).T)
-            self.register_buffer("text_queue", torch.randn(self.queue_size, self.ft_out).T)
-            self.image_queue = nn.functional.normalize(self.image_queue, dim=1)
-            self.text_queue = nn.functional.normalize(self.text_queue, dim=1)
-        else:
-            self.register_buffer("image_queue", self.manifold.random(self.queue_size, self.ft_out).T)
-            self.register_buffer("text_queue", self.manifold.random(self.queue_size, self.ft_out).T)
-            self.manifold.assert_check_point_on_manifold(self.image_queue.T)
-            self.manifold.assert_check_point_on_manifold(self.text_queue.T)
-
-        self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
-        self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+        
+        self._init_queue(config, vision_model.config.projection_dim)
 
 
     def eval(self):

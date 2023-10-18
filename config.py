@@ -63,13 +63,13 @@ BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
 FLICKR = "nlphuji/flickr30k"
 CACHE_DIR = '/mnt/data/.cache'
 # CACHE_DIR = '/Volumes/ExtraSpace/.cache'
-SWIN_V2_BASE = 'microsoft/swinv2-base-patch4-window12-192-22k'
 config_args = {
     "training_config": {
+        "use_graph":  (False, "use knowledge graph"),
         "lr": (1e-4, "learning rate"),
         "dropout": (0.0, "dropout probability"),
         "cuda": (-1, "which cuda device to use (-1 for cpu training)"),
-        "epochs": (20, "maximum number of epochs to train for"),
+        "epochs": (10, "maximum number of epochs to train for"),
         "weight_decay": (0.0, "l2 regularization strength"),
         "optimizer": ("adam", "which optimizer to use, can be any of [sgd, adam]"),
         "momentum": (0.995, "momentum in optimizer"),
@@ -105,7 +105,7 @@ config_args = {
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            1.0,
+            4.0,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
@@ -123,19 +123,25 @@ config_args = {
         "max_txt_len": (35, "max_txt_len"),
         "negative_all_rank": (False, "negative_all_rank"),
         "alpha": (0.4, "alpha"),
-        "queue_size": (60000, "queue size"),
+        "queue_size": (66000, "queue size"),
         "batch_size": (60, "batch size"),
-        "eval_freq": (1000, "how often to compute val metrics (in epochs)"),
+        "eval_freq": (1100, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (True, "enable log"),
         "use_margin_loss": (True, "use margin loss"),
         "use_graph_loss": (False, "use margin loss for graph"),
         "use_entailment_loss": (False, "use entailment loss"),
-        "hyp_margin_loss_weight": (0.0, "hyperbolic margin loss weight")
+        "hyp_margin_loss_weight": (0.0, "hyperbolic margin loss weight"),
+        "num_proj_layers": (6, "number of project layers"),
+        "proj_layer_hidden_sizes": (256, "hidden size of proj layers"),
+        "normalize_text_embed": (False,""),
+        "normalize_image_embed": (False,""),
+        "shared_proj_layers": (False, "number of project layers"),
     },
     "hybrid_model_config": {
+        # "model_ckt": (CLIP_BASE_PATCH_32, "model checkpoint on Hugging Face"),
         "model_ckt": (CLIP_BASE_PATCH_16, "model checkpoint on Hugging Face"),
-        # "model_ckt": (BLIP_BASE, "model checkpoint on Hugging Face"),
+        # "model_ckt": (BLIP_BASE_FLICKR, "model checkpoint on Hugging Face"),
         "manifold": (
             EUCLID,
             "which manifold to use [euclidean, lorentz]",
@@ -153,6 +159,7 @@ config_args = {
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (True, "freeze embedding layers"),
         "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
+        "fourier": (False, "fourier"),
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

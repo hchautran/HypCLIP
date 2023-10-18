@@ -8,7 +8,6 @@ from torch.nn import Parameter
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn import GATv2Conv
 from torch_geometric.nn.dense.linear import Linear
-from torch_geometric.nn.inits import glorot, zeros
 from torch_geometric.typing import (
     Adj,
     OptTensor,
@@ -79,7 +78,7 @@ class LorentzGAT(MessagePassing):
         self.lin_l = LorentzLinear(manifold, in_channels + 1, out_channels+1, bias=bias, dropout=dropout) 
         self.lin_r = LorentzLinear(manifold, in_channels + 1, out_channels+1, bias=bias, dropout=dropout)
         self.att = ManifoldParameter(
-            data=self.manifold.random_normal((1, self.out_channels + 1)),
+            data=self.manifold.random((1, self.out_channels + 1)),
             manifold=manifold, 
             requires_grad=True
         )
@@ -94,26 +93,20 @@ class LorentzGAT(MessagePassing):
         self.lin_r.reset_parameters()
 
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, return_attention_weights: bool = None):
-        r"""Runs the forward pass of the module.
 
-        Args:
-            return_attention_weights (bool, optional): If set to :obj:`True`,
-                will additionally return the tuple
-                :obj:`(edge_index, attention_weights)`, holding the computed
-                attention weights for each edge. (default: :obj:`None`)
-        """
         x_l = self.lin_l(x)
         x_r = self.lin_r(x)
 
-        self.manifold.assert_check_point_on_manifold(x_l)
-        self.manifold.assert_check_point_on_manifold(x_r)
+        # self.manifold.assert_check_point_on_manifold(x_l)
+        # self.manifold.assert_check_point_on_manifold(x_r)
         # print('got here')
         assert x_l is not None
         assert x_r is not None
 
         # propagate_type: (x: PairTensor, edge_attr: OptTensor)
         out = self.manifold.projx(self.propagate(edge_index, x=(x_l, x_r), size=None))
-        self.manifold.assert_check_point_on_manifold(x)
+        # print(out.shape)
+        self.manifold.assert_check_point_on_manifold(out)
 
         alpha = self._alpha
         assert alpha is not None
@@ -129,8 +122,10 @@ class LorentzGAT(MessagePassing):
         alpha = softmax(alpha, index, ptr, size_i)
         self._alpha = alpha
         alpha = F.dropout(alpha, p=self.dropout, training=self.training)
-        return x_j * alpha.unsqueeze(-1)
+
+        return x_j  * alpha.unsqueeze(-1) 
 
     def __repr__(self) -> str:
         return (f'{self.__class__.__name__}({self.in_channels}, '
                 f'{self.out_channels}, heads={self.heads})')
+

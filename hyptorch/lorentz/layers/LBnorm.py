@@ -87,7 +87,7 @@ class LorentzBatchNorm(nn.Module):
             x_T = self.manifold.transp0(beta, x_T)
             output = self.manifold.expmap(beta, x_T)
 
-        return output
+        return self.manifold.projx(output)
 
 
 class LorentzBatchNorm1d(LorentzBatchNorm):

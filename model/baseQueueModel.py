@@ -79,17 +79,15 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
-            # self.itm_head = DisModel(dim=self.ft_out, layer_dims=[256, 1])
-        elif config.manifold == POINCARE:
-            self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
-            self.manifold = PoincareBall(c=self.curv, learnable=config.curv_learnable)
-            # self.itm_head = HypDiscriminator(self.manifold, dim=self.ft_out, layer_dims=[256, 1])
-            self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
+        # elif config.manifold == POINCARE:
+        #     self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
+        #     self.manifold = PoincareBall(c=self.curv, learnable=config.curv_learnable)
+        #     self.itm_head = HypDiscriminator(self.manifold, dim=self.ft_out, layer_dims=[256, 1])
+        #     self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
-            # self.itm_head = LorentzDisModel(self.manifold, dim=self.ft_out, layer_dims=[256])
-            self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
+            self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
         # create the momentum encoder
         # TODO
@@ -102,6 +100,32 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
         self.negative_all_rank = config.negative_all_rank
+    
+    def _init_queue(self, config, ft_out):
+        self.vision_model_m= deepcopy(self.vision_model) 
+        self.text_model_m= deepcopy(self.text_model) 
+        self.model_pairs = [
+            [self.vision_model, self.vision_model_m],
+            [self.text_model, self.text_model_m],
+        ]
+        self.copy_params()
+          # create the queue
+        if config.manifold == EUCLID:
+            self.register_buffer("image_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("text_queue", torch.randn(self.queue_size, ft_out).T)
+            self.image_queue = nn.functional.normalize(self.image_queue.T, dim=-1).T
+            self.text_queue = nn.functional.normalize(self.text_queue.T, dim=-1).T
+            self.itm_head = DisModel(dim=ft_out, layer_dims=[256, 1])
+        else:
+            self.register_buffer("image_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
+            self.register_buffer("text_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
+            self.manifold.assert_check_point_on_manifold(self.image_queue.T)
+            self.manifold.assert_check_point_on_manifold(self.text_queue.T)
+            self.itm_head = LorentzDisModel(self.manifold, dim=ft_out, layer_dims=[256])
+
+        self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
+        self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+
 
     def _rampup_factor(self, epoch, iters, num_iters_per_epoch):
         return min(1, (epoch * num_iters_per_epoch + iters) / (2 * num_iters_per_epoch))
@@ -125,28 +149,25 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
   
     
     def get_euclid_dist(self, x:torch.Tensor, y:torch.tensor):
-        if self.config.manifold == LORENTZ:
-            x = self.manifold.get_space(x)
-            y = self.manifold.get_space(y.T).T
-        if self.config.manifold == POINCARE:
+        if self.config.manifold != EUCLID:
             x = self.manifold.logmap0(x)
-            y = self.manifold.logmap0(y.T).T
+            y = self.manifold.logmap0(y)
         x = F.normalize(x, p=2, dim=-1) 
         y = F.normalize(y, p=2, dim=-1) 
-        return torch.matmul(x, y) 
+        return torch.matmul(x, y.T) 
             
     def dist_func(self, x:torch.Tensor, y:torch.Tensor, device='gpu'):
         if self.config.manifold == EUCLID:
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y) 
+            eu_dis = torch.matmul(x, y.T) 
             return  eu_dis 
         elif self.config.manifold == POINCARE: 
-            hyp_dist = -self.manifold.dist_batch(x, y.T, device=device)
+            hyp_dist = -self.manifold.dist_batch(x, y, device=device)
 
             return hyp_dist
         else: 
-            hyp_dist = -self.manifold.dist_batch(x, y.T)
+            hyp_dist = -self.manifold.dist_batch(x, y)
             return hyp_dist
     
     def postprocess_embeds(self, embed):
@@ -156,7 +177,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         else:
             return F.normalize(embed, p=2, dim=-1) 
     
-    def eu_margin_loss(self, pos_mask,sims, sims_i2i):
+    def eu_margin_loss(self, pos_mask, sims, sims_i2i):
         ones = torch.ones_like(pos_mask).to(self.device)
         neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
         sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
@@ -184,7 +205,72 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         sims = torch.cat([torch.clamp(sims, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
         loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
         return loss
-        
+    
+    def margin_loss(self, pos_idx, text_feat, image_feat, text_world, image_world):
+        pos_mask = pos_idx * 1e9 
+        if not self.config.use_margin_loss:
+            return torch.tensor(0.0)
+        eu_sim_i2t = self.get_euclid_dist(image_feat, text_world) 
+        eu_sim_t2i = self.get_euclid_dist(text_feat, image_world) 
+        eu_sim_i2i = self.get_euclid_dist(image_feat, image_world) - pos_mask 
+        eu_sim_t2t = self.get_euclid_dist(text_feat, text_world) - pos_mask 
+
+        if self.config.manifold == EUCLID:
+            return (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
+        if self.config.manifold != EUCLID:
+            if self.config.hyp_margin_loss_weight > 0.0:
+                hyp_sim_i2t = self.dist_func(image_feat, text_world) 
+                hyp_sim_t2i = self.dist_func(text_feat, image_world) 
+                hyp_sim_i2i = self.dist_func(image_feat, image_world) - pos_mask
+                hyp_sim_t2t = self.dist_func(text_feat, text_world) - pos_mask 
+                eu_margin_loss = (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
+                hyp_margin_loss = (self.hyp_margin_loss(pos_idx, hyp_sim_i2t, hyp_sim_t2t) + self.hyp_margin_loss(pos_idx, hyp_sim_t2i, hyp_sim_i2i)) / 2
+                return self.config.hyp_margin_loss_weight * hyp_margin_loss +  eu_margin_loss
+            else:
+                return (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
+
+
+    def itm_loss(self, imgs, texts, sims_i2t):
+        bs = imgs.shape[0]
+        _scale = self.logit_scale.exp()
+        with torch.no_grad():
+            weights_i2t = F.softmax(sims_i2t * _scale, dim=1)
+            weights_t2i = F.softmax(sims_i2t.T * _scale, dim=1)
+            mask = (torch.eye(bs) > 0).to(self.device)
+
+            weights_i2t.masked_fill_(mask, 0)
+            weights_t2i.masked_fill_(mask, 0) 
+            # select a negative image for each text
+            img_enc_neg = []    
+            for b in range(bs):
+                neg_idx = torch.multinomial(weights_t2i[b], 1).item()
+                img_enc_neg.append(imgs[neg_idx])
+            img_enc_neg = torch.stack(img_enc_neg,dim=0) 
+
+            # select a negative text for each image
+            cap_enc_neg = []
+            for b in range(bs):
+                neg_idx = torch.multinomial(weights_i2t[b], 1).item()
+                cap_enc_neg.append(texts[neg_idx])
+            cap_enc_neg = torch.stack(cap_enc_neg,dim=0)   
+
+            cap_enc_all = torch.cat([texts, texts, cap_enc_neg],dim=0)     
+            img_enc_all = torch.cat([imgs, img_enc_neg, imgs],dim=0)
+            itm_labels = torch.cat(
+                [
+                    torch.ones(bs,dtype=torch.float),
+                    torch.zeros(2*bs,dtype=torch.float)
+                ],
+            dim=0).view(-1,1).to(imgs.device)
+
+        disc = self.itm_head(img_enc_all, cap_enc_all)
+        class_weights = torch.tensor([[2.0]]).to(self.device)
+        loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels, pos_weight=class_weights)
+
+        itm_acc = ((disc >0.5).float() == itm_labels).float().sum()/itm_labels.shape[0]
+        return loss_itm, itm_acc
+
+   
 
     def forward(
         self, 
@@ -205,6 +291,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         )
 
         self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
+        if self.config.manifold != EUCLID:
+            self.manifold.k.data = torch.clamp(self.manifold.k.data, max=10.0, min=1.0)
         _scale = self.logit_scale.exp()
         
         # TODO 
@@ -229,7 +317,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         idx = idx.view(-1, 1)
         idx_all = torch.cat([idx.t(), self.idx_queue.clone().detach()], dim=1)
         pos_idx = torch.eq(idx, idx_all).float()
-        pos_mask = pos_idx * 1e9
         sim_targets = pos_idx / pos_idx.sum(1, keepdim=True)
 
 
@@ -253,41 +340,21 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
 
-            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all) * _scale 
-            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all) * _scale 
+            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
 
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
 
-            sim_i2t_targets = alpha * F.softmax(sim_i2t_m, dim=1) + (1 - alpha) * sim_targets
-            sim_t2i_targets = alpha * F.softmax(sim_t2i_m, dim=1) + (1 - alpha) * sim_targets
+            sim_i2t_targets = alpha * F.softmax(sim_i2t_m * _scale, dim=1) + (1 - alpha) * sim_targets
+            sim_t2i_targets = alpha * F.softmax(sim_t2i_m * _scale, dim=1) + (1 - alpha) * sim_targets
 
 
-        sim_i2t = self.dist_func(image_feat, text_feat_m_all) 
-        sim_t2i = self.dist_func(text_feat, image_feat_m_all) 
-        sim_i2i = self.dist_func(image_feat, image_feat_m_all) - pos_mask 
-        sim_t2t = self.dist_func(text_feat, text_feat_m_all) - pos_mask 
+        sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 
+        sim_t2i = self.dist_func(text_feat, image_feat_m_all.T) 
+        margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
 
-        margin_loss = torch.tensor(0.0)
-
-
-        if self.config.use_margin_loss and self.config.manifold == EUCLID:
-            margin_loss = (self.eu_margin_loss(idx, sim_i2t, sim_t2t) + self.eu_margin_loss(idx, sim_t2i, sim_i2i)) / 2
-        elif self.config.use_margin_loss and self.config.manifold != EUCLID:
-            eu_sim_i2t = self.get_euclid_dist(image_feat, text_feat_m_all) 
-            eu_sim_t2i = self.get_euclid_dist(text_feat, image_feat_m_all) 
-            eu_sim_i2i = self.get_euclid_dist(image_feat, image_feat_m_all) - pos_mask 
-            eu_sim_t2t = self.get_euclid_dist(text_feat, text_feat_m_all) - pos_mask 
-            if self.config.hyp_margin_loss_weight > 0.0:
-                eu_margin_loss = (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
-                hyp_margin_loss = (self.hyp_margin_loss(pos_idx, sim_i2t, sim_t2t) + self.hyp_margin_loss(pos_idx, sim_t2i, sim_i2i)) / 2
-                margin_loss = self.config.hyp_margin_loss_weight * hyp_margin_loss +  eu_margin_loss
-            else:
-                margin_loss = (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
-            
-        
-           
 
         loss_i2t = -torch.sum(
             F.log_softmax(sim_i2t * _scale, dim=1) * sim_i2t_targets, dim=-1
@@ -295,26 +362,31 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         loss_t2i = -torch.sum(
             F.log_softmax(sim_t2i * _scale, dim=1) * sim_t2i_targets, dim=-1
         ).mean()      
+     
 
-        loss_itc = (loss_i2t + loss_t2i) / 2
+        loss_itc = (loss_i2t + loss_t2i ) / 2
+        loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=self.dist_func(image_feat, text_feat))
 
         in_batch_target = torch.arange(bsize).to(self.device)
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
+            "logits/itm_loss": loss_itm.item(),
             "logits/margin_loss": margin_loss.item(),
             "logits/min": sim_i2t.min().item(),
             "logits/mean": sim_i2t.mean().item(),
             "logits/max": sim_i2t.max().item(),
-            "logits/acc": (self.dist_func(image_feat, text_feat.T).argmax(-1) == in_batch_target).float().mean().item(),
+            "logits/acc": (self.dist_func(image_feat, text_feat).argmax(-1) == in_batch_target).float().mean().item(),
+            "logits/itm_acc": itm_acc.item(),
+            "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
         }
 
         self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)
 
         return stats, BlipOutput(
-            loss=loss_itc + margin_loss,
+            loss=loss_itc + loss_itm + margin_loss,
             loss_itc=loss_itc,
-            # loss_itm=loss_itm,
+            loss_itm=loss_itm,
             sims=BlipSimilarity(
                 sim_i2t=sim_i2t,
                 sim_t2i=sim_t2i,

@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from .modules.text_model import BLIPText, BLIPGraphText
 from .modules.vision_model import BLIPVision, BLIPGraphVision
-from .modules.lavis_model import LavisEncoder, BLIPGraphHead, LorentzBLIPGraphHead 
-from transformers import BlipForImageTextRetrieval, CLIPTextModelWithProjection, CLIPVisionModelWithProjection 
+from .modules.lavis_model import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
+from transformers import BlipForImageTextRetrieval
 from .modules.utils import ManifoldMapper
 from model.baseModel import BaseModel 
 from model.baseQueueModel import BaseModelWithQueue 
@@ -13,51 +13,68 @@ from typing import Optional, Tuple, Union
 import torch.nn.functional as F
 from lavis.models import BlipRetrieval
 from copy import deepcopy
-
+from .modules.graphs import GraphModel, LorentzGraphModel
 EUCLID = "euclidean"
 POINCARE = "poincare"
 LORENTZ = "lorentz"
 CLIP_BASE_PATCH_16 = "openai/clip-vit-base-patch16"
 
-class HypBLIP(BaseModel):
+def get_lora_blip(config, model):
+
+    target_modules = [ 
+      
+        'text_proj', 
+        'vision_proj',
+    ]
+    for i in range(config.vision_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.self_attn.qkv',
+            f'*{index}.self_attn.projection',
+            f'*{index}.mlp.fc1', 
+            f'*{index}.mlp.fc2', 
+        ])
+    for i in range(config.text_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.attention.output.dense', 
+            f'*{index}.attention.self.query', 
+            f'*{index}.attention.self.value',
+            f'*{index}.attention.self.key', 
+        ])
+    peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=32, 
+        lora_alpha=32, 
+        lora_dropout=0.1, 
+        target_modules=target_modules
+    )
+    model = get_peft_model(model, peft_config) 
+    return model
+
+
+
+
+class HypBLIPWithQueue(BaseModelWithQueue):
     def __init__(self, config) -> None:
-        super(HypBLIP, self).__init__(config)
+        super(HypBLIPWithQueue, self).__init__(config)
+        self.config = config
 
         model = BlipForImageTextRetrieval.from_pretrained(
             self.model_ckt, cache_dir=config.cache_dir
         )
-        peft_config = LoraConfig(
-            task_type=TaskType.FEATURE_EXTRACTION, 
-            inference_mode=False, 
-            r=16, 
-            lora_alpha=16, 
-            lora_dropout=0.1, 
-            target_modules=[
-                'dense', 
-                'query', 
-                'value',
-                'key', 
-                'text_proj', 
-                'vision_proj',
-                '*.11.self_attn.qkv'
-                '*.11.self_attn.projection'
-                '*.11.mlp.fc1'
-                '*.11.mlp.fc2'
-            ]
-        )
-        print(model)
-        self.config = config
-        model = get_peft_model(model, peft_config) 
+      
         text_body = model.text_encoder
         vision_body = model.vision_model
         text_head = nn.ModuleList([model.text_proj])
         vision_head = nn.ModuleList([model.vision_proj])
    
         text_head.append(
-            ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
+            ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         )
         vision_head.append(
-            ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
+            ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         )
 
 
@@ -65,80 +82,50 @@ class HypBLIP(BaseModel):
             config,
             body=vision_body,
             head=vision_head,
-            # num_trainable_blocks=config.vision_trainable_blocks,
-            # freeze_embedding=config.freeze_embedding,
         )
         self.text_model = BLIPText(
             config,
             body=text_body,
             head=text_head,
-            # num_trainable_blocks=config.text_trainable_blocks,
-            # freeze_embeddings=config.freeze_embedding,
         )
+        self._init_queue(config, 256)
 
-class LavisBLIP(BaseModel):
+class LavisBLIP(BaseModelWithQueue):
     def __init__(self, config, model:BlipRetrieval) -> None:
         super(LavisBLIP, self).__init__(config)
         
-        peft_config = LoraConfig(
-            task_type=TaskType.FEATURE_EXTRACTION, 
-            inference_mode=False, 
-            r=16, 
-            lora_alpha=16, 
-            lora_dropout=0.1, 
-            target_modules=[
-                'dense', 
-                'query', 
-                'value',
-                'key', 
-                'text_proj', 
-                'vision_proj',
-                '*.11.self_attn.qkv',
-                '*.11.self_attn.proj',
-                '*.11.mlp.fc1',
-                '*.11.mlp.fc2',
-                '*.10.self_attn.qkv',
-                '*.10.self_attn.proj',
-                '*.10.mlp.fc1',
-                '*.10.mlp.fc2',
-            ]
-        )
+    
+        model = get_lora_blip(config=config,model=model) 
         self.config = config
-        model = get_peft_model(model, peft_config) 
         text_body = model.text_encoder
         vision_body = model.visual_encoder
-        text_head = nn.ModuleList([model.text_proj])
-        vision_head = nn.ModuleList([model.vision_proj])
-        if self.manifold_name != EUCLID:
-            mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-            text_head.append(mapper)
-            vision_head.append(mapper)
+        text_head = model.text_proj
+        vision_head = model.vision_proj
+        mapper = None
+        if self.config.manifold != EUCLID:
+            mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
 
         self.vision_model = LavisEncoder(
             config,
             body=vision_body,
             head=vision_head,
+            mapper=mapper,
+            use_normalized=config.normalize_image_embed
         )
         self.text_model = LavisEncoder(
             config,
             body=text_body,
             head=text_head,
+            mapper=mapper,
+            use_normalized=config.normalize_text_embed
         )
+        self._init_queue(config, 256)
+  
 
-    def forward(self, input_ids: torch.LongTensor | None = None, pixel_values: torch.FloatTensor | None = None, attention_mask: torch.Tensor | None = None, position_ids: torch.LongTensor | None = None): 
-        return super().forward(input_ids, pixel_values, attention_mask, position_ids)
-    
-    def get_text_features(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, position_ids: torch.Tensor | None = None):
-        return super().get_text_features(input_ids, attention_mask, position_ids)
-    
-    def get_vision_features(self, pixel_values: torch.Tensor):
-        return super().get_vision_features(pixel_values)
-
-
-class HypGraphBLIP(BaseModel):
+class LavisHypGraphBLIP(BaseModel):
     def __init__(self, config, model:BlipRetrieval) -> None:
-        super(HypGraphBLIP, self).__init__(config)
+        super(LavisHypGraphBLIP, self).__init__(config)
         
         self.config = config
         text_body = model.text_encoder
@@ -148,7 +135,7 @@ class HypGraphBLIP(BaseModel):
         mapper = None
         if self.manifold_name != EUCLID:
             mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-            self.vision_model = LorentzBLIPGraphHead(
+            self.vision_model = LavisLorentzBLIPGraphHead(
                 manifold=self.manifold,
                 ft_in=768,
                 ft_out=256,
@@ -160,7 +147,7 @@ class HypGraphBLIP(BaseModel):
                 hidden_size=256,
                 num_hidden_layers=6,
             )
-            self.text_model = LorentzBLIPGraphHead(
+            self.text_model = LavisLorentzBLIPGraphHead(
                 manifold=self.manifold,
                 ft_in=768,
                 ft_out=256,
@@ -173,7 +160,7 @@ class HypGraphBLIP(BaseModel):
                 num_hidden_layers=6
             )
         else:
-            self.vision_model = BLIPGraphHead(
+            self.vision_model = LavisBLIPGraphHead(
                 ft_in=768,
                 ft_out=256,
                 config=config,
@@ -184,7 +171,7 @@ class HypGraphBLIP(BaseModel):
                 hidden_size=256,
                 num_hidden_layers=6
             )
-            self.text_model = BLIPGraphHead(
+            self.text_model = LavisBLIPGraphHead(
                 ft_in=768,
                 ft_out=256,
                 config=config,
@@ -286,93 +273,77 @@ class HypGraphBLIP(BaseModel):
         return loss, stats, sims_i2t
 
         
-class HypGraphCLIPWithQueue(BaseModelWithQueue):
-    def __init__(self, config) -> None:
-        super(HypGraphCLIPWithQueue, self).__init__(config)
-
-        text_model = CLIPTextModelWithProjection.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir
-        )
-        vision_model = CLIPVisionModelWithProjection.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir
-        )
-        vision_model, text_model = get_lora_clip(config, vision_model=vision_model, text_model=text_model)
-      
-        text_body = text_model.text_model
-        vision_body = vision_model.vision_model
-        text_head = text_model.text_projection
-        vision_head = vision_model.visual_projection
-
-        if self.config.manifold !=  EUCLID:
-            self.vision_model = LorentzCLIPGraphHead(
+class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
+    def __init__(self, config, model) -> None:
+        super(LavisHypGraphBLIPWithQueue, self).__init__(config)
+        
+        model = get_lora_blip(config=config,model=model) 
+        self.config = config
+        text_body = model.text_encoder
+        vision_body = model.visual_encoder
+        text_head = model.text_proj
+        vision_head = model.vision_proj
+        mapper = None
+        if config.manifold != EUCLID:
+            mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+            self.vision_model = LavisLorentzBLIPGraphHead(
                 manifold=self.manifold,
-                ft_in=vision_model.config.hidden_size,
-                ft_out=vision_model.config.projection_dim,
+                ft_in=768,
+                ft_out=256,
                 config=config,
                 body=vision_body,
                 head=vision_head,
-                manifold_mapper=self.mapper,
-                num_layers=config.num_vision_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6,
+                manifold_mapper=mapper,
+                num_layers=1,
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
             )
-            self.text_model = LorentzCLIPGraphHead(
+            self.text_model = LavisLorentzBLIPGraphHead(
                 manifold=self.manifold,
-                ft_in=text_model.config.hidden_size,
-                ft_out=text_model.config.projection_dim,
+                ft_in=768,
+                ft_out=256,
                 config=config,
                 body=text_body,
                 head=text_head,
-                manifold_mapper=self.mapper,
-                num_layers=config.num_text_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6
+                manifold_mapper=mapper,
+                num_layers=1,
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
             )
         else:
-            self.vision_model = CLIPGraphHead(
-                ft_in=vision_model.config.hidden_size,
-                ft_out=vision_model.config.projection_dim,
+            self.vision_model = LavisBLIPGraphHead(
+                ft_in=768,
+                ft_out=256,
                 config=config,
                 body=vision_body,
                 head=vision_head,
-                manifold_mapper=self.mapper,
-                num_layers=config.num_vision_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6
+                manifold_mapper=mapper,
+                num_layers=1,
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
             )
-            self.text_model = CLIPGraphHead(
-                ft_in=text_model.config.hidden_size,
-                ft_out=text_model.config.projection_dim,
+            self.text_model = LavisBLIPGraphHead(
+                ft_in=768,
+                ft_out=256,
                 config=config,
                 body=text_body,
                 head=text_head,
-                manifold_mapper=self.mapper,
-                num_layers=config.num_text_hidden_states,
-                hidden_size=512,
-                num_hidden_layers=6,
+                manifold_mapper=mapper,
+                num_layers=1,
+                hidden_size=config.proj_layer_hidden_sizes,
+                num_hidden_layers=config.num_proj_layers,
             )
-        self.vision_model_m= deepcopy(self.vision_model) 
-        self.text_model_m= deepcopy(self.text_model) 
-        self.model_pairs = [
-            [self.vision_model, self.vision_model_m],
-            [self.text_model, self.text_model_m],
-        ]
-        self.copy_params()
-        self.ft_out = vision_model.config.projection_dim if config.manifold != LORENTZ else vision_model.config.projection_dim + 1 
-          # create the queue
-        if config.manifold == EUCLID:
-            self.register_buffer("image_queue", torch.randn(self.queue_size, self.ft_out).T)
-            self.register_buffer("text_queue", torch.randn(self.queue_size, self.ft_out).T)
-            self.image_queue = nn.functional.normalize(self.image_queue, dim=1)
-            self.text_queue = nn.functional.normalize(self.text_queue, dim=1)
-        else:
-            self.register_buffer("image_queue", self.manifold.random(self.queue_size, self.ft_out).T)
-            self.register_buffer("text_queue", self.manifold.random(self.queue_size, self.ft_out).T)
-            self.manifold.assert_check_point_on_manifold(self.image_queue.T)
-            self.manifold.assert_check_point_on_manifold(self.text_queue.T)
 
-        self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
-        self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+        self._init_queue(config, 256)
+
+    # def num_parameters(self, only_trainable=True):
+    #     num_params = 0
+    #     if only_trainable:
+    #         num_params += sum(p.numel() for p in self.text_model.graph_head.parameters() if p.requires_grad)
+    #     else:
+    #         num_params += sum(p.numel() for p in self.text_model.graph_head.parameters())
+    #     return num_params
+
 
 
     def eval(self):
@@ -386,3 +357,79 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
         self.text_model.train()
         self.vision_model_m.train()
         self.text_model_m.train()
+
+class HypGraphBLIPWithQueue(BaseModelWithQueue):
+    def __init__(self, config) -> None:
+        super(HypGraphBLIPWithQueue, self).__init__(config)
+
+        model = BlipForImageTextRetrieval.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
+        model = get_lora_blip(config, model=model) 
+        text_body = model.text_encoder
+        vision_body = model.vision_model
+        text_head = model.text_proj
+        vision_head = model.vision_proj
+
+        if self.config.manifold !=  EUCLID:
+            self.vision_model = LorentzGraphModel(
+                manifold=self.manifold,
+                ft_in=model.config.vision_config.hidden_size,
+                ft_out=model.config.image_text_hidden_size,
+                config=config,
+                body=vision_body,
+                head=vision_head,
+                manifold_mapper=self.mapper,
+                num_layers=1,
+                hidden_size=256,
+                num_hidden_layers=6,
+            )
+            self.text_model = LorentzGraphModel(
+                manifold=self.manifold,
+                ft_in=model.config.text_config.hidden_size,
+                ft_out=model.config.image_text_hidden_size,
+                config=config,
+                body=text_body,
+                head=text_head,
+                manifold_mapper=self.mapper,
+                num_layers=1,
+                hidden_size=256,
+                num_hidden_layers=6
+            )
+        else:
+            self.vision_model = GraphModel(
+                ft_in=model.config.vision_config.hidden_size,
+                ft_out=model.config.image_text_hidden_size,
+                config=config,
+                body=vision_body,
+                head=vision_head,
+                manifold_mapper=self.mapper,
+                num_layers=1,
+                hidden_size=256,
+                num_hidden_layers=6
+            )
+            self.text_model = GraphModel(
+                ft_in=model.config.text_config.hidden_size,
+                ft_out=model.config.image_text_hidden_size,
+                config=config,
+                body=text_body,
+                head=text_head,
+                manifold_mapper=self.mapper,
+                num_layers=1,
+                hidden_size=256,
+                num_hidden_layers=6,
+            )
+        
+        self._init_queue(config, model.config.image_text_hidden_size)
+
+
+    def eval(self):
+        self.vision_model_m.eval()
+        self.text_model_m.eval()
+        self.vision_model_m.eval()
+        self.text_model_m.eval()
+
+    def train(self):
+        self.vision_model.train()
+        self.text_model.train()
+        self.vision_model_m.train()
+        self.text_model_m.train()
+
