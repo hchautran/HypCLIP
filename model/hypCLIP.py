@@ -312,7 +312,7 @@ class HypGraphCLIP(BaseModel):
 
 class HypCLIPWithQueue(BaseModelWithQueue):
     def __init__(self, config) -> None:
-        super(HypCLIP, self).__init__(config)
+        super(HypCLIPWithQueue, self).__init__(config)
         clip_config = CLIPConfig.from_pretrained(self.model_ckt) 
         clip_config.text_config.r =  32 
         clip_config.vision_config.r = 32 
@@ -333,7 +333,7 @@ class HypCLIPWithQueue(BaseModelWithQueue):
         text_head = nn.ModuleList([text_model.text_projection])
         vision_head = nn.ModuleList([vision_model.visual_projection])
 
-        if self.manifold_name !=  EUCLID:
+        if self.config.manifold !=  EUCLID:
             text_head.append(
                 ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
             )
