@@ -91,19 +91,16 @@ class BaseModel(nn.Module):
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
             eu_dis = torch.matmul(x, y.t()) 
-            return  eu_dis, eu_dis 
+            return  eu_dis 
         elif self.manifold_name == POINCARE: 
             hyp_dist = -self.manifold.dist_batch(x, y, device=device)
-            x = F.normalize(self.manifold.logmap0(x),p=2, dim=-1) 
-            y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
-            return eu_dis, hyp_dist
+            return hyp_dist
         else: 
             hyp_dist = -self.manifold.dist_batch(x, y)
             x = F.normalize(self.manifold.logmap0(x),p=2, dim=-1) 
             y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
             eu_dis = torch.matmul(x, y.t()) 
-            return eu_dis, hyp_dist
+            return hyp_dist
     
     def etailment_loss(self, text_feats:torch.Tensor, image_feats:torch.Tensor):
         entailment_loss = torch.tensor(0.0) 
@@ -198,10 +195,10 @@ class BaseModel(nn.Module):
         self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
         _scale = self.logit_scale.exp()
         target = torch.arange(bsize).to(self.device)
-        eu_sims_i2t, sims_i2t = self.dist_func(image_embeds, text_embeds) 
-        eu_sims_t2i, sims_t2i = eu_sims_i2t.T, sims_i2t.T
-        eu_sims_i2i, sims_i2i = self.dist_func(image_embeds, image_embeds) 
-        eu_sims_t2t, sims_t2t = self.dist_func(text_embeds, text_embeds) 
+        sims_i2t = self.dist_func(image_embeds, text_embeds) 
+        sims_t2i = sims_i2t.T
+        sims_i2i = self.dist_func(image_embeds, image_embeds) 
+        sims_t2t = self.dist_func(text_embeds, text_embeds) 
         if image_embeds_t is not None and text_embeds_t is not None:
             teacher_sims_i2t = self.teacher_dist_func(image_embeds_t, text_embeds_t) 
             teacher_sims_t2i = teacher_sims_i2t.T
@@ -242,7 +239,6 @@ class BaseModel(nn.Module):
             "logits/mean": sims_i2t.mean().item(),
             "logits/max": sims_i2t.max().item(),
             "logits/acc": (sims_i2t.argmax(-1) == target).float().mean().item(),
-            "logits/eu_acc": (eu_sims_i2t.argmax(-1) == target).float().mean().item(),
             "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
         }
         return loss, stats, sims_i2t

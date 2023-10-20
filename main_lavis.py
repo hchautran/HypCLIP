@@ -63,7 +63,7 @@ if __name__ == "__main__":
     # inner_training_loop()
 
     config.epochs = 5 
-    config.enable_log = False 
+    config.enable_log = True 
     config.hyp_margin_loss_weight=0.0
     for curv in [2.0]:
         config.curv = curv

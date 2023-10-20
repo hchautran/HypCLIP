@@ -174,15 +174,15 @@ class MyTrainer:
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
             if self.config.manifold == POINCARE:
-                _,sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds, device='cpu')
+                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds, device='cpu')
                 sims_t2i = sims_t2i.detach().numpy()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             elif self.config.manifold == LORENTZ:
-                _, sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
                 sims_t2i = sims_t2i.cpu().detach().numpy()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             else:
-                _,sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
                 sims_t2i = sims_t2i.cpu().detach().numpy()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
 
