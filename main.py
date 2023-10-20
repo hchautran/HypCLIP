@@ -19,7 +19,7 @@ if __name__ == "__main__":
     from config import EUCLID, LORENTZ, POINCARE 
     from config import CLIP_BASE_PATCH_16, BLIP_BASE_FLICKR, CLIP_LARGE_PATCH_14
     config = parser.parse_args()
-    for model_ckt in [CLIP_LARGE_PATCH_14]:
+    for model_ckt in [CLIP_BASE_PATCH_16]:
         config.model_ckt = model_ckt
         if "blip" in config.model_ckt:
             print("Getting BLIP processor...")
@@ -74,11 +74,13 @@ if __name__ == "__main__":
             # print(trainer.evaluate())
             trainer.train()
 
-        config.epochs = 6 
-        config.enable_log = True 
+        config.epochs = 4 
+        config.enable_log = False 
         config.model_ckt = model_ckt
-        for use_graph in [False, True]:
+        for use_graph in [True, False]:
             config.use_graph = use_graph
-            for manifold in [LORENTZ, EUCLID]:
-                config.manifold = manifold
-                inner_training_loop()
+            for use_margin_loss in [True, False]:
+                config.use_margin_loss = use_margin_loss
+                for manifold in [LORENTZ, EUCLID]:
+                    config.manifold = manifold
+                    inner_training_loop()

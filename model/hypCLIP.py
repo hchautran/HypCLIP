@@ -12,10 +12,12 @@ from transformers import CLIPConfig
 from .modules.utils import ManifoldMapper
 from model.baseModel import BaseModel
 from model.baseQueueModel import BaseModelWithQueue 
+from model.baseDistilledModel import BaseModel as DistiledBaseModel
 from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
-from copy import deepcopy
+from lavis.models import BlipRetrieval
+from .modules.lavis_model import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
 
 EUCLID = "euclidean"
 POINCARE = "poincare"
@@ -444,3 +446,64 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
         self.vision_model_m.train()
         self.text_model_m.train()
 
+
+
+class HypCLIPDistilled(DistiledBaseModel):
+    def __init__(self, config, teacher_model:BlipRetrieval) -> None:
+        super(HypCLIPDistilled, self).__init__(config)
+        clip_config = CLIPConfig.from_pretrained(self.model_ckt) 
+        clip_config.text_config.r =  32 
+        clip_config.vision_config.r = 32 
+
+        text_model = CLIPTextModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
+        )
+        vision_model = CLIPVisionModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
+        )
+        vision_model, text_model = get_lora_clip(config, vision_model=vision_model, text_model=text_model)
+
+        text_body = text_model.text_model
+        vision_body = vision_model.vision_model
+        text_head = nn.ModuleList([])
+        vision_head = nn.ModuleList([])
+        text_head = nn.ModuleList([text_model.text_projection])
+        vision_head = nn.ModuleList([vision_model.visual_projection])
+
+        if self.config.manifold !=  EUCLID:
+            text_head.append(
+                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+            )
+            vision_head.append(
+                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+            )
+
+
+        self.vision_model = CLIPVision(
+            config=config,
+            body=vision_body,
+            head=vision_head,
+            num_trainable_blocks=config.vision_trainable_blocks,
+            freeze_embedding=config.freeze_embedding,
+        )
+        self.text_model = CLIPText(
+            config=config,
+            body=text_body,
+            head=text_head,
+            num_trainable_blocks=config.text_trainable_blocks,
+            freeze_embeddings=config.freeze_embedding,
+        )        
+        self.vision_teacher = LavisEncoder(
+            config,
+            body=teacher_model.visual_encoder,
+            head=teacher_model.vision_proj,
+            mapper=None,
+            use_normalized=config.normalize_image_embed
+        )
+        self.text_teacher = LavisEncoder(
+            config,
+            body= teacher_model.text_encoder,
+            head=teacher_model.text_proj,
+            mapper=None,
+            use_normalized=config.normalize_text_embed
+        )

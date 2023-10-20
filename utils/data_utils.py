@@ -8,10 +8,11 @@ from datasets import dataset_dict
 from datasets import load_dataset
 
 class Flickr_dataset(Dataset):
-    def __init__(self, dataset):  
+    def __init__(self, dataset, load_raw_image=False):  
         self.dataset = dataset
         self.dataset_len = len(dataset)
         self.cap_per_img = 5
+        self.load_raw_image=True
 
     def __len__(self):
         return self.dataset_len  * self.cap_per_img
@@ -182,7 +183,7 @@ def lavis_preprocess_img(sample, processor):
 
 def co_preprocess_img(sample, clip_processor, blip_processor):
     sample['clip_pixel_values'] = clip_processor(images=sample['image'])['pixel_values']
-    sample['blip_pixel_values'] = blip_processor(images=sample['image'])['pixel_values']
+    sample['blip_pixel_values'] = blip_processor(sample['image']).unsqueeze(0)
     return sample
 
 def parse_int(sample):

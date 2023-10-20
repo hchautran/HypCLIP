@@ -7,6 +7,7 @@ from transformers import BlipForImageTextRetrieval
 from .modules.utils import ManifoldMapper
 from model.baseModel import BaseModel 
 from model.baseQueueModel import BaseModelWithQueue 
+from model.baseDistilledModel import BaseModel as BaseDistilModel 
 from .modules.utils import ManifoldMapper
 from peft import get_peft_model, LoraConfig, TaskType
 from typing import Optional, Tuple, Union
@@ -97,31 +98,69 @@ class LavisBLIP(BaseModelWithQueue):
     
         model = get_lora_blip(config=config,model=model) 
         self.config = config
-        text_body = model.text_encoder
-        vision_body = model.visual_encoder
-        text_head = model.text_proj
-        vision_head = model.vision_proj
         mapper = None
         if self.config.manifold != EUCLID:
             mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
-
         self.vision_model = LavisEncoder(
             config,
-            body=vision_body,
-            head=vision_head,
+            body=model.visual_encoder,
+            head=model.vision_proj,
             mapper=mapper,
             use_normalized=config.normalize_image_embed
         )
         self.text_model = LavisEncoder(
             config,
-            body=text_body,
-            head=text_head,
+            body=model.text_encoder,
+            head=model.text_proj,
             mapper=mapper,
             use_normalized=config.normalize_text_embed
         )
         self._init_queue(config, 256)
+ 
+ 
+class DistilLavisBLIP(BaseDistilModel):
+    def __init__(self, config, model:BlipRetrieval) -> None:
+        super(DistilLavisBLIP, self).__init__(config)
+        teacher_model = deepcopy(model)
+
+        for param in teacher_model.parameters():
+            param.requires_grad = False
+    
+        model = get_lora_blip(config=config,model=model) 
+        self.config = config
+        mapper = None
+        if self.config.manifold != EUCLID:
+            mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+
+        self.vision_model = LavisEncoder(
+            config,
+            body=model.visual_encoder,
+            head=model.vision_proj,
+            mapper=mapper,
+            use_normalized=config.normalize_image_embed
+        )
+        self.text_model = LavisEncoder(
+            config,
+            body=model.text_encoder,
+            head=model.text_proj,
+            mapper=mapper,
+            use_normalized=config.normalize_text_embed
+        )
+        self.vision_teacher = LavisEncoder(
+            config,
+            body=teacher_model.visual_encoder,
+            head=teacher_model.vision_proj,
+            mapper=None,
+        )
+        self.text_teacher = LavisEncoder(
+            config,
+            body=teacher_model.text_encoder,
+            head=teacher_model.text_proj,
+            mapper=None,
+        )
   
+ 
 
 class LavisHypGraphBLIP(BaseModel):
     def __init__(self, config, model:BlipRetrieval) -> None:

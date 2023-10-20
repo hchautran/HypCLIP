@@ -112,7 +112,7 @@ class MyTrainer:
                     current_step += 1
                     # assert len(img_ids) == len(set(img_ids))
 
-                    loss, stats, _, _ = self.model(
+                    loss, stats = self.model(
                         input_ids=data["input_ids"],
                         attention_mask=data["attention_mask"],
                         pixel_values=data["pixel_values"],

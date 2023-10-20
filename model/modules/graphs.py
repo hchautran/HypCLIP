@@ -31,7 +31,7 @@ class ProjLayers(nn.Module):
     return outputs
 
 class GraphHead(nn.Module):
-    def __init__(self, sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graph_heads=4, graphs_hidden_channel=512, dropout_edge_ratio=0.1, shared=False):
+    def __init__(self, sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graph_heads=4, graphs_hidden_channel=512, dropout_edge_ratio=0.1, shared=False, gamma=0.5):
         super().__init__()
         self.sizes = sizes
         self.num_layers = len(sizes)
@@ -69,9 +69,8 @@ class GraphHead(nn.Module):
         # data_batch.x = self.batch_norm(data_batch.x) 
         data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0] 
         graph_output, graph_mean = self.gnn(data_batch, batch_size=bs)
-        output = graph_output + pooled_output
         
-        return output, graph_mean 
+        return graph_output, graph_mean 
 
 class GNN(torch.nn.Module):
     def __init__(self, ft_in ,hidden_channels, ft_out, num_heads=4):
@@ -94,7 +93,7 @@ class GNN(torch.nn.Module):
         graph_mean = global_mean_pool(x, batch)
         x = x.view(batch_size, graphs.x.shape[0]//batch_size, -1)
         x = x[:, 0, :]
-        x = F.dropout(x, p=0.1, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
         x = self.lin(x)
         return x, graph_mean
 
@@ -111,7 +110,8 @@ class GraphModel(nn.Module):
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
             graphs_hidden_channel=384,
-            dropout_edge_ratio=0.4,
+            dropout_edge_ratio=0.5,
+            dropout=0.4,
             shared=shared_proj_layers
         ) 
         
@@ -146,14 +146,9 @@ class GraphModel(nn.Module):
             pooled_output = outputs[1]
 
         pooled_output = self.head(pooled_output)
-        hidden_states=[]
-        if self.config.fourier:
-            for hidden_state in outputs.hidden_states:
-                state = torch.fft.fft2(hidden_state).real
-                hidden_states.append(state)
-        else: hidden_states = output.hidden_states
+
         
-        output, graph_output = self.graph_head(hidden_states=hidden_states, pooled_output=pooled_output)
+        output, graph_output = self.graph_head(hidden_states=outputs.hidden_states, pooled_output=pooled_output)
         if self.manifold_mapper is not None:
             output = self.manifold_mapper(output)
             graph_output = self.manifold_mapper(graph_output)
@@ -227,7 +222,7 @@ class LorentzProjLayers(nn.Module):
     return outputs
 
 class LorentzGraphHead(nn.Module):
-    def __init__(self, manifold:CustomLorentz ,sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graphs_hidden_channel=384, dropout_edge_ratio=0.1, shared=False):
+    def __init__(self, manifold:CustomLorentz ,sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graphs_hidden_channel=384, dropout_edge_ratio=0.1, shared=False, gamma=0.5):
         super().__init__()
         self.sizes = sizes
         self.manifold = manifold
@@ -271,7 +266,7 @@ class LorentzGraphHead(nn.Module):
         output = self.manifold.add_time(output)
 
         self.manifold.assert_check_point_on_manifold(output)
-        return output, graph_mean 
+        return output, graph_mean
 
 
 class LorentzGraphModel(nn.Module): 
@@ -289,7 +284,8 @@ class LorentzGraphModel(nn.Module):
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
             graphs_hidden_channel=384,
-            dropout_edge_ratio=0.4,
+            dropout_edge_ratio=0.7,
+            dropout=0.2,
             shared=shared_proj_layers
         ) 
         

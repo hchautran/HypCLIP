@@ -6,7 +6,6 @@ from tqdm.auto import tqdm
 import torch
 from config import EUCLID, POINCARE, LORENTZ
 import time
-from transformers import Blip2Model
 
 
 class MyTrainer:
@@ -54,7 +53,7 @@ class MyTrainer:
         )
       
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.5, patience=2
+            self.optimizer, 'max', factor=0.1, patience=2
         )
         
         (
@@ -84,10 +83,10 @@ class MyTrainer:
         best_r_all = 0.0
         waiting = 0
         for epoch in range(self.epochs):
+
             with self.accelerator.accumulate(self.model):
                 self.model.train()
                 self.current_epoch = epoch
-
                 running_loss = 0.0
                 for data in tqdm(self.train_loader):
                     start = time.time()
@@ -96,13 +95,13 @@ class MyTrainer:
                     current_step += 1
                     # assert len(img_ids) == len(set(img_ids))
 
-                    loss, stats, _, _ = self.model(
-                        clip_input_ids=data["clip_input_ids"],
-                        clip_attention_mask=data["clip_attention_mask"],
-                        clip_pixel_values=data["clip_pixel_values"],
-                        blip_input_ids=data["blip_input_ids"],
-                        blip_attention_mask=data["blip_attention_mask"],
-                        blip_pixel_values=data["blip_pixel_values"],
+                    loss, stats = self.model(
+                        input_ids=data["clip_input_ids"],
+                        attention_mask=data["clip_attention_mask"],
+                        pixel_values=data["clip_pixel_values"],
+                        teacher_input_ids=data["blip_input_ids"],
+                        teacher_attention_mask=data["blip_attention_mask"],
+                        teacher_pixel_values=data["blip_pixel_values"],
                     )
 
                     self.accelerator.backward(loss)
@@ -123,7 +122,7 @@ class MyTrainer:
                         self.model.train()
                         print(metrics)
                         self.log(metrics)
-                        # self.log({"val/eu_r_all": eu_metrics["val/r_all"]})
+                        self.scheduler.step(metrics["val/r_all"])
                     print('infer time', time.time() - start)
 
                     
@@ -164,24 +163,33 @@ class MyTrainer:
         with torch.no_grad():
             for data in tqdm(loader):
                 text_embeds = self.model.get_text_features(
-                    clip_input_ids=data["clip_input_ids"], clip_attention_mask=data["clip_attention_mask"],
-                    blip_input_ids=data["blip_input_ids"], blip_attention_mask=data["blip_attention_mask"]
+                    input_ids=data["clip_input_ids"], attention_mask=data["clip_attention_mask"]
                 )
                 vision_embeds = self.model.get_vision_features(
-                    clip_pixel_values=data["clip_pixel_values"][0].unsqueeze(0),
-                    blip_pixel_values=data["blip_pixel_values"][0].unsqueeze(0),
+                    pixel_values=data["clip_pixel_values"][0].unsqueeze(0)
                 )
-                # self.model.manifold.assert_check_point_on_manifold(vision_embeds)
                 all_text_embeds.append(text_embeds)
                 all_vision_embeds.append(vision_embeds)
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
-           
-            sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-            sims_t2i = sims_t2i.cpu().detach().numpy()
+            if self.config.manifold == POINCARE:
+                _,sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds, device='cpu')
+                sims_t2i = sims_t2i.detach().numpy()
+                # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
+            elif self.config.manifold == LORENTZ:
+                _, sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+                sims_t2i = sims_t2i.cpu().detach().numpy()
+                # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
+            else:
+                _,sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+                sims_t2i = sims_t2i.cpu().detach().numpy()
+                # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
+
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
+            # eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
             metrics["epoch"] = self.current_epoch
+            # eu_metrics["epoch"] = self.current_epoch
         return metrics
 
     def save(self):
