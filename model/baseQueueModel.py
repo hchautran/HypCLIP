@@ -127,8 +127,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
 
 
-    # def _rampup_factor(self, epoch, iters, num_iters_per_epoch):
-    #     return min(1, (epoch * num_iters_per_epoch + iters) / (2 * num_iters_per_epoch))
+    def _rampup_factor(self, epoch, iters, num_iters_per_epoch):
+        return min(1, (epoch * num_iters_per_epoch + iters) / (2 * num_iters_per_epoch))
     
     
     def num_parameters(self, only_trainable=True):
@@ -287,7 +287,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
     ):
         idx = image_id
 
-        alpha = self.alpha
+        alpha = self.alpha * self._rampup_factor(
+            epoch=epoch,
+            iters=iters,
+            num_iters_per_epoch=num_iters_per_epoch,
+        )
 
         self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
         if self.config.manifold != EUCLID:
@@ -339,14 +343,14 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
 
-            sim_i2t_m = self.get_euclid_dist(image_feat_m, text_feat_m_all.T) 
-            sim_t2i_m = self.get_euclid_dist(text_feat_m, image_feat_m_all.T)
+            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
 
-            sim_i2t_targets = alpha * F.softmax(sim_i2t_m * _scale, dim=1) + (1 - alpha) * sim_targets
-            sim_t2i_targets = alpha * F.softmax(sim_t2i_m * _scale, dim=1) + (1 - alpha) * sim_targets
+            sim_i2t_targets = alpha * F.softmax(sim_i2t_m * _scale, dim=-1) + (1 - alpha) * sim_targets
+            sim_t2i_targets = alpha * F.softmax(sim_t2i_m * _scale, dim=-1) + (1 - alpha) * sim_targets
 
 
         sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 

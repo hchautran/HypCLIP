@@ -42,11 +42,11 @@ if __name__ == "__main__":
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
         config.model_ckt = 'lavis/blip-base'
-        # queue_model = LavisBLIP(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
-        distiled_model =DistilLavisBLIP(config, model)
+        queue_model = LavisBLIP(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
+        # distiled_model =DistilLavisBLIP(config, model)
 
-        trainer = DistilTrainer(
-            model=distiled_model,
+        trainer = LavisTrainer(
+            model=queue_model,
             config=config,
             dataset=dataset,
             train_loader=train_loader,
