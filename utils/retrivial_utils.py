@@ -28,8 +28,8 @@ def i2t(sims_i2t, return_ranks=False):
         result = dict()
         result['id'] = index
         inds = np.argsort(sims_i2t[index])[::-1]
-        result['top5'] = list(inds[:5])
         result['top1'] = inds[0]
+        result['top5'] = list(inds[:5])
         result['top10'] = list(inds[:10])
         result['ranks'] = []
         # Score

@@ -89,8 +89,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
             self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
-        # create the momentum encoder
-        # TODO
         self.vision_model_m= None 
         self.text_model_m = None 
 
@@ -100,6 +98,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
         self.negative_all_rank = config.negative_all_rank
+        self.beta = nn.Parameter(torch.tensor(config.soft_target_loss), requires_grad=False)
     
     def _init_queue(self, config, ft_out):
         self.vision_model_m= deepcopy(self.vision_model) 
@@ -343,14 +342,20 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
 
-            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
-            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
+            sim_i2t_m = self.get_euclid_dist(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.get_euclid_dist(text_feat_m, image_feat_m_all.T)
+            hyp_sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
+            hyp_sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
 
-            sim_i2t_targets = alpha * F.softmax(sim_i2t_m * _scale, dim=-1) + (1 - alpha) * sim_targets
-            sim_t2i_targets = alpha * F.softmax(sim_t2i_m * _scale, dim=-1) + (1 - alpha) * sim_targets
+            sim_i2t_targets = alpha * (
+                self.beta * F.softmax(sim_i2t_m * _scale, dim=-1) + (1-self.beta) * F.softmax(hyp_sim_i2t_m * _scale, dim=-1)
+            ) + (1 - alpha) * sim_targets
+            sim_t2i_targets = alpha * (
+                self.beta * F.softmax(sim_t2i_m * _scale, dim=-1) + (1-self.beta) *F.softmax(hyp_sim_i2t_m * _scale, dim=-1)
+            ) + (1 - alpha) * sim_targets
 
 
         sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 

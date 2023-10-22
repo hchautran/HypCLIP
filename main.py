@@ -17,9 +17,9 @@ from utils.data_utils import get_flickr
 if __name__ == "__main__":
     from config import parser
     from config import EUCLID, LORENTZ, POINCARE 
-    from config import CLIP_BASE_PATCH_16, BLIP_BASE_FLICKR, CLIP_LARGE_PATCH_14
+    from config import CLIP_BASE_PATCH_16, BLIP_BASE_FLICKR, CLIP_BASE_PATCH_32 ,CLIP_LARGE_PATCH_14
     config = parser.parse_args()
-    for model_ckt in [CLIP_BASE_PATCH_16]:
+    for model_ckt in [CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32]:
         config.model_ckt = model_ckt
         if "blip" in config.model_ckt:
             print("Getting BLIP processor...")
@@ -74,8 +74,8 @@ if __name__ == "__main__":
             # print(trainer.evaluate())
             trainer.train()
 
-        config.epochs = 4 
-        config.enable_log = False 
+        config.epochs = 5 
+        config.enable_log = True 
         config.model_ckt = model_ckt
         for use_graph in [True, False]:
             config.use_graph = use_graph

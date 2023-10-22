@@ -67,9 +67,9 @@ if __name__ == "__main__":
     config.hyp_margin_loss_weight=0.0
     for curv in [2.0]:
         config.curv = curv
-        for use_graph in [False]:
+        for use_graph in [False, True]:
             config.use_graph=use_graph
-            for manifold in [LORENTZ, EUCLID]:
+            for manifold in [EUCLID]:
                 config.manifold = manifold 
                 inner_training_loop()
     

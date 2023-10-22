@@ -18,6 +18,7 @@ class ProjLayers(nn.Module):
         self.projectors = nn.ModuleList([SeqLinear(ft_in=size, layer_dims=hidden_sizes, dropout=dropout, act_func='gelu') for size in sizes])
     else:
         self.projector = SeqLinear(ft_in=sizes[-1], layer_dims=hidden_sizes, dropout=dropout, act_func='gelu')
+    self.layer_norm = nn.LayerNorm(hidden_sizes[-1])
 
   def forward(self, hidden_states:torch.Tensor):
     outputs = []
@@ -26,7 +27,7 @@ class ProjLayers(nn.Module):
             output= self.projectors[i](hidden_states[i])
         else:
             output= self.projector(hidden_states[i])
-        outputs.append(output)
+        outputs.append(self.layer_norm(output))
 
     return outputs
 
@@ -37,6 +38,7 @@ class GraphHead(nn.Module):
         self.num_layers = len(sizes)
         self.proj_layers = ProjLayers(sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
         self.gnn = GNN(ft_in=proj_hidden_sizes[-1], hidden_channels=graphs_hidden_channel, num_heads=graph_heads ,ft_out=ft_out) 
+        sefl.final_proj = SeqLinear(ft_in=sizes[-1], layer_dims=[512, 512 , ft_out], dropout=dropout, act_func='gelu')
         # self.batch_norm = nn.BatchNorm1d(proj_hidden_sizes[-1])
         self.dropout_edge_ratio =  dropout_edge_ratio
 
@@ -69,8 +71,8 @@ class GraphHead(nn.Module):
         # data_batch.x = self.batch_norm(data_batch.x) 
         data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0] 
         graph_output, graph_mean = self.gnn(data_batch, batch_size=bs)
-        
-        return graph_output, graph_mean 
+        output = self.final_proj(torch.cat([graph_output, pooled_output], dim = -1))
+        return output, graph_mean 
 
 class GNN(torch.nn.Module):
     def __init__(self, ft_in ,hidden_channels, ft_out, num_heads=4):
@@ -192,6 +194,7 @@ class LorentzProjLayers(nn.Module):
     super().__init__()
     self.shared = shared
     self.sizes = sizes
+    self.manifold = manifold
     if not shared:
         self.projectors = nn.ModuleList([
             LorentzSeqLinear(
@@ -209,6 +212,7 @@ class LorentzProjLayers(nn.Module):
             dropout=dropout, 
             act_func='gelu'
         )  
+    self.layer_norm = nn.LayerNorm(hidden_sizes[-1])
 
   def forward(self, hidden_states:torch.Tensor):
     outputs = []
@@ -217,7 +221,9 @@ class LorentzProjLayers(nn.Module):
             output = self.projectors[i](hidden_states[i])
         else:
             output = self.projector(hidden_states[i])
-        outputs.append(output)
+        output_space = self.manifold.get_space(output)
+        output_space = self.layer_norm(output_space)
+        outputs.append(self.manifold.add_time(output_space))
 
     return outputs
 
@@ -229,6 +235,7 @@ class LorentzGraphHead(nn.Module):
         self.num_layers = len(sizes)
         self.proj_layers = LorentzProjLayers(manifold=manifold, sizes=sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
         self.gnn = LorentzGNN(manifold=manifold, ft_in=proj_hidden_sizes[-1], hidden_channels=graphs_hidden_channel, ft_out=ft_out) 
+        self.final_proj = LorentzSeqLinear(ft_in=ft_out*2 + 1, layer_dims=[512, 512 ,ft_out + 1], dropout=dropout, act_func='gelu')
         self.dropout_edge_ratio = dropout_edge_ratio
 
     def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor):
@@ -262,8 +269,10 @@ class LorentzGraphHead(nn.Module):
         # data_batch.x= self.batch_norm(data_batch.x)
         graph_output, graph_mean = self.gnn(data_batch, batch_size=bs)
 
-        output = self.manifold.get_space(graph_output) + self.manifold.get_space(pooled_output)
+
+        output = torch.cat([self.manifold.get_space(graph_output), self.manifold.get_space(pooled_output)], dim=-1)
         output = self.manifold.add_time(output)
+        output = self.final_proj(output)
 
         self.manifold.assert_check_point_on_manifold(output)
         return output, graph_mean
