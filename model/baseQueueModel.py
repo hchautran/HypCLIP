@@ -324,7 +324,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # get momentum features
         with torch.no_grad():
-            self._momentum_update()
+            # self._momentum_update()
             image_embeds_m = self.vision_model_m(
                 pixel_values=pixel_values 
             )
@@ -342,20 +342,21 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
 
-            sim_i2t_m = self.get_euclid_dist(image_feat_m, text_feat_m_all.T) 
-            sim_t2i_m = self.get_euclid_dist(text_feat_m, image_feat_m_all.T)
-            hyp_sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
-            hyp_sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
+            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
-
+            # if epoch >= 1:
             sim_i2t_targets = alpha * (
-                self.beta * F.softmax(sim_i2t_m * _scale, dim=-1) + (1-self.beta) * F.softmax(hyp_sim_i2t_m * _scale, dim=-1)
+                F.softmax(sim_i2t_m * _scale, dim=-1)
             ) + (1 - alpha) * sim_targets
             sim_t2i_targets = alpha * (
-                self.beta * F.softmax(sim_t2i_m * _scale, dim=-1) + (1-self.beta) *F.softmax(hyp_sim_i2t_m * _scale, dim=-1)
+                F.softmax(sim_t2i_m * _scale, dim=-1)
             ) + (1 - alpha) * sim_targets
+            # else:
+                # sim_i2t_targets = sim_targets 
+                # sim_t2i_targets = sim_targets 
 
 
         sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 

@@ -140,4 +140,5 @@ class LavisLorentzBLIPGraphHead(nn.Module):
         output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output)
 
         return last_hidden_state, output, graph_output
+        
  

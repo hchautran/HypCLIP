@@ -101,9 +101,9 @@ class LorentzSeqLinear(nn.Module):
         self.act = []
         for idx in range(len(layer_dims)):
             if idx == 0:
-                self.linear.append(LFC_Block(manifold, ft_in, layer_dims[idx], dropout=dropout, activation=get_activate_func(act_func)))
+                self.linear.append(LFC_Block(manifold, ft_in, layer_dims[idx], dropout=dropout, activation=get_activate_func(act_func), LFC_normalize=True))
             elif idx < len(layer_dims) - 1:
-                self.linear.append(LFC_Block(manifold, layer_dims[idx-1], layer_dims[idx], dropout=dropout, activation=get_activate_func(act_func)))
+                self.linear.append(LFC_Block(manifold, layer_dims[idx-1], layer_dims[idx], dropout=dropout, activation=get_activate_func(act_func), LFC_normalize=True))
             else:
                 self.linear.append(LFC_Block(manifold, layer_dims[idx-1], layer_dims[idx], dropout=dropout)) 
             

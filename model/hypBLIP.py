@@ -132,21 +132,73 @@ class DistilLavisBLIP(BaseDistilModel):
         mapper = None
         if self.config.manifold != EUCLID:
             mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+        if not self.config.use_graph :
+            self.vision_model = LavisEncoder(
+                config,
+                body=model.visual_encoder,
+                head=model.vision_proj,
+                mapper=mapper,
+                use_normalized=config.normalize_image_embed
+            )
+            self.text_model = LavisEncoder(
+                config,
+                body=model.text_encoder,
+                head=model.text_proj,
+                mapper=mapper,
+                use_normalized=config.normalize_text_embed
+            )
+        else:
+            if config.manifold != EUCLID:
+                mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+                self.vision_model = LavisLorentzBLIPGraphHead(
+                    manifold=self.manifold,
+                    ft_in=768,
+                    ft_out=256,
+                    config=config,
+                    body=model.visual_encoder,
+                    head=model.vision_proj,
+                    manifold_mapper=mapper,
+                    num_layers=1,
+                    hidden_size=config.proj_layer_hidden_sizes,
+                    num_hidden_layers=config.num_proj_layers,
+                )
+                self.text_model = LavisLorentzBLIPGraphHead(
+                    manifold=self.manifold,
+                    ft_in=768,
+                    ft_out=256,
+                    config=config,
+                    body=model.text_encoder,
+                    head=model.text_proj,
+                    manifold_mapper=mapper,
+                    num_layers=1,
+                    hidden_size=config.proj_layer_hidden_sizes,
+                    num_hidden_layers=config.num_proj_layers,
+                )
+            else:
+                self.vision_model = LavisBLIPGraphHead(
+                    ft_in=768,
+                    ft_out=256,
+                    config=config,
+                    body=model.visual_encoder,
+                    head=model.vision_proj,
+                    manifold_mapper=mapper,
+                    num_layers=1,
+                    hidden_size=config.proj_layer_hidden_sizes,
+                    num_hidden_layers=config.num_proj_layers,
+                )
+                self.text_model = LavisBLIPGraphHead(
+                    ft_in=768,
+                    ft_out=256,
+                    config=config,
+                    body=model.text_encoder,
+                    head=model.text_proj,
+                    manifold_mapper=mapper,
+                    num_layers=1,
+                    hidden_size=config.proj_layer_hidden_sizes,
+                    num_hidden_layers=config.num_proj_layers,
+                )
 
-        self.vision_model = LavisEncoder(
-            config,
-            body=model.visual_encoder,
-            head=model.vision_proj,
-            mapper=mapper,
-            use_normalized=config.normalize_image_embed
-        )
-        self.text_model = LavisEncoder(
-            config,
-            body=model.text_encoder,
-            head=model.text_proj,
-            mapper=mapper,
-            use_normalized=config.normalize_text_embed
-        )
+        
         self.vision_teacher = LavisEncoder(
             config,
             body=teacher_model.visual_encoder,

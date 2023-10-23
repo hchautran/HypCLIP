@@ -38,7 +38,7 @@ class GraphHead(nn.Module):
         self.num_layers = len(sizes)
         self.proj_layers = ProjLayers(sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
         self.gnn = GNN(ft_in=proj_hidden_sizes[-1], hidden_channels=graphs_hidden_channel, num_heads=graph_heads ,ft_out=ft_out) 
-        sefl.final_proj = SeqLinear(ft_in=sizes[-1], layer_dims=[512, 512 , ft_out], dropout=dropout, act_func='gelu')
+        self.final_proj = SeqLinear(ft_in=ft_out*2, layer_dims=[512, 512 , ft_out], dropout=dropout, act_func='gelu')
         # self.batch_norm = nn.BatchNorm1d(proj_hidden_sizes[-1])
         self.dropout_edge_ratio =  dropout_edge_ratio
 
@@ -72,6 +72,7 @@ class GraphHead(nn.Module):
         data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0] 
         graph_output, graph_mean = self.gnn(data_batch, batch_size=bs)
         output = self.final_proj(torch.cat([graph_output, pooled_output], dim = -1))
+        output = output + pooled_output
         return output, graph_mean 
 
 class GNN(torch.nn.Module):
@@ -235,7 +236,7 @@ class LorentzGraphHead(nn.Module):
         self.num_layers = len(sizes)
         self.proj_layers = LorentzProjLayers(manifold=manifold, sizes=sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
         self.gnn = LorentzGNN(manifold=manifold, ft_in=proj_hidden_sizes[-1], hidden_channels=graphs_hidden_channel, ft_out=ft_out) 
-        self.final_proj = LorentzSeqLinear(ft_in=ft_out*2 + 1, layer_dims=[512, 512 ,ft_out + 1], dropout=dropout, act_func='gelu')
+        self.final_proj = LorentzSeqLinear(manifold, ft_in=ft_out*2 + 1, layer_dims=[513, 513 ,ft_out + 1], dropout=dropout, act_func='gelu')
         self.dropout_edge_ratio = dropout_edge_ratio
 
     def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor):
@@ -273,6 +274,8 @@ class LorentzGraphHead(nn.Module):
         output = torch.cat([self.manifold.get_space(graph_output), self.manifold.get_space(pooled_output)], dim=-1)
         output = self.manifold.add_time(output)
         output = self.final_proj(output)
+        output = self.manifold.get_space(output) + self.manifold.get_space(pooled_output)
+        output = self.manifold.add_time(output)
 
         self.manifold.assert_check_point_on_manifold(output)
         return output, graph_mean
