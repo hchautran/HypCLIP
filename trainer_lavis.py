@@ -10,6 +10,7 @@ from config import EUCLID, POINCARE, LORENTZ
 import time
 
 
+
 class MyTrainer:
     def __init__(
         self, config, model, dataset, train_loader, val_loader, test_loader, processor
@@ -370,6 +371,26 @@ class DistilTrainer:
                 else:
                     break
         print("Finished Training")
+    def get_itm_result(self, text_embeds:torch.Tensor, image_embeds:torch.Tensor, sims_t2i:torch.Tensor, k=50):
+        indices = sims_t2i.topk(k).indices
+        all_logits = []
+        for i in range(indices.shape[0]):
+            k_image_embeds = image_embeds.index_select(dim=0, index=indices[i].to(image_embeds.device))
+            itm_text_inputs = text_embeds[i][0].expand(k_image_embeds.shape)
+            itm_image_inputs = k_image_embeds 
+            logits = self.model.itm_head(itm_image_inputs, itm_text_inputs).T
+            print(indices[i])
+            all_logits.append(torch.nn.functional.softmax(logits, dim=-1))
+        
+        all_logits = torch.cat(all_logits, dim=0)
+        # print(all_logits.shape)
+        # print((indices/5).int())
+        return all_logits
+
+            
+        
+        
+        
 
     def evaluate(self, mode="val"):
         print("Evaluating current epoch", self.current_epoch)
@@ -377,8 +398,11 @@ class DistilTrainer:
         loader = self.val_loader if mode == "val" else self.test_loader
         all_text_embeds = []
         all_vision_embeds = []
+        img_ids = [] 
+        text_ids = [] 
         with torch.no_grad():
             for data in tqdm(loader):
+
                 text_embeds = self.model.get_text_features(
                     input_ids=data["input_ids"], attention_mask=data["attention_mask"]
                 )
@@ -387,23 +411,30 @@ class DistilTrainer:
                 )
                 all_text_embeds.append(text_embeds)
                 all_vision_embeds.append(vision_embeds)
+                img_ids.append(data['img_id'][0].unsqueeze_(0))
+                text_ids.append(data['img_id'])
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
+            text_ids = torch.concat(text_ids, 0).unsqueeze_(0)
+            img_ids = torch.concat(img_ids, 0).unsqueeze_(0)
+            # print(text_ids.shape)
+            # print(img_ids.shape)
+            targets = torch.eq(img_ids, text_ids.T).cpu().detach()
             if self.config.manifold == POINCARE:
                 sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds, device='cpu')
-                sims_t2i = sims_t2i.detach().numpy()
+                sims_t2i = sims_t2i.detach()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
-            elif self.config.manifold == LORENTZ:
+            else: 
                 sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-                sims_t2i = sims_t2i.cpu().detach().numpy()
+                sims_t2i = sims_t2i.cpu().detach()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
-            else:
-                sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-                sims_t2i = sims_t2i.cpu().detach().numpy()
-                # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
-
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
+            if self.config.use_itm_head:
+                t2i_logits = self.get_itm_result(image_embeds=all_vision_embeds, text_embeds=all_text_embeds, sims_t2i=sims_t2i.to(self.device)) 
+                print(t2i_logits)
+                # itm_metrics = evaluate_recall(sims_t2i=t2i_logits, mode=mode)
+            
             # eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
             metrics["epoch"] = self.current_epoch
             # eu_metrics["epoch"] = self.current_epoch

@@ -127,7 +127,7 @@ class DistilLavisBLIP(BaseDistilModel):
         for param in teacher_model.parameters():
             param.requires_grad = False
     
-        model = get_lora_blip(config=config,model=model) 
+        model = get_lora_blip(config=config, model=model) 
         self.config = config
         mapper = None
         if self.config.manifold != EUCLID:

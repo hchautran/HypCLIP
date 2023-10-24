@@ -43,7 +43,7 @@ if __name__ == "__main__":
         val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
         config.model_ckt = 'lavis/blip-base'
         # queue_model = LavisBLIP(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
-        distiled_model =DistilLavisBLIP(config, model)
+        distiled_model = DistilLavisBLIP(config, model)
 
         trainer = DistilTrainer(
             model=distiled_model,
@@ -54,20 +54,20 @@ if __name__ == "__main__":
             test_loader=test_loader,
             processor=model.tokenizer,
         )
-        # metric = trainer.evaluate(mode='test')
-        # print(metric)
+        metric = trainer.evaluate(mode='test')
+        print(metric)
         # metric = trainer.evaluate(mode='val')
         # print(metric)
-        trainer.train()
+        # trainer.train()
     # print(model)
     # inner_training_loop()
 
-    config.epochs = 5 
-    config.enable_log = True 
+    config.epochs = 3 
+    config.enable_log = False 
     config.hyp_margin_loss_weight=0.0
     for curv in [2.0]:
         config.curv = curv
-        for use_graph in [True]:
+        for use_graph in [False]:
             config.use_graph=use_graph
             for manifold in [EUCLID]:
                 config.manifold = manifold 

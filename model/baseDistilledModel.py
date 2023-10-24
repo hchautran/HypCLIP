@@ -47,15 +47,15 @@ class BaseModel(nn.Module):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
-            self.discriminator = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 1])
+            self.itm_head = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 1])
         elif manifold == POINCARE:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = PoincareBall(c=self.curv, learnable=config.curv_learnable)
-            self.discriminator = HypDiscriminator(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[512, 1])
+            self.itm_head = HypDiscriminator(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[512, 1])
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
-            self.discriminator = LorentzDisModel(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[512])
+            self.itm_head = LorentzDisModel(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[512])
         self.manifold_name =  manifold    
         self.vision_model = None 
         self.text_model = None 
@@ -146,28 +146,14 @@ class BaseModel(nn.Module):
             ],
         dim=0).view(-1,1).to(imgs.device)
 
-        disc = self.discriminator(img_enc_all, cap_enc_all)
+        disc = self.itm_head(img_enc_all, cap_enc_all)
         class_weights = torch.tensor([[2.0]]).to(self.device)
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels, pos_weight=class_weights)
         itm_acc = ((disc >0.5).float() == itm_labels).float().sum()/itm_labels.shape[0]
         return loss_itm, itm_acc
 
 
-    def margin_loss(self, sims_i2t, sims_i2i):
-        bsize = sims_i2t.shape[0] 
-        ones = torch.ones(bsize, bsize).to(self.device)
-        pos_mask = torch.eye(bsize).to(self.device) 
-        neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
-        sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
-        neg_margin = self.config.euclid_img_neg_margin * neg_mask 
-        pos_margin = self.config.euclid_pos_margin * pos_mask 
-        sims_i2t = sims_i2t - neg_margin 
-        sims_i2i = sims_i2i - neg_margin 
-        sims_i2t = (sims_i2t - pos_margin) * sign 
 
-        sims = torch.cat([torch.clamp(sims_i2t, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
-        loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
-        return loss
 
     def teacher_dist_func(self, x:torch.Tensor, y:torch.Tensor):
         x = F.normalize(x, p=2, dim=-1)
@@ -185,6 +171,24 @@ class BaseModel(nn.Module):
         y = F.normalize(y, p=2, dim=-1)
         return torch.matmul(x, y.T) 
             
+    def margin_loss(self, student_embed, teacher_embed):
+        x = F.normalize(student_embed,p=2, dim=-1) 
+        y = F.normalize(teacher_embed,p=2, dim=-1) 
+        sims_s2t = x@y.T
+
+        bsize = sims_s2t.shape[0] 
+        ones = torch.ones(bsize, bsize).to(self.device)
+        pos_mask = torch.eye(bsize).to(self.device) 
+        neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
+        sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
+        neg_margin = self.config.euclid_neg_margin * neg_mask 
+        pos_margin = self.config.euclid_pos_margin * pos_mask 
+        sims_s2t = sims_s2t - neg_margin 
+        sims_s2t = (sims_s2t - pos_margin) * sign 
+
+        sims = torch.cat([torch.clamp(sims_s2t, min=0.0)], dim=-1) 
+        loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
+        return loss
         
     def itc_loss(self, image_embeds , text_embeds, image_embeds_t=None, text_embeds_t=None):
         # print(text_embeds_t.shape)
@@ -199,10 +203,12 @@ class BaseModel(nn.Module):
         sims_t2i = sims_i2t.T
         sims_i2i = self.dist_func(image_embeds, image_embeds) 
         sims_t2t = self.dist_func(text_embeds, text_embeds) 
+        soft_itc_loss = torch.tensor(0.0)
+
         if image_embeds_t is not None and text_embeds_t is not None:
             teacher_sims_i2t = self.teacher_dist_func(image_embeds_t, text_embeds_t) 
             teacher_sims_t2i = teacher_sims_i2t.T
-            student_sims_i2t = self.euclid_student_dist_func(image_embeds, text_embeds) 
+            student_sims_i2t = self.dist_func(image_embeds, text_embeds) 
             studen_sims_t2i = teacher_sims_i2t.T
             soft_targets_i2t = nn.functional.softmax(teacher_sims_i2t*_scale, dim=-1)
             soft_targets_t2i = nn.functional.softmax(teacher_sims_t2i*_scale, dim=-1)
@@ -215,14 +221,18 @@ class BaseModel(nn.Module):
                 soft_targets_t2i * soft_prob_t2i, dim=-1
             ).mean()      
             soft_itc_loss = self.weight_i2t * soft_loss_i2t + (1 - self.weight_i2t) * soft_loss_t2i 
-        else: 
-            soft_itc_loss = torch.tensor(0.0)
+            image_student_embed = self.manifold.get_space(image_embeds)
+            text_student_embed = self.manifold.get_space(text_embeds)
+            margin_loss_i2i = self.margin_loss(student_embed=image_student_embed, teacher_embed=image_embeds_t)
+            margin_loss_t2t = self.margin_loss(student_embed=text_student_embed, teacher_embed=text_embeds_t)
+            # margin_loss_t2i = self.margin_loss(student_embed=text_student_embed, teacher_embed=image_student_embed)
+            # margin_loss_i2t = self.margin_loss(student_embed=image_student_embed, teacher_embed=text_student_embed)
+            margin_loss = (margin_loss_i2i + margin_loss_t2t )/2
 
         logits_i2t = torch.cat([sims_i2t, sims_i2i-eye_mask], dim=1) * _scale
         logits_t2i = torch.cat([sims_t2i, sims_t2t-eye_mask], dim=1) * _scale
         
         
-        margin_loss = torch.tensor(0.0)
         # if self.config.use_margin_loss:
             # margin_loss = 0.5 * (self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask) + self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask))
         

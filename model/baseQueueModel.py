@@ -184,11 +184,12 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
         sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
 
-        neg_margin = self.config.euclid_img_neg_margin * neg_mask 
+        neg_margin = self.config.euclid_neg_margin * neg_mask 
         pos_margin = self.config.euclid_pos_margin * pos_mask 
         sims = sims - neg_margin 
         sims_i2i = sims_i2i - neg_margin 
         sims = (sims - pos_margin) * sign 
+        sims_i2i = (sims_i2i - pos_margin) * sign
         sims = torch.clamp(sims, min=0.0)
         sims = torch.cat([torch.clamp(sims, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
         loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
@@ -209,27 +210,14 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         return loss
     
     def margin_loss(self, pos_idx, text_feat, image_feat, text_world, image_world):
-        pos_mask = pos_idx * 1e9 
         if not self.config.use_margin_loss:
             return torch.tensor(0.0)
         eu_sim_i2t = self.get_euclid_dist(image_feat, text_world) 
         eu_sim_t2i = self.get_euclid_dist(text_feat, image_world) 
-        eu_sim_i2i = self.get_euclid_dist(image_feat, image_world) - pos_mask 
-        eu_sim_t2t = self.get_euclid_dist(text_feat, text_world) - pos_mask 
+        eu_sim_i2i = self.get_euclid_dist(image_feat, image_world) 
+        eu_sim_t2t = self.get_euclid_dist(text_feat, text_world) 
 
-        if self.config.manifold == EUCLID:
-            return (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
-        if self.config.manifold != EUCLID:
-            if self.config.hyp_margin_loss_weight > 0.0:
-                hyp_sim_i2t = self.dist_func(image_feat, text_world) 
-                hyp_sim_t2i = self.dist_func(text_feat, image_world) 
-                hyp_sim_i2i = self.dist_func(image_feat, image_world) - pos_mask
-                hyp_sim_t2t = self.dist_func(text_feat, text_world) - pos_mask 
-                eu_margin_loss = (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
-                hyp_margin_loss = (self.hyp_margin_loss(pos_idx, hyp_sim_i2t, hyp_sim_t2t) + self.hyp_margin_loss(pos_idx, hyp_sim_t2i, hyp_sim_i2i)) / 2
-                return self.config.hyp_margin_loss_weight * hyp_margin_loss +  eu_margin_loss
-            else:
-                return (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
+        return (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
 
 
     def itm_loss(self, imgs, texts, sims_i2t):
@@ -324,7 +312,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # get momentum features
         with torch.no_grad():
-            # self._momentum_update()
+            self._momentum_update()
             image_embeds_m = self.vision_model_m(
                 pixel_values=pixel_values 
             )
@@ -342,25 +330,23 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
 
-            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
-            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
+            sim_i2t_m = self.get_euclid_dist(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.get_euclid_dist(text_feat_m, image_feat_m_all.T)
+
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
-            # if epoch >= 1:
             sim_i2t_targets = alpha * (
                 F.softmax(sim_i2t_m * _scale, dim=-1)
             ) + (1 - alpha) * sim_targets
             sim_t2i_targets = alpha * (
                 F.softmax(sim_t2i_m * _scale, dim=-1)
             ) + (1 - alpha) * sim_targets
-            # else:
-                # sim_i2t_targets = sim_targets 
-                # sim_t2i_targets = sim_targets 
 
 
-        sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 
+        sim_i2t = self.dist_func(image_feat, text_feat_m_all.T)     
         sim_t2i = self.dist_func(text_feat, image_feat_m_all.T) 
+
         margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
 
 
