@@ -79,11 +79,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
-        # elif config.manifold == POINCARE:
-        #     self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
-        #     self.manifold = PoincareBall(c=self.curv, learnable=config.curv_learnable)
-        #     self.itm_head = HypDiscriminator(self.manifold, dim=self.ft_out, layer_dims=[256, 1])
-        #     self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
@@ -140,18 +135,21 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
     
     def eval(self):
-        NotImplementedError
-
+        self.text_model.eval()
+        self.vision_model.eval()
+        self.text_model_m.eval()
+        self.vision_model_m.eval()
+        self.itm_head.eval()
 
     def train(self):
-        NotImplementedError
-  
+        self.text_model.train()
+        self.vision_model.train()
+        self.text_model_m.train()
+        self.vision_model_m.train()
+        self.itm_head.train()
     
     def get_euclid_dist(self, x:torch.Tensor, y:torch.tensor):
-        if self.config.manifold == POINCARE:
-            x = self.manifold.logmap0(x)
-            y = self.manifold.logmap0(y)
-        elif self.config.manifold == LORENTZ:
+        if self.config.manifold == LORENTZ:
             x = self.manifold.get_space(x)
             y = self.manifold.get_space(y)
         x = F.normalize(x, p=2, dim=-1)
@@ -166,7 +164,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             return  eu_dis 
         elif self.config.manifold == POINCARE: 
             hyp_dist = -self.manifold.dist_batch(x, y, device=device)
-
             return hyp_dist
         else: 
             hyp_dist = -self.manifold.dist_batch(x, y)
@@ -204,6 +201,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         sims = sims + neg_margin 
         sims_i2i = sims_i2i + neg_margin 
         sims = (sims + pos_margin) * sign 
+        sims_i2i = (sims_i2i + pos_margin) * sign 
         sims = torch.clamp(sims, min=0.0)
         sims = torch.cat([torch.clamp(sims, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
         loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
@@ -212,12 +210,15 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
     def margin_loss(self, pos_idx, text_feat, image_feat, text_world, image_world):
         if not self.config.use_margin_loss:
             return torch.tensor(0.0)
-        eu_sim_i2t = self.get_euclid_dist(image_feat, text_world) 
-        eu_sim_t2i = self.get_euclid_dist(text_feat, image_world) 
-        eu_sim_i2i = self.get_euclid_dist(image_feat, image_world) 
-        eu_sim_t2t = self.get_euclid_dist(text_feat, text_world) 
+        pos_mask = pos_idx * 1e9 
 
-        return (self.eu_margin_loss(pos_idx, eu_sim_i2t, eu_sim_t2t) + self.eu_margin_loss(pos_idx, eu_sim_t2i, eu_sim_i2i)) / 2
+        sim_i2i = self.get_euclid_dist(image_feat, image_world) 
+        sim_t2t = self.get_euclid_dist(text_feat, text_world) 
+        sim_i2t = self.get_euclid_dist(image_feat, text_world) 
+        sim_t2i = self.get_euclid_dist(text_feat, image_world) 
+        # if self.config.manifold ==  LORENTZ:
+            # return (self.hyp_margin_loss(pos_idx, sim_i2i, sim_t2t) + self.hyp_margin_loss(pos_idx, sim_t2t, sim_i2i)) / 2
+        return ((self.eu_margin_loss(pos_idx, sim_i2t, sim_t2t) + self.eu_margin_loss(pos_idx, sim_t2i, sim_i2i ))) / 2
 
 
     def itm_loss(self, imgs, texts, sims_i2t):
@@ -256,7 +257,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         disc = self.itm_head(img_enc_all, cap_enc_all)
         class_weights = torch.tensor([[2.0]]).to(self.device)
         loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels, pos_weight=class_weights)
-
         itm_acc = ((disc >0.5).float() == itm_labels).float().sum()/itm_labels.shape[0]
         return loss_itm, itm_acc
 
@@ -284,8 +284,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         if self.config.manifold != EUCLID:
             self.manifold.k.data = torch.clamp(self.manifold.k.data, max=10.0, min=1.0)
         _scale = self.logit_scale.exp()
-        
-        # TODO 
         
         text_output = self.text_model(
             input_ids=input_ids,
@@ -330,12 +328,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
 
-            sim_i2t_m = self.get_euclid_dist(image_feat_m, text_feat_m_all.T) 
-            sim_t2i_m = self.get_euclid_dist(text_feat_m, image_feat_m_all.T)
+            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
 
-
-            self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
-            self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
             sim_i2t_targets = alpha * (
                 F.softmax(sim_i2t_m * _scale, dim=-1)
             ) + (1 - alpha) * sim_targets
@@ -344,11 +339,13 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             ) + (1 - alpha) * sim_targets
 
 
-        sim_i2t = self.dist_func(image_feat, text_feat_m_all.T)     
-        sim_t2i = self.dist_func(text_feat, image_feat_m_all.T) 
+            self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
+            self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
+
+        sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 
+        sim_t2i = self.dist_func(text_feat, image_feat_m_all.T)
 
         margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
-
 
         loss_i2t = -torch.sum(
             F.log_softmax(sim_i2t * _scale, dim=1) * sim_i2t_targets, dim=-1
@@ -356,10 +353,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         loss_t2i = -torch.sum(
             F.log_softmax(sim_t2i * _scale, dim=1) * sim_t2i_targets, dim=-1
         ).mean()      
-     
 
-        loss_itc = (loss_i2t + loss_t2i ) / 2
-        loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=self.dist_func(image_feat, text_feat))
+        sims = self.dist_func(image_feat, text_feat)
+        loss_itc = (loss_i2t + loss_t2i) / 2 
+        # loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
+        loss_itm, itm_acc = torch.tensor(0.0) , torch.tensor(0.0)
 
         in_batch_target = torch.arange(bsize).to(self.device)
         stats = {
@@ -367,10 +365,10 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             "logits/itc_loss": loss_itc.item(),
             "logits/itm_loss": loss_itm.item(),
             "logits/margin_loss": margin_loss.item(),
-            "logits/min": sim_i2t.min().item(),
-            "logits/mean": sim_i2t.mean().item(),
-            "logits/max": sim_i2t.max().item(),
-            "logits/acc": (self.dist_func(image_feat, text_feat).argmax(-1) == in_batch_target).float().mean().item(),
+            "logits/min": sims.min().item(),
+            "logits/mean": sims.mean().item(),
+            "logits/max": sims.max().item(),
+            "logits/acc": (sims.argmax(-1) == in_batch_target).float().mean().item(),
             "logits/itm_acc": itm_acc.item(),
             "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
         }

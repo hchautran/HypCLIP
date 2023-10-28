@@ -70,7 +70,7 @@ config_args = {
         "dropout": (0.0, "dropout probability"),
         "cuda": (-1, "which cuda device to use (-1 for cpu training)"),
         "epochs": (10, "maximum number of epochs to train for"),
-        "weight_decay": (0.0, "l2 regularization strength"),
+        "weight_decay": (1e-2, "l2 regularization strength"),
         "optimizer": ("adam", "which optimizer to use, can be any of [sgd, adam]"),
         "momentum": (0.995, "momentum in optimizer"),
         "patience": (3, "patience for early stopping"),
@@ -101,11 +101,11 @@ config_args = {
             "The number of steps that should pass before gradients are accumulated",
         ),
         "lorentz_pos_margin": (
-            0.0,
+            1.0,
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            1.0,
+            4.0,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
@@ -148,9 +148,9 @@ config_args = {
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (None, "clipping radius"),
-        "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
-        "text_trainable_blocks": (12, "number of trainable blocks in text model"),
-        "num_vision_hidden_states": (3, "number of trainable blocks in vision model"),
+        "vision_trainable_blocks": (2, "number of trainable blocks in vision model"),
+        "text_trainable_blocks": (3, "number of trainable blocks in text model"),
+        "num_vision_hidden_states": (2, "number of trainable blocks in vision model"),
         "num_text_hidden_states": (3, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
@@ -163,6 +163,14 @@ config_args = {
         "dataset": (FLICKR, "which dataset to use"),
         "cache_dir": (CACHE_DIR, "cache_dir"),
     },
+    "perceiver": {
+        "num_latents": (128, "which dataset to use"),
+        "num_self_attends_per_block": (0, "cache_dir"),
+        "num_cross_attention_heads": (2, "cache_dir"),
+        "num_self_attention_heads": (2, "cache_dir"),
+        "cross_attention_widening_factor": (4, "cache_dir"),
+        "attention_probs_dropout_prob": (0.5, "cache_dir"),
+    }
 }
 
 parser = argparse.ArgumentParser()

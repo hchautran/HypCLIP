@@ -434,17 +434,7 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
         self._init_queue(config, vision_model.config.projection_dim)
 
 
-    def eval(self):
-        self.vision_model_m.eval()
-        self.text_model_m.eval()
-        self.vision_model_m.eval()
-        self.text_model_m.eval()
 
-    def train(self):
-        self.vision_model.train()
-        self.text_model.train()
-        self.vision_model_m.train()
-        self.text_model_m.train()
 
 
 

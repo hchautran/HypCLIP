@@ -5,7 +5,7 @@ from transformers import (
 from datasets import load_dataset
 from model.hypCLIP import HypCLIP, HypGraphCLIP, HypGraphCLIPWithQueue, HypCLIPWithQueue 
 from model.hypBLIP import HypBLIPWithQueue, HypGraphBLIPWithQueue
-from model.perceiverModel import MyModel
+from model.perceiverModel import PerceiverCLIPWithQueue
 from transformers import CLIPProcessor, BlipProcessor
 from trainer_lavis import MyTrainer as LavisTrainer
 from utils.data_utils import get_dataloader, preprocess_img
@@ -61,6 +61,7 @@ if __name__ == "__main__":
                 model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIPWithQueue(config)
             else:
                 model = HypCLIPWithQueue(config) if "clip" in config.model_ckt else HypBLIPWithQueue(config)
+            # model = PerceiverCLIPWithQueue(config)
             # model = HypCLIP(config) if "clip" in config.model_ckt else HypBLIP(config)
             trainer = LavisTrainer(
                 model=model,
@@ -71,16 +72,13 @@ if __name__ == "__main__":
                 test_loader=test_loader,
                 processor=processor,
             )
-            # print(trainer.evaluate())
             trainer.train()
 
         config.epochs = 5 
-        config.enable_log = True 
+        config.enable_log = False 
         config.model_ckt = model_ckt
         for use_graph in [True, False]:
             config.use_graph = use_graph
-            for use_margin_loss in [True, False]:
-                config.use_margin_loss = use_margin_loss
-                for manifold in [LORENTZ, EUCLID]:
-                    config.manifold = manifold
-                    inner_training_loop()
+            for manifold in [EUCLID, LORENTZ]:
+                config.manifold = manifold
+                inner_training_loop()

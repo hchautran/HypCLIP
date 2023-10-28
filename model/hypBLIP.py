@@ -117,7 +117,8 @@ class LavisBLIP(BaseModelWithQueue):
             use_normalized=config.normalize_text_embed
         )
         self._init_queue(config, 256)
- 
+    
+
  
 class DistilLavisBLIP(BaseDistilModel):
     def __init__(self, config, model:BlipRetrieval) -> None:
@@ -211,7 +212,6 @@ class DistilLavisBLIP(BaseDistilModel):
             head=teacher_model.text_proj,
             mapper=None,
         )
-  
  
 
 class LavisHypGraphBLIP(BaseModel):
@@ -275,13 +275,6 @@ class LavisHypGraphBLIP(BaseModel):
             )
 
 
-    def eval(self):
-        self.vision_model.eval()
-        self.text_model.eval()
-
-    def train(self):
-        self.vision_model.train()
-        self.text_model.train()
 
     def forward(
         self,
@@ -427,27 +420,6 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
 
         self._init_queue(config, 256)
 
-    # def num_parameters(self, only_trainable=True):
-    #     num_params = 0
-    #     if only_trainable:
-    #         num_params += sum(p.numel() for p in self.text_model.graph_head.parameters() if p.requires_grad)
-    #     else:
-    #         num_params += sum(p.numel() for p in self.text_model.graph_head.parameters())
-    #     return num_params
-
-
-
-    def eval(self):
-        self.vision_model_m.eval()
-        self.text_model_m.eval()
-        self.vision_model_m.eval()
-        self.text_model_m.eval()
-
-    def train(self):
-        self.vision_model.train()
-        self.text_model.train()
-        self.vision_model_m.train()
-        self.text_model_m.train()
 
 class HypGraphBLIPWithQueue(BaseModelWithQueue):
     def __init__(self, config) -> None:
@@ -512,15 +484,5 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
         self._init_queue(config, model.config.image_text_hidden_size)
 
 
-    def eval(self):
-        self.vision_model_m.eval()
-        self.text_model_m.eval()
-        self.vision_model_m.eval()
-        self.text_model_m.eval()
 
-    def train(self):
-        self.vision_model.train()
-        self.text_model.train()
-        self.vision_model_m.train()
-        self.text_model_m.train()
 

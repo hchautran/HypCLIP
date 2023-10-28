@@ -4,6 +4,7 @@ from transformers import (
 )
 from datasets import load_dataset
 from model.hypBLIP import LavisBLIP, LavisHypGraphBLIPWithQueue, DistilLavisBLIP
+from model.perceiverModel import PerceiverLavisBLIPWithQueue 
 # from model.hypCLIP import HypGraphCLIPWithQueue 
 from utils.data_utils import get_dataloader, lavis_preprocess_img
 from trainer import MyTrainer
@@ -42,11 +43,12 @@ if __name__ == "__main__":
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
         config.model_ckt = 'lavis/blip-base'
-        # queue_model = LavisBLIP(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
-        distiled_model = DistilLavisBLIP(config, model)
+        queue_model = LavisBLIP(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
+        # queue_model = PerceiverLavisBLIPWithQueue(config, model) 
+        # distiled_model = DistilLavisBLIP(config, model)
 
-        trainer = DistilTrainer(
-            model=distiled_model,
+        trainer = LavisTrainer(
+            model=queue_model,
             config=config,
             dataset=dataset,
             train_loader=train_loader,
@@ -54,22 +56,21 @@ if __name__ == "__main__":
             test_loader=test_loader,
             processor=model.tokenizer,
         )
-        metric = trainer.evaluate(mode='test')
-        print(metric)
+        # metric = trainer.evaluate(mode='test')
+        # print(metric)
         # metric = trainer.evaluate(mode='val')
         # print(metric)
-        # trainer.train()
+        trainer.train()
     # print(model)
     # inner_training_loop()
 
-    config.epochs = 3 
-    config.enable_log = False 
-    config.hyp_margin_loss_weight=0.0
+    config.epochs = 20 
+    config.enable_log = True 
     for curv in [2.0]:
         config.curv = curv
-        for use_graph in [False]:
+        for use_graph in [True, False]:
             config.use_graph=use_graph
-            for manifold in [EUCLID]:
+            for manifold in [LORENTZ, EUCLID]:
                 config.manifold = manifold 
                 inner_training_loop()
     

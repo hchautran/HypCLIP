@@ -69,16 +69,12 @@ class BaseModel(nn.Module):
         return num_params
 
     def eval(self):
-        self.vision_model.body.eval()
-        self.vision_model.head.eval()
-        self.text_model.body.eval()
-        self.text_model.head.eval()
+        self.vision_model.eval()
+        self.text_model.eval()
 
     def train(self):
-        self.vision_model.body.train()
-        self.vision_model.head.train()
-        self.text_model.body.train()
-        self.text_model.head.train()
+        self.vision_model.train()
+        self.text_model.train()
         
     def dist_func(self, x, y, device='gpu'):
         if self.manifold_name == EUCLID:

@@ -92,7 +92,6 @@ class LorentzGAT(MessagePassing):
 
         # self.manifold.assert_check_point_on_manifold(x_l)
         # self.manifold.assert_check_point_on_manifold(x_r)
-        # print('got here')
         assert x_l is not None
         assert x_r is not None
 

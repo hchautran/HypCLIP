@@ -73,18 +73,15 @@ class BaseModel(nn.Module):
     def eval(self):
         self.vision_teacher.eval()
         self.text_teacher.eval()
-        self.vision_model.body.eval()
-        self.vision_model.head.eval()
-        self.text_model.body.eval()
-        self.text_model.head.eval()
+        self.vision_model.eval()
+        self.text_model.eval()
+        
 
     def train(self):
         self.vision_teacher.eval()
         self.text_teacher.eval()
-        self.vision_model.body.train()
-        self.vision_model.head.train()
-        self.text_model.body.train()
-        self.text_model.head.train()
+        self.vision_model.train()
+        self.text_model.train()
         
     def dist_func(self, x, y, device='gpu'):
         if self.manifold_name == EUCLID:
@@ -210,6 +207,9 @@ class BaseModel(nn.Module):
             teacher_sims_t2i = teacher_sims_i2t.T
             student_sims_i2t = self.dist_func(image_embeds, text_embeds) 
             studen_sims_t2i = teacher_sims_i2t.T
+                
+
+
             soft_targets_i2t = nn.functional.softmax(teacher_sims_i2t*_scale, dim=-1)
             soft_targets_t2i = nn.functional.softmax(teacher_sims_t2i*_scale, dim=-1)
             soft_prob_i2t = nn.functional.log_softmax(student_sims_i2t*_scale, dim=-1)
@@ -221,8 +221,9 @@ class BaseModel(nn.Module):
                 soft_targets_t2i * soft_prob_t2i, dim=-1
             ).mean()      
             soft_itc_loss = self.weight_i2t * soft_loss_i2t + (1 - self.weight_i2t) * soft_loss_t2i 
-            image_student_embed = self.manifold.get_space(image_embeds)
-            text_student_embed = self.manifold.get_space(text_embeds)
+            if self.config.manifold == LORENTZ:
+                image_student_embed = self.manifold.get_space(image_embeds)
+                text_student_embed = self.manifold.get_space(text_embeds)
             margin_loss_i2i = self.margin_loss(student_embed=image_student_embed, teacher_embed=image_embeds_t)
             margin_loss_t2t = self.margin_loss(student_embed=text_student_embed, teacher_embed=text_embeds_t)
             # margin_loss_t2i = self.margin_loss(student_embed=text_student_embed, teacher_embed=image_student_embed)

@@ -2,7 +2,7 @@ import wandb
 from accelerate import Accelerator
 from utils.data_utils import get_dataloader
 from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
-from utils.retrivial_utils import evaluate_recall
+from utils.retrivial_utils import evaluate_recall, itm_t2i
 from model.baseQueueModel import BaseModelWithQueue
 from tqdm.auto import tqdm
 import torch
@@ -191,15 +191,15 @@ class MyTrainer:
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
             if self.config.manifold == POINCARE:
                 sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds, device='cpu')
-                sims_t2i = sims_t2i.detach().numpy()
+                sims_t2i = sims_t2i.detach()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             elif self.config.manifold == LORENTZ:
                 sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-                sims_t2i = sims_t2i.cpu().detach().numpy()
+                sims_t2i = sims_t2i.cpu().detach()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             else:
                 sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-                sims_t2i = sims_t2i.cpu().detach().numpy()
+                sims_t2i = sims_t2i.cpu().detach()
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
 
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
@@ -244,38 +244,38 @@ class DistilTrainer:
         self.model = self.accelerator.prepare(model)
         self.dataset = dataset
 
-        # if config.manifold == EUCLID:
-        if config.optimizer == "adam":
-            self.optimizer = torch.optim.AdamW(
-                self.model.parameters(),
-                lr=config.lr,
+        if config.manifold == EUCLID:
+            if config.optimizer == "adam":
+                self.optimizer = torch.optim.AdamW(
+                    self.model.parameters(),
+                    lr=config.lr,
+                )
+            else:
+                self.optimizer = torch.optim.SGD(
+                    self.model.parameters(),
+                    lr=config.lr,
+                    momentum=config.momentum,
+                    weight_decay=config.weight_decay,
             )
         else:
-            self.optimizer = torch.optim.SGD(
-                self.model.parameters(),
-                lr=config.lr,
-                momentum=config.momentum,
-                weight_decay=config.weight_decay,
+            if config.optimizer == "adam":
+                self.optimizer = RiemannianAdam(
+                    self.model.parameters(),
+                    lr=config.lr,
+                    stabilize=10,
+                    weight_decay=config.weight_decay,
+                )
+            else:
+                self.optimizer = RiemannianSGD(
+                    self.model.parameters(),
+                    momentum=config.momentum,
+                    lr=config.lr,
+                    weight_decay=config.weight_decay,
+                    stabilize=10,
             )
-        # else:
-        #     if config.optimizer == "adam":
-        #         self.optimizer = RiemannianAdam(
-        #             self.model.parameters(),
-        #             lr=config.lr,
-        #             stabilize=10,
-        #             weight_decay=config.weight_decay,
-        #         )
-        #     else:
-        #         self.optimizer = RiemannianSGD(
-        #             self.model.parameters(),
-        #             momentum=config.momentum,
-        #             lr=config.lr,
-        #             weight_decay=config.weight_decay,
-        #             stabilize=10,
-        #     )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=2
+            self.optimizer, 'max', factor=0.1, patience=1
         )
         
         (
@@ -350,6 +350,7 @@ class DistilTrainer:
                     
                     # print('infer time', time.time() - start)
                 metrics= self.evaluate(mode='test')
+                self.scheduler.step(metrics["test/r_all"])
                 print(metrics)
                 self.log(metrics)
                 if best_r_all < metrics["test/r_all"]:
@@ -371,21 +372,20 @@ class DistilTrainer:
                 else:
                     break
         print("Finished Training")
-    def get_itm_result(self, text_embeds:torch.Tensor, image_embeds:torch.Tensor, sims_t2i:torch.Tensor, k=50):
+    def get_itm_result(self, text_embeds:torch.Tensor, image_embeds:torch.Tensor, sims_t2i:torch.Tensor, k=10):
         indices = sims_t2i.topk(k).indices
         all_logits = []
         for i in range(indices.shape[0]):
             k_image_embeds = image_embeds.index_select(dim=0, index=indices[i].to(image_embeds.device))
-            itm_text_inputs = text_embeds[i][0].expand(k_image_embeds.shape)
+            itm_text_inputs = text_embeds[i].expand(k_image_embeds.shape)
             itm_image_inputs = k_image_embeds 
             logits = self.model.itm_head(itm_image_inputs, itm_text_inputs).T
-            print(indices[i])
             all_logits.append(torch.nn.functional.softmax(logits, dim=-1))
         
         all_logits = torch.cat(all_logits, dim=0)
         # print(all_logits.shape)
         # print((indices/5).int())
-        return all_logits
+        return all_logits, indices
 
             
         
@@ -431,8 +431,9 @@ class DistilTrainer:
                 # eu_sims_t2i = eu_sims_t2i.cpu().detach().numpy()
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
             if self.config.use_itm_head:
-                t2i_logits = self.get_itm_result(image_embeds=all_vision_embeds, text_embeds=all_text_embeds, sims_t2i=sims_t2i.to(self.device)) 
-                print(t2i_logits)
+                t2i_logits, targets = self.get_itm_result(image_embeds=all_vision_embeds, text_embeds=all_text_embeds, sims_t2i=sims_t2i.to(self.device)) 
+                results = itm_t2i(t2i_logits, targets)
+                print(results)
                 # itm_metrics = evaluate_recall(sims_t2i=t2i_logits, mode=mode)
             
             # eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)

@@ -27,6 +27,29 @@ def evaluate_recall(sims_t2i:torch.Tensor, mode='val'):
     }
     return output 
 
+def itm_t2i(itm_t2i_logits:torch.Tensor, targets:torch.Tensor):
+    n_text = len(itm_t2i_logits)
+    itm_t2i_logits  = itm_t2i_logits.cpu().detach().numpy()
+    targets = targets.cpu().detach().numpy()
+    ranks = np.zeros(n_text)
+    
+    for index in range(int(n_text/5)):
+        for i in range(5):
+            inds = np.argsort(itm_t2i_logits[5 * index + i])[::-1]
+            target = np.take(targets[5 * index + i], inds)
+            if index in target:
+                ranks[5 * index + i] = np.where(target == index)[0][0]
+            else:
+                # print(index)
+                ranks[5 * index + i] = 1e20 
+
+
+    # Compute metrics
+    r1 = 1.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+    r5 = 1.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+    r10 = 1.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+    return r1, r5, r10
+
 def i2t(sims_i2t):
     # sims (n_imgs, n_caps)
     n_imgs, _ = sims_i2t.shape
@@ -52,7 +75,6 @@ def t2i(sims_t2i):
     _, n_imgs = sims_t2i.shape
     ranks = np.zeros(5*n_imgs)
     # --> (5N(caption), N(image))
-    results = []
     for index in range(n_imgs):
         for i in range(5):
             inds = np.argsort(sims_t2i[5 * index + i])[::-1]
