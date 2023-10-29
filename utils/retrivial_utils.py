@@ -1,8 +1,6 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-from torchmetrics.functional import retrieval_recall
-from torcheval.metrics.functional.ranking import retrieval_precision
 
 
 
