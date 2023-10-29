@@ -111,8 +111,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.text_queue = nn.functional.normalize(self.text_queue.T, dim=-1).T
             self.itm_head = DisModel(dim=ft_out, layer_dims=[512, 512, 1])
         else:
-            self.register_buffer("image_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
-            self.register_buffer("text_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
+            self.register_buffer("image_queue", self.manifold.random_normal(self.queue_size, ft_out + 1).T)
+            self.register_buffer("text_queue", self.manifold.random_normal(self.queue_size, ft_out + 1).T)
             self.manifold.assert_check_point_on_manifold(self.image_queue.T)
             self.manifold.assert_check_point_on_manifold(self.text_queue.T)
             self.itm_head = LorentzDisModel(self.manifold, dim=ft_out, layer_dims=[512, 512])
@@ -134,19 +134,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         return num_params
 
     
-    def eval(self):
-        self.text_model.eval()
-        self.vision_model.eval()
-        self.text_model_m.eval()
-        self.vision_model_m.eval()
-        self.itm_head.eval()
 
-    def train(self):
-        self.text_model.train()
-        self.vision_model.train()
-        self.text_model_m.train()
-        self.vision_model_m.train()
-        self.itm_head.train()
     
     def get_euclid_dist(self, x:torch.Tensor, y:torch.tensor):
         if self.config.manifold == LORENTZ:

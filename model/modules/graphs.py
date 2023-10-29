@@ -10,6 +10,7 @@ from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.lorentz.layers import LorentzLinear, LorentzAct
 from torch_geometric.utils import dropout_edge 
+from lavis import BlipRetrieval
 class ProjLayers(nn.Module):
   def __init__(self,  sizes=[768], hidden_sizes=[512],  dropout=0.1, shared=False):
     super().__init__()
@@ -110,9 +111,9 @@ class GraphModel(nn.Module):
             sizes=[ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
-            graphs_hidden_channel=ft_out,
-            dropout_edge_ratio=0.7,
-            dropout=0.4,
+            graphs_hidden_channel=512,
+            dropout_edge_ratio=0.5,
+            dropout=0.3,
             shared=shared_proj_layers
         ) 
         
@@ -161,9 +162,9 @@ class LorentzGNN(torch.nn.Module):
         super(LorentzGNN, self).__init__()
         torch.manual_seed(12345)
         self.manifold = manifold
-        self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.7)  
+        self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.4)  
         self.act1 = LorentzAct(nn.GELU(), manifold=manifold)
-        self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.7)
+        self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.4)
         # self.act2 = LorentzAct(nn.ELU(), manifold=manifold)
         # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         self.lin = LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=ft_out + 1, dropout=0.2)
@@ -286,9 +287,9 @@ class LorentzGraphModel(nn.Module):
             sizes=[ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
-            graphs_hidden_channel=256,
-            dropout_edge_ratio=0.7,
-            dropout=0.4,
+            graphs_hidden_channel=512,
+            dropout_edge_ratio=0.5,
+            dropout=0.3,
             shared=shared_proj_layers
 
         ) 
