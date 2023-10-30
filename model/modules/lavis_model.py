@@ -49,7 +49,7 @@ class LavisEncoder(nn.Module):
 
 
 class LavisBLIPGraphHead(nn.Module): 
-    def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2) -> None:
+    def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, graph_hidden_channels=512) -> None:
         super().__init__()
         self.config = config
         self.body = body
@@ -59,6 +59,7 @@ class LavisBLIPGraphHead(nn.Module):
         self.graph_head = GraphHead(
             sizes=[ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
+            graphs_hidden_channel=graph_hidden_channels,
             ft_out=ft_out
         ) 
         
@@ -92,7 +93,7 @@ class LavisBLIPGraphHead(nn.Module):
 
 
 class LavisLorentzBLIPGraphHead(nn.Module): 
-    def __init__(self, manifold:CustomLorentz ,ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2) -> None:
+    def __init__(self, manifold:CustomLorentz ,ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, graph_hidden_channels=512) -> None:
         super().__init__()
         self.config = config
         self.body = body
@@ -104,6 +105,7 @@ class LavisLorentzBLIPGraphHead(nn.Module):
             manifold=manifold,
             sizes=[ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
+            graphs_hidden_channel=graph_hidden_channels, 
             ft_out=ft_out,
             dropout_edge_ratio=0.5,
         ) 

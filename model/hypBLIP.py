@@ -380,6 +380,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 manifold_mapper=mapper,
                 num_layers=1,
                 hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
             )
             self.text_model = LavisLorentzBLIPGraphHead(
@@ -392,6 +393,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 manifold_mapper=mapper,
                 num_layers=1,
                 hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
             )
         else:
@@ -404,6 +406,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 manifold_mapper=mapper,
                 num_layers=1,
                 hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
             )
             self.text_model = LavisBLIPGraphHead(
@@ -415,6 +418,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 manifold_mapper=mapper,
                 num_layers=1,
                 hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
             )
 
@@ -442,6 +446,7 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 head=vision_head,
                 manifold_mapper=self.mapper,
                 num_layers=1,
+                graph_hidden_channels=config.graph_hidden_channels,
                 hidden_size=256,
                 num_hidden_layers=6,
             )
@@ -453,6 +458,7 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 body=text_body,
                 head=text_head,
                 manifold_mapper=self.mapper,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_layers=1,
                 hidden_size=256,
                 num_hidden_layers=6
@@ -465,6 +471,7 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 body=vision_body,
                 head=vision_head,
                 manifold_mapper=self.mapper,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_layers=1,
                 hidden_size=256,
                 num_hidden_layers=6
@@ -476,6 +483,7 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 body=text_body,
                 head=text_head,
                 manifold_mapper=self.mapper,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_layers=1,
                 hidden_size=256,
                 num_hidden_layers=6,

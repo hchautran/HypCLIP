@@ -182,6 +182,7 @@ class HypGraphCLIP(BaseModel):
                 config=config,
                 body=vision_body,
                 head=vision_head,
+                graph_hidden_channels=config.graph_hidden_channels,
                 manifold_mapper=mapper,
                 num_layers=config.num_vision_hidden_states,
                 hidden_size=512,
@@ -195,6 +196,7 @@ class HypGraphCLIP(BaseModel):
                 body=text_body,
                 head=text_head,
                 manifold_mapper=mapper,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_layers=config.num_text_hidden_states,
                 hidden_size=512,
                 num_hidden_layers=6
@@ -208,6 +210,7 @@ class HypGraphCLIP(BaseModel):
                 head=vision_head,
                 manifold_mapper=mapper,
                 num_layers=config.num_vision_hidden_states,
+                graph_hidden_channels=config.graph_hidden_channels,
                 hidden_size=512,
                 num_hidden_layers=6
             )
@@ -219,6 +222,7 @@ class HypGraphCLIP(BaseModel):
                 head=text_head,
                 manifold_mapper=mapper,
                 num_layers=config.num_text_hidden_states,
+                graph_hidden_channels=config.graph_hidden_channels,
                 hidden_size=512,
                 num_hidden_layers=6,
             )
@@ -389,6 +393,7 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 manifold_mapper=self.mapper,
                 num_layers=config.num_vision_hidden_states,
                 hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
                 shared_proj_layers=config.shared_proj_layers
             )
@@ -401,6 +406,7 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 head=text_head,
                 manifold_mapper=self.mapper,
                 num_layers=config.num_text_hidden_states,
+                graph_hidden_channels=config.graph_hidden_channels,
                 hidden_size=config.proj_layer_hidden_sizes,
                 num_hidden_layers=config.num_proj_layers,
                 shared_proj_layers=config.shared_proj_layers
@@ -415,6 +421,7 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 manifold_mapper=self.mapper,
                 num_layers=config.num_vision_hidden_states,
                 hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
                 shared_proj_layers=config.shared_proj_layers
             )
@@ -427,6 +434,7 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 manifold_mapper=self.mapper,
                 num_layers=config.num_text_hidden_states,
                 hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
                 shared_proj_layers=config.shared_proj_layers
             )

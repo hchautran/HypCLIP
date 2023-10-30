@@ -343,7 +343,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         ).mean()      
 
         sims = self.dist_func(image_feat, text_feat)
-        loss_itc = (loss_i2t + loss_t2i) / 2 
+        loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
         loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
         # loss_itm, itm_acc = torch.tensor(0.0) , torch.tensor(0.0)
 

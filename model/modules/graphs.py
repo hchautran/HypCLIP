@@ -78,12 +78,17 @@ class GNN(torch.nn.Module):
     def __init__(self, ft_in ,hidden_channels, ft_out, num_heads=4):
         super(GNN, self).__init__()
         torch.manual_seed(12345)
-        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)  
+        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.5, heads=num_heads, concat=True)  
         self.act1 = nn.GELU()
-        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.5, heads=num_heads, concat=True)
         # self.act2 = nn.GELU()
         # self.conv3 = GATv2Conv(hidden_channels, hidden_channels, dropout=0.4, heads=1, concat=False)
-        self.lin = nn.Linear(hidden_channels, ft_out)
+        self.lin = nn.Sequential(
+            nn.Linear(in_features=hidden_channels, out_features=hidden_channels*4 , dropout=0.2),
+            nn.GELU(),
+            nn.Linear(in_features=hidden_channels*4 , out_features=hidden_channels , dropout=0.2),
+        )
+        self.final_lin = nn.Linear(hidden_channels, ft_out)
 
     def forward(self, graphs, batch_size):
         x, edge_index,batch = graphs.x, graphs.edge_index, graphs.batch
@@ -93,6 +98,7 @@ class GNN(torch.nn.Module):
         # x = self.act2(x)
         # x = self.conv3(x, edge_index)
         graph_mean = global_mean_pool(x, batch)
+        x= self.lin(x)
         x = x.view(batch_size, graphs.x.shape[0]//batch_size, -1)
         x = x[:, 0, :]
         x = F.dropout(x, p=0.2, training=self.training)
@@ -100,7 +106,7 @@ class GNN(torch.nn.Module):
         return x, graph_mean
 
 class GraphModel(nn.Module): 
-    def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False) -> None:
+    def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False, graphs_hidden_channel=512) -> None:
         super().__init__()
         self.config = config
         self.body = body
@@ -111,7 +117,7 @@ class GraphModel(nn.Module):
             sizes=[ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
-            graphs_hidden_channel=512,
+            graphs_hidden_channel=graphs_hidden_channel,
             dropout_edge_ratio=0.0,
             dropout=0.3,
             shared=shared_proj_layers
@@ -162,29 +168,30 @@ class LorentzGNN(torch.nn.Module):
         super(LorentzGNN, self).__init__()
         torch.manual_seed(12345)
         self.manifold = manifold
-        self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4, concat=True, dropout=0.7)  
-        self.act1 = nn.GELU()
-        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4, concat=True ,dropout=0.7)
+        self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.5)  
+        self.act1 = LorentzAct(nn.GELU(), manifold=manifold)
+        self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         # self.act2 = LorentzAct(nn.GELU(), manifold=manifold)
-        # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.6)
-        self.lin = LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=ft_out + 1, dropout=0.2)
+        # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
+        self.lin = nn.Sequential(
+            LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.2),
+            LorentzAct(nn.GELU(), manifold=manifold),
+            LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.2),
+        )
+        self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.2)
 
     def forward(self, graphs, batch_size):
         x, edge_index, _ = graphs.x, graphs.edge_index, graphs.batch
-        x = self.manifold.get_space(x)
         x = self.conv1(x, edge_index)
         x = self.act1(x)
         x = self.conv2(x, edge_index)
-        x = self.manifold.add_time(x)
-        # x = self.act2(x)
-        # x = self.conv3(x, edge_index)
         x = x.view(batch_size, graphs.x.shape[0]//batch_size, -1)
         graph_mean = self.manifold.centroid(x=x) 
-
+        x = self.lin(x)
         x = x[:, 0, :]
         # self.manifold.assert_check_point_on_manifold(x)
         # print(graph_mean)
-        x = self.lin(x)
+        x = self.final_lin(x)
         self.manifold.assert_check_point_on_manifold(x)
         return x, graph_mean
 
@@ -276,7 +283,7 @@ class LorentzGraphHead(nn.Module):
 
 
 class LorentzGraphModel(nn.Module): 
-    def __init__(self, manifold:CustomLorentz ,ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False) -> None:
+    def __init__(self, manifold:CustomLorentz ,ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False, graph_hidden_channels=512) -> None:
         super().__init__()
         self.config = config
         self.body = body
@@ -289,7 +296,7 @@ class LorentzGraphModel(nn.Module):
             sizes=[ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
-            graphs_hidden_channel=512,
+            graphs_hidden_channel=graph_hidden_channels,
             dropout_edge_ratio=0.5,
             dropout=0.3,
             shared=shared_proj_layers
@@ -331,12 +338,7 @@ class LorentzGraphModel(nn.Module):
         if self.manifold_mapper is not None:
             pooled_output = self.manifold_mapper(pooled_output)
             for hidden_state in outputs.hidden_states:
-                if self.config.fourier:
-                    hidden_state = torch.fft.fft2(hidden_state).real 
                 lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
-
-        # print(lorentz_hidden_states)
-
 
         output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output)
 
@@ -462,7 +464,7 @@ class FuseLorentzGraphModel(nn.Module):
             proj_hidden_sizes_1= [hidden_size] * num_hidden_layers + [ft_out], 
             proj_hidden_sizes_2= [hidden_size] * num_hidden_layers + [ft_out], 
             ft_out=ft_out,
-            graphs_hidden_channel=768,
+            graphs_hidden_channel=512,
             dropout_edge_ratio=0.7,
             dropout=0.3,
             shared=shared_proj_layers

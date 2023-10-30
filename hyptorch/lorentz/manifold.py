@@ -199,7 +199,7 @@ class CustomLorentz(Lorentz):
         return _angle
 
     def random(
-        self, *size, mean=0, std=1, dtype=None, device=None
+        self, *size, std=1, dtype=None, device=None
     ) -> "geoopt.ManifoldTensor":
         r"""
         Create a point on the manifold, measure is induced by uniform distribution on the tangent space of zero.
@@ -230,6 +230,6 @@ class CustomLorentz(Lorentz):
             raise ValueError(
                 "`dtype` does not match the projector `dtype`, set the `dtype` arguement to None"
             )
-        tens = torch.randn(*size, device=self.k.device, dtype=self.k.dtype) 
+        tens = torch.randn(*size, device=self.k.device, dtype=self.k.dtype) * std 
         # tens = torch.nn.functional.normalize(tens, p=2 ,dim=-1)
         return geoopt.ManifoldTensor(self.projx(tens), manifold=self)

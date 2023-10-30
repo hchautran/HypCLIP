@@ -109,7 +109,7 @@ class LorentzGAT(MessagePassing):
     def message(self, x_j: Tensor, x_i: Tensor, index: Tensor, ptr: OptTensor, size_i: Optional[int]) -> Tensor:
         x = self.manifold.projx(x_i + x_j)
         x = self.act(x)
-        self.manifold.assert_check_point_on_manifold(x)
+        # self.manifold.assert_check_point_on_manifold(x)
         alpha =  -(self.manifold.get_space(x) * self.manifold.get_space(self.att)).sum(dim=-1) + (self.manifold.get_time(x) * self.manifold.get_time(self.att)).sum(dim=-1)
         alpha = softmax(alpha, index, ptr, size_i)
         self._alpha = alpha
