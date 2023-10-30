@@ -65,7 +65,7 @@ if __name__ == "__main__":
     # inner_training_loop()
 
     config.epochs = 20 
-    config.enable_log = True 
+    config.enable_log = False 
     for curv in [2.0]:
         config.curv = curv
         for use_graph in [True, False]:

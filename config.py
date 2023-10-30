@@ -134,7 +134,7 @@ config_args = {
         "normalize_image_embed": (False,""),
         "shared_proj_layers": (False, "number of project layers"),
         "use_itm_head": (True, "use itm head"),
-        "graph_hidden_channels": (256, "graph size"),
+        "graph_hidden_channels": (512, "graph size"),
     },
     "hybrid_model_config": {
         # "model_ckt": (CLIP_BASE_PATCH_32, "model checkpoint on Hugging Face"),
