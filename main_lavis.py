@@ -19,7 +19,7 @@ if __name__ == "__main__":
     from config import EUCLID, LORENTZ, POINCARE 
 
     config = parser.parse_args()
-    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=True)
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=True)
     dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
 
     dataset = dataset.map(
