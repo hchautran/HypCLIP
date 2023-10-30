@@ -111,8 +111,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.text_queue = nn.functional.normalize(self.text_queue.T, dim=-1).T
             self.itm_head = DisModel(dim=ft_out, layer_dims=[512, 512, 1])
         else:
-            self.register_buffer("image_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
-            self.register_buffer("text_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
+            self.register_buffer("image_queue", self.manifold.random_normal(self.queue_size, ft_out + 1).T)
+            self.register_buffer("text_queue", self.manifold.random_normal(self.queue_size, ft_out + 1).T)
             self.manifold.assert_check_point_on_manifold(self.image_queue.T)
             self.manifold.assert_check_point_on_manifold(self.text_queue.T)
             self.itm_head = LorentzDisModel(self.manifold, dim=ft_out, layer_dims=[512, 512])
@@ -344,8 +344,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         sims = self.dist_func(image_feat, text_feat)
         loss_itc = (loss_i2t + loss_t2i) / 2 
-        # loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
-        loss_itm, itm_acc = torch.tensor(0.0) , torch.tensor(0.0)
+        loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
+        # loss_itm, itm_acc = torch.tensor(0.0) , torch.tensor(0.0)
 
         in_batch_target = torch.arange(bsize).to(self.device)
         stats = {

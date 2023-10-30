@@ -79,6 +79,6 @@ if __name__ == "__main__":
         config.model_ckt = model_ckt
         for use_graph in [True, False]:
             config.use_graph = use_graph
-            for manifold in [EUCLID, LORENTZ]:
+            for manifold in [LORENTZ, EUCLID]:
                 config.manifold = manifold
                 inner_training_loop()
