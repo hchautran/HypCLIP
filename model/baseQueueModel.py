@@ -88,7 +88,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.text_model_m = None 
 
         self.momentum = config.momentum
-        self.logit_scale = nn.Parameter(torch.tensor(1 / config.temp).log())
+        self.logit_scale = nn.Parameter((config.temp))
+        self.eu_logit_scale = nn.Parameter(config.temp))
 
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
@@ -272,6 +273,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         if self.config.manifold != EUCLID:
             self.manifold.k.data = torch.clamp(self.manifold.k.data, max=10.0, min=1.0)
         _scale = self.logit_scale.exp()
+        _eu_scale = self.eu_logit_scale.exp()
         
         text_output = self.text_model(
             input_ids=input_ids,
@@ -318,13 +320,22 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
             sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
             sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
-
             sim_i2t_targets = alpha * (
-                F.softmax(sim_i2t_m * _scale, dim=-1)
+                F.softmax(sim_i2t_m / self.logit_scale, dim=-1)
             ) + (1 - alpha) * sim_targets
             sim_t2i_targets = alpha * (
-                F.softmax(sim_t2i_m * _scale, dim=-1)
+                F.softmax(sim_t2i_m / self.logit_scale, dim=-1)
             ) + (1 - alpha) * sim_targets
+
+            if self.config.manifold == LORENTZ:
+                eu_sim_i2t_m = self.get_euclid_dist(image_feat_m, text_feat_m_all.T) 
+                eu_sim_t2i_m = self.get_euclid_dist(text_feat_m, image_feat_m_all.T)
+                eu_sim_i2t_targets = alpha * (
+                    F.softmax(eu_sim_i2t_m / self.eu_logit_scale, dim=-1)
+                ) + (1 - alpha) * sim_targets
+                eu_sim_t2i_targets = alpha * (
+                    F.softmax(eu_sim_t2i_m / self.eu_logit_scale, dim=-1)
+                ) + (1 - alpha) * sim_targets
 
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
@@ -336,18 +347,28 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
 
         loss_i2t = -torch.sum(
-            F.log_softmax(sim_i2t * _scale, dim=1) * sim_i2t_targets, dim=-1
+            F.log_softmax(sim_i2t * self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
         ).mean()
         loss_t2i = -torch.sum(
-            F.log_softmax(sim_t2i * _scale, dim=1) * sim_t2i_targets, dim=-1
+            F.log_softmax(sim_t2i * self.logit_scale, dim=1) * sim_t2i_targets, dim=-1
         ).mean()      
-
-        sims = self.dist_func(image_feat, text_feat)
         loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
+        if self.config.manifold == LORENTZ:
+            eu_sim_i2t = self.get_euclid_dist(image_feat, text_feat_m_all.T) 
+            eu_sim_t2i = self.get_euclid_dist(text_feat, image_feat_m_all.T)
+            eu_loss_i2t = -torch.sum(
+                F.log_softmax(eu_sim_i2t * self.eu_logit_scale, dim=1) * eu_sim_i2t_targets, dim=-1
+            ).mean()
+            eu_loss_t2i = -torch.sum(
+                F.log_softmax(eu_sim_t2i * self.eu_logit_scale, dim=1) * eu_sim_t2i_targets, dim=-1
+            ).mean()      
+            loss_itc = loss_itc + self.config.weight_i2t * eu_loss_i2t + (1-self.config.weight_i2t) * eu_loss_t2i 
+
         loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
         # loss_itm, itm_acc = torch.tensor(0.0) , torch.tensor(0.0)
 
         in_batch_target = torch.arange(bsize).to(self.device)
+        sims = self.dist_func(image_feat, text_feat)
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
