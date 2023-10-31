@@ -269,9 +269,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             num_iters_per_epoch=num_iters_per_epoch,
         )
 
-        self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
-        if self.config.manifold != EUCLID:
-            self.manifold.k.data = torch.clamp(self.manifold.k.data, max=10.0, min=1.0)
         
         text_output = self.text_model(
             input_ids=input_ids,

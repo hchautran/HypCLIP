@@ -423,7 +423,8 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 num_hidden_layers=config.num_proj_layers,
             )
 
-        self.eu_logit_scale = model.temp
+        # self.eu_logit_scale = model.temp
+        # self.logit_scale = model.temp
         self._init_queue(config, 256)
 
 

@@ -70,7 +70,7 @@ if __name__ == "__main__":
         config.curv = curv
         for use_graph in [True]:
             config.use_graph=use_graph
-            for manifold in [LORENTZ, EUCLID]:
+            for manifold in [LORENTZ]:
                 config.manifold = manifold 
                 inner_training_loop()
     
