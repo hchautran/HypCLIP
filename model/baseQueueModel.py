@@ -272,8 +272,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
         if self.config.manifold != EUCLID:
             self.manifold.k.data = torch.clamp(self.manifold.k.data, max=10.0, min=1.0)
-        _scale = self.logit_scale.exp()
-        _eu_scale = self.eu_logit_scale.exp()
         
         text_output = self.text_model(
             input_ids=input_ids,
@@ -364,11 +362,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             ).mean()      
             loss_itc = loss_itc + self.config.weight_i2t * eu_loss_i2t + (1-self.config.weight_i2t) * eu_loss_t2i 
 
+        sims = self.dist_func(image_feat, text_feat)
         loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
         # loss_itm, itm_acc = torch.tensor(0.0) , torch.tensor(0.0)
 
         in_batch_target = torch.arange(bsize).to(self.device)
-        sims = self.dist_func(image_feat, text_feat)
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
