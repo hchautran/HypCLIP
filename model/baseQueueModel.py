@@ -88,8 +88,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.text_model_m = None 
 
         self.momentum = config.momentum
-        self.logit_scale = nn.Parameter((config.temp))
-        self.eu_logit_scale = nn.Parameter(config.temp))
+        self.logit_scale = nn.Parameter(torch.tensor(config.temp))
+        self.eu_logit_scale = nn.Parameter(torch.tensor(config.temp))
 
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
@@ -347,20 +347,20 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
 
         loss_i2t = -torch.sum(
-            F.log_softmax(sim_i2t * self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
+            F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
         ).mean()
         loss_t2i = -torch.sum(
-            F.log_softmax(sim_t2i * self.logit_scale, dim=1) * sim_t2i_targets, dim=-1
+            F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_t2i_targets, dim=-1
         ).mean()      
         loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
         if self.config.manifold == LORENTZ:
             eu_sim_i2t = self.get_euclid_dist(image_feat, text_feat_m_all.T) 
             eu_sim_t2i = self.get_euclid_dist(text_feat, image_feat_m_all.T)
             eu_loss_i2t = -torch.sum(
-                F.log_softmax(eu_sim_i2t * self.eu_logit_scale, dim=1) * eu_sim_i2t_targets, dim=-1
+                F.log_softmax(eu_sim_i2t / self.eu_logit_scale, dim=1) * eu_sim_i2t_targets, dim=-1
             ).mean()
             eu_loss_t2i = -torch.sum(
-                F.log_softmax(eu_sim_t2i * self.eu_logit_scale, dim=1) * eu_sim_t2i_targets, dim=-1
+                F.log_softmax(eu_sim_t2i / self.eu_logit_scale, dim=1) * eu_sim_t2i_targets, dim=-1
             ).mean()      
             loss_itc = loss_itc + self.config.weight_i2t * eu_loss_i2t + (1-self.config.weight_i2t) * eu_loss_t2i 
 
