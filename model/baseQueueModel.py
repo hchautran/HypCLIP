@@ -201,12 +201,12 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             return torch.tensor(0.0)
         pos_mask = pos_idx * 1e9 
 
-        sim_i2i = self.get_euclid_dist(image_feat, image_world) 
-        sim_t2t = self.get_euclid_dist(text_feat, text_world) 
-        sim_i2t = self.get_euclid_dist(image_feat, text_world) 
-        sim_t2i = self.get_euclid_dist(text_feat, image_world) 
-        # if self.config.manifold ==  LORENTZ:
-            # return (self.hyp_margin_loss(pos_idx, sim_i2i, sim_t2t) + self.hyp_margin_loss(pos_idx, sim_t2t, sim_i2i)) / 2
+        sim_i2i = self.dist_func(image_feat, image_world) 
+        sim_t2t = self.dist_func(text_feat, text_world) 
+        sim_i2t = self.dist_func(image_feat, text_world) 
+        sim_t2i = self.dist_func(text_feat, image_world) 
+        if self.config.manifold ==  LORENTZ:
+            return (self.hyp_margin_loss(pos_idx, sim_i2i, sim_t2t) + self.hyp_margin_loss(pos_idx, sim_t2t, sim_i2i)) / 2
         return ((self.eu_margin_loss(pos_idx, sim_i2t, sim_t2t) + self.eu_margin_loss(pos_idx, sim_t2i, sim_i2i ))) / 2
 
 
@@ -364,8 +364,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             eu_loss_t2i = -torch.sum(
                 F.log_softmax(eu_sim_t2i / self.eu_logit_scale, dim=1) * eu_sim_t2i_targets, dim=-1
             ).mean()      
-            margin_loss = self.config.weight_i2t * eu_loss_i2t + (1-self.config.weight_i2t) * eu_loss_t2i 
-            loss_itc = loss_itc + margin_loss
+            loss_eu_itc = self.config.weight_i2t * eu_loss_i2t + (1-self.config.weight_i2t) * eu_loss_t2i 
+            loss_itc = loss_itc + loss_eu_itc 
 
         sims = self.dist_func(image_feat, text_feat)
         loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
