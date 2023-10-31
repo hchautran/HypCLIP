@@ -122,7 +122,7 @@ config_args = {
         "queue_size": (66000, "queue size"),
         "batch_size": (60, "batch size"),
         "eval_freq": (1100, "how often to compute val metrics (in epochs)"),
-        "weight_i2t": (0.4, "weight image to text"),
+        "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (True, "enable log"),
         "use_margin_loss": (False, "use margin loss"),
         "use_graph_loss": (False, "use margin loss for graph"),

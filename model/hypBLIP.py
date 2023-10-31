@@ -78,7 +78,6 @@ class HypBLIPWithQueue(BaseModelWithQueue):
             ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         )
 
-
         self.vision_model = BLIPVision(
             config,
             body=vision_body,
@@ -199,6 +198,7 @@ class DistilLavisBLIP(BaseDistilModel):
                     num_hidden_layers=config.num_proj_layers,
                 )
 
+
         
         self.vision_teacher = LavisEncoder(
             config,
@@ -273,6 +273,7 @@ class LavisHypGraphBLIP(BaseModel):
                 hidden_size=256,
                 num_hidden_layers=6,
             )
+        self.eu_logit_scale = model.temp
 
 
 
@@ -422,6 +423,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 num_hidden_layers=config.num_proj_layers,
             )
 
+        self.eu_logit_scale = model.temp
         self._init_queue(config, 256)
 
 

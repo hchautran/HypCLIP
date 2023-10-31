@@ -294,6 +294,10 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         idx_all = torch.cat([idx.t(), self.idx_queue.clone().detach()], dim=1)
         pos_idx = torch.eq(idx, idx_all).float()
         sim_targets = pos_idx / pos_idx.sum(1, keepdim=True)
+        with torch.no_grad():
+            self.logit_scale.clamp_(0.001, 0.5)
+            self.eu_logit_scale.clamp_(0.001, 0.5)
+
 
 
         # get momentum features
@@ -360,7 +364,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             eu_loss_t2i = -torch.sum(
                 F.log_softmax(eu_sim_t2i / self.eu_logit_scale, dim=1) * eu_sim_t2i_targets, dim=-1
             ).mean()      
-            loss_itc = loss_itc + self.config.weight_i2t * eu_loss_i2t + (1-self.config.weight_i2t) * eu_loss_t2i 
+            margin_loss = self.config.weight_i2t * eu_loss_i2t + (1-self.config.weight_i2t) * eu_loss_t2i 
+            loss_itc = loss_itc + margin_loss
 
         sims = self.dist_func(image_feat, text_feat)
         loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
