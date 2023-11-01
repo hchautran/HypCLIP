@@ -168,27 +168,29 @@ class LorentzGNN(torch.nn.Module):
         super(LorentzGNN, self).__init__()
         torch.manual_seed(12345)
         self.manifold = manifold
-        self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.5)  
-        self.act1 = LorentzAct(nn.GELU(), manifold=manifold)
-        self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
+        self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4 ,dropout=0.5)  
+        self.act1 = nn.GELU()
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4 ,dropout=0.5)
         # self.act2 = LorentzAct(nn.GELU(), manifold=manifold)
         # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
-        # self.lin = nn.Sequential(
-        #     LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.2),
-        #     LorentzAct(nn.GELU(), manifold=manifold),
-        #     LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.2),
-        # )
+        self.lin = nn.Sequential(
+            LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.2),
+            LorentzAct(nn.GELU(), manifold=manifold),
+            LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.2),
+        )
         self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.2)
 
     def forward(self, graphs, batch_size):
         x, edge_index, _ = graphs.x, graphs.edge_index, graphs.batch
+        x = self.manifold.get_space(x)
         x = self.conv1(x, edge_index)
         x = self.act1(x)
         x = self.conv2(x, edge_index)
+        x = self.manifold.add_time(x)
         x = x.view(batch_size, graphs.x.shape[0]//batch_size, -1)
         graph_mean = self.manifold.centroid(x=x) 
-        # x = self.lin(x)
         x = x[:, 0, :]
+        x = self.lin(x)
         # self.manifold.assert_check_point_on_manifold(x)
         # print(graph_mean)
         x = self.final_lin(x)

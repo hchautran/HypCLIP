@@ -28,10 +28,15 @@ class LavisEncoder(nn.Module):
             position_ids: Optional[torch.Tensor] = None,
     ) -> torch.FloatTensor:
         if pixel_values is not None:
-            outputs = self.body.forward_features(
-                pixel_values,
-            )
-            last_hidden_state = outputs
+            with torch.no_grad():
+                outputs = self.body.forward_features(
+                    pixel_values,
+                )
+                last_hidden_state = outputs
+                pooled_output = last_hidden_state[:, 0, :]
+                pooled_output = self.head(pooled_output)
+                if self.mapper is not None:
+                    pooled_output = self.mapper(pooled_output, use_normalized=True)
         else:
             text = Text() 
             text.input_ids=input_ids
@@ -39,11 +44,11 @@ class LavisEncoder(nn.Module):
             outputs = self.body.forward_text(text)
 
             last_hidden_state = outputs.last_hidden_state
+            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = self.head(pooled_output)
+            if self.mapper is not None:
+                pooled_output = self.mapper(pooled_output, use_normalized=self.use_normalized)
 
-        pooled_output = last_hidden_state[:, 0, :]
-        pooled_output = self.head(pooled_output)
-        if self.mapper is not None:
-            pooled_output = self.mapper(pooled_output, use_normalized=self.use_normalized)
 
         return last_hidden_state, pooled_output
 
@@ -123,20 +128,23 @@ class LavisLorentzBLIPGraphHead(nn.Module):
                 pixel_values,
             )
             last_hidden_state = outputs
+            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = self.head(pooled_output)
+            if self.manifold_mapper is not None:
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+                lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
         else:
             text = Text() 
             text.input_ids=input_ids
             text.attention_mask=attention_mask
             outputs = self.body.forward_text(text)
-
             last_hidden_state = outputs.last_hidden_state
+            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = self.head(pooled_output)
 
-        pooled_output = last_hidden_state[:, 0, :]
-        pooled_output = self.head(pooled_output)
-        
-        if self.manifold_mapper is not None:
-            pooled_output = self.manifold_mapper(pooled_output)
-            lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
+            if self.manifold_mapper is not None:
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
+                lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
 
 
         output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output)
