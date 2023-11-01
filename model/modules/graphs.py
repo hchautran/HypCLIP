@@ -77,9 +77,9 @@ class GNN(torch.nn.Module):
     def __init__(self, ft_in ,hidden_channels, ft_out, num_heads=4):
         super(GNN, self).__init__()
         torch.manual_seed(12345)
-        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.5, heads=num_heads, concat=True)  
+        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)  
         self.act1 = nn.GELU()
-        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.5, heads=num_heads, concat=True)
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)
         # self.act2 = nn.GELU()
         # self.conv3 = GATv2Conv(hidden_channels, hidden_channels, dropout=0.4, heads=1, concat=False)
         self.lin = nn.Sequential(
@@ -304,7 +304,6 @@ class LorentzGraphModel(nn.Module):
             dropout_edge_ratio=0.5,
             dropout=0.3,
             shared=shared_proj_layers
-
         ) 
         
     def forward(
@@ -327,7 +326,6 @@ class LorentzGraphModel(nn.Module):
                 pooled_output = last_hidden_state[:, 0, :]
             else:
                 pooled_output = outputs[1]
-                
             pooled_output = self.head(pooled_output)
             if self.manifold_mapper is not None:
                 pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
@@ -341,7 +339,6 @@ class LorentzGraphModel(nn.Module):
                 return_dict=True,
                 output_hidden_states=True,
             )
-
             last_hidden_state = outputs[0]
             if 'blip' in self.config.model_ckt:
                 pooled_output = last_hidden_state[:, 0, :]
@@ -349,7 +346,7 @@ class LorentzGraphModel(nn.Module):
                 pooled_output = outputs[1]
             pooled_output = self.head(pooled_output)
             if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
                 for hidden_state in outputs.hidden_states:
                     lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
 

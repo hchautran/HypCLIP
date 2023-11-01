@@ -105,7 +105,7 @@ config_args = {
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
-            1.2,
+            0.8,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
@@ -149,10 +149,10 @@ config_args = {
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (None, "clipping radius"),
-        "vision_trainable_blocks": (2, "number of trainable blocks in vision model"),
-        "text_trainable_blocks": (2, "number of trainable blocks in text model"),
-        "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),
-        "num_text_hidden_states": (1, "number of trainable blocks in text model"),
+        "vision_trainable_blocks": (1, "number of trainable blocks in vision model"),
+        "text_trainable_blocks": (3, "number of trainable blocks in text model"),
+        "num_vision_hidden_states": (3, "number of trainable blocks in vision model"),
+        "num_text_hidden_states": (3, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (True, "freeze embedding layers"),

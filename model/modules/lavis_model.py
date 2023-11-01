@@ -47,7 +47,7 @@ class LavisEncoder(nn.Module):
             pooled_output = last_hidden_state[:, 0, :]
             pooled_output = self.head(pooled_output)
             if self.mapper is not None:
-                pooled_output = self.mapper(pooled_output, use_normalized=False)
+                pooled_output = self.mapper(pooled_output, use_normalized=True)
 
 
         return last_hidden_state, pooled_output
@@ -112,6 +112,7 @@ class LavisLorentzBLIPGraphHead(nn.Module):
             proj_hidden_sizes=hidden_sizes, 
             graphs_hidden_channel=graph_hidden_channels, 
             ft_out=ft_out,
+            dropout=0.3,
             dropout_edge_ratio=0.5,
         ) 
         
@@ -143,7 +144,7 @@ class LavisLorentzBLIPGraphHead(nn.Module):
             pooled_output = self.head(pooled_output)
 
             if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
                 lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
 
 

@@ -344,9 +344,8 @@ class HypCLIPWithQueue(BaseModelWithQueue):
                 ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
             )
             vision_head.append(
-                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
+                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalized=True)
             )
-
 
         self.vision_model = CLIPVision(
             config=config,

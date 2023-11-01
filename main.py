@@ -74,8 +74,8 @@ if __name__ == "__main__":
             )
             trainer.train()
 
-        config.epochs = 5 
-        config.enable_log = True 
+        config.epochs = 10 
+        config.enable_log = False 
         config.model_ckt = model_ckt
         for use_graph in [True, False]:
             config.use_graph = use_graph

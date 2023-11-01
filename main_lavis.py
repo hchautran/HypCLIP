@@ -64,13 +64,13 @@ if __name__ == "__main__":
     # print(model)
     # inner_training_loop()
 
-    config.epochs = 20 
+    config.epochs = 6 
     config.enable_log = True 
     for curv in [2.0]:
         config.curv = curv
         for use_graph in [True, False]:
             config.use_graph=use_graph
-            for manifold in [LORENTZ]:
+            for manifold in [LORENTZ, EUCLID]:
                 config.manifold = manifold 
                 inner_training_loop()
     
