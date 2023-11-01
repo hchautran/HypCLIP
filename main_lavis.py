@@ -68,7 +68,7 @@ if __name__ == "__main__":
     config.enable_log = True 
     for curv in [2.0]:
         config.curv = curv
-        for use_graph in [True]:
+        for use_graph in [True, False]:
             config.use_graph=use_graph
             for manifold in [LORENTZ]:
                 config.manifold = manifold 

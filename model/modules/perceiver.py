@@ -161,14 +161,14 @@ class MultiModalModel(nn.Module):
         itm_text = torch.mean(itm_text_state, dim=-2)
         itm_vision = torch.mean(itm_vision_state, dim=-2) 
 
-        itc_text = torch.mean(itc_text, dim=-2) 
-        itc_vision = torch.mean(itc_vision, dim=-2) 
+        itc_text= itc_text[:,0,:]
+        itc_vision= itc_vision[:,0,:]
 
         if self.mapper is not None:
             itc_text = self.mapper(itc_text)
-            itc_vision = self.mapper(itc_vision)
+            itc_vision = self.mapper(itc_vision, use_normalized=True) 
             itm_text = self.mapper(itm_text)
-            itm_vision = self.mapper(itm_vision)
+            itm_vision = self.mapper(itm_vision, use_normalized=True)
 
         return itc_text, itc_vision, itm_text, itm_vision
 
@@ -178,10 +178,10 @@ class MultiModalModel(nn.Module):
         vision_question = vision_ori.expand([self.num_latents, -1, -1]).transpose(0, 1)
 
         itc_vision = self.layers.get_vision_features(vision_inputs, vision_question) 
-        itc_vision = torch.mean(itc_vision, dim=-2) 
+        itc_vision = itc_vision[:,0,:]
 
         if self.mapper is not None:
-            itc_vision = self.mapper(itc_vision)
+            itc_vision = self.mapper(itc_vision, use_normalized=True)
         return itc_vision 
 
     def get_text_features(self, text_ori, text_inputs):
@@ -190,10 +190,10 @@ class MultiModalModel(nn.Module):
         text_question = text_ori.expand([self.num_latents, -1, -1]).transpose(0,1) 
 
         itc_text = self.layers.get_text_features(text_inputs, text_question)
-        itc_text = torch.mean(itc_text, dim=-2) 
+        itc_text= itc_text[:,0,:]
 
         if self.mapper is not None:
-            itc_text = self.mapper(itc_text)
+            itc_text = self.mapper(itc_text) 
         return itc_text
 
 

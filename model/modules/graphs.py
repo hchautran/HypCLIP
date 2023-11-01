@@ -44,7 +44,6 @@ class GraphHead(nn.Module):
         self.dropout_edge_ratio =  dropout_edge_ratio
 
     def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor):
-
         ends = []
         starts = []
         begin_index = 1
@@ -83,11 +82,11 @@ class GNN(torch.nn.Module):
         self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.5, heads=num_heads, concat=True)
         # self.act2 = nn.GELU()
         # self.conv3 = GATv2Conv(hidden_channels, hidden_channels, dropout=0.4, heads=1, concat=False)
-        # self.lin = nn.Sequential(
-        #     nn.Linear(in_features=hidden_channels, out_features=hidden_channels*4 , dropout=0.2),
-        #     nn.GELU(),
-        #     nn.Linear(in_features=hidden_channels*4 , out_features=hidden_channels , dropout=0.2),
-        # )
+        self.lin = nn.Sequential(
+            nn.Linear(in_features=hidden_channels, out_features=hidden_channels*4 , dropout=0.2),
+            nn.GELU(),
+            nn.Linear(in_features=hidden_channels*4 , out_features=hidden_channels , dropout=0.2),
+        )
         self.final_lin = nn.Linear(hidden_channels, ft_out)
 
     def forward(self, graphs, batch_size):
@@ -98,9 +97,9 @@ class GNN(torch.nn.Module):
         # x = self.act2(x)
         # x = self.conv3(x, edge_index)
         graph_mean = global_mean_pool(x, batch)
-        # x= self.lin(x)
         x = x.view(batch_size, graphs.x.shape[0]//batch_size, -1)
         x = x[:, 0, :]
+        x= self.lin(x)
         x = F.dropout(x, p=0.2, training=self.training)
         x = self.final_lin(x)
         return x, graph_mean
@@ -169,8 +168,11 @@ class LorentzGNN(torch.nn.Module):
         torch.manual_seed(12345)
         self.manifold = manifold
         self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4 ,dropout=0.5)  
+        # self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.5)
         self.act1 = nn.GELU()
+        # self.act1 = LorentzAct(nn.GELU(), manifold=manifold)
         self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4 ,dropout=0.5)
+        # self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         # self.act2 = LorentzAct(nn.GELU(), manifold=manifold)
         # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         self.lin = nn.Sequential(
@@ -312,6 +314,7 @@ class LorentzGraphModel(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
     ) -> torch.FloatTensor:
+        lorentz_hidden_states = []
 
         if pixel_values is not None:
             outputs = self.body(
@@ -319,6 +322,17 @@ class LorentzGraphModel(nn.Module):
                 output_hidden_states=True,
                 return_dict=True,
             )
+            last_hidden_state = outputs[0]
+            if 'blip' in self.config.model_ckt:
+                pooled_output = last_hidden_state[:, 0, :]
+            else:
+                pooled_output = outputs[1]
+                
+            pooled_output = self.head(pooled_output)
+            if self.manifold_mapper is not None:
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+                for hidden_state in outputs.hidden_states:
+                    lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
         else:
             outputs = self.body(
                 input_ids=input_ids,
@@ -328,19 +342,16 @@ class LorentzGraphModel(nn.Module):
                 output_hidden_states=True,
             )
 
-        last_hidden_state = outputs[0]
-        if 'blip' in self.config.model_ckt:
-            pooled_output = last_hidden_state[:, 0, :]
-        else:
-            pooled_output = outputs[1]
-            
-        lorentz_hidden_states = []
-        pooled_output = self.head(pooled_output)
-        
-        if self.manifold_mapper is not None:
-            pooled_output = self.manifold_mapper(pooled_output)
-            for hidden_state in outputs.hidden_states:
-                lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
+            last_hidden_state = outputs[0]
+            if 'blip' in self.config.model_ckt:
+                pooled_output = last_hidden_state[:, 0, :]
+            else:
+                pooled_output = outputs[1]
+            pooled_output = self.head(pooled_output)
+            if self.manifold_mapper is not None:
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
+                for hidden_state in outputs.hidden_states:
+                    lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
 
         output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output)
 

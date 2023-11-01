@@ -28,14 +28,14 @@ class LavisEncoder(nn.Module):
             position_ids: Optional[torch.Tensor] = None,
     ) -> torch.FloatTensor:
         if pixel_values is not None:
-            with torch.no_grad():
-                outputs = self.body.forward_features(
-                    pixel_values,
-                )
-                last_hidden_state = outputs
-                pooled_output = last_hidden_state[:, 0, :]
-                pooled_output = self.head(pooled_output)
-                if self.mapper is not None:
+            # with torch.no_grad():
+            outputs = self.body.forward_features(
+                pixel_values,
+            )
+            last_hidden_state = outputs
+            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = self.head(pooled_output)
+            if self.mapper is not None:
                     pooled_output = self.mapper(pooled_output, use_normalized=True)
         else:
             text = Text() 
@@ -47,7 +47,7 @@ class LavisEncoder(nn.Module):
             pooled_output = last_hidden_state[:, 0, :]
             pooled_output = self.head(pooled_output)
             if self.mapper is not None:
-                pooled_output = self.mapper(pooled_output, use_normalized=self.use_normalized)
+                pooled_output = self.mapper(pooled_output, use_normalized=False)
 
 
         return last_hidden_state, pooled_output
