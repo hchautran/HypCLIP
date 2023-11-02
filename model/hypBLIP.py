@@ -64,6 +64,7 @@ class HypBLIPWithQueue(BaseModelWithQueue):
         model = BlipForImageTextRetrieval.from_pretrained(
             self.model_ckt, cache_dir=config.cache_dir
         )
+        model = get_lora_blip(config, model)
       
         text_body = model.text_encoder
         vision_body = model.vision_model

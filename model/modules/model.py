@@ -78,7 +78,7 @@ class BLIPEncoder(nn.Module):
             )
 
         last_hidden_state = outputs[0]
-        pooled_output = outputs[:,0,:]
+        pooled_output = last_hidden_state[:,0,:]
         pooled_output = self.head(pooled_output)
         if self.manifold_mapper is not None:
             pooled_output = self.manifold_mapper(pooled_output, use_normalized=(pixel_values is None))

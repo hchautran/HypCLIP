@@ -151,7 +151,7 @@ config_args = {
         "clip_radius": (None, "clipping radius"),
         "vision_trainable_blocks": (1, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (3, "number of trainable blocks in text model"),
-        "num_vision_hidden_states": (3, "number of trainable blocks in vision model"),
+        "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),
         "num_text_hidden_states": (3, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),

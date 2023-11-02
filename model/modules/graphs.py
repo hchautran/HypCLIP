@@ -107,7 +107,7 @@ class GNN(torch.nn.Module):
         return x, graph_mean
 
 class GraphModel(nn.Module): 
-    def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False, graphs_hidden_channel=512) -> None:
+    def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False, graph_hidden_channels=512) -> None:
         super().__init__()
         self.config = config
         self.body = body
@@ -118,7 +118,7 @@ class GraphModel(nn.Module):
             sizes=[ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
-            graphs_hidden_channel=graphs_hidden_channel,
+            graphs_hidden_channel=graph_hidden_channels,
             dropout_edge_ratio=0.0,
             dropout=0.3,
             shared=shared_proj_layers
