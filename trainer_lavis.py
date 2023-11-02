@@ -157,6 +157,15 @@ class MyTrainer:
                     print("best r all", best_r_all)
                 elif epoch > self.config.min_epochs:
                     waiting += 1
+                if waiting < self.patience:
+                    self.train_loader = self.accelerator.prepare(
+                        get_dataloader(
+                            self.dataset["train"],
+                            self.config.batch_size,
+                            processor=self.processor,
+                            mode="train",
+                        )
+                    )
                 else:
                     break
         print("Finished Training")
