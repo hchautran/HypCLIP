@@ -157,15 +157,6 @@ class MyTrainer:
                     print("best r all", best_r_all)
                 elif epoch > self.config.min_epochs:
                     waiting += 1
-                if waiting < self.patience:
-                    self.train_loader = self.accelerator.prepare(
-                        get_dataloader(
-                            self.dataset["train"],
-                            self.config.batch_size,
-                            processor=self.processor,
-                            mode="train",
-                        )
-                    )
                 else:
                     break
         print("Finished Training")
@@ -393,7 +384,7 @@ class DistilTrainer:
         
 
     def evaluate(self, mode="val"):
-        print("Evaluating current epoch", self.current_epoch)
+        print("Evaluating epoch", self.current_epoch)
         self.model.eval()
         loader = self.val_loader if mode == "val" else self.test_loader
         all_text_embeds = []

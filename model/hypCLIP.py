@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from .modules.text_model import CLIPText
-from .modules.vision_model import CLIPVision
+from .modules.model import CLIPEncoder 
 from .modules.graphs import GraphModel, LorentzGraphModel
 from loralib.share_lora_clip import CLIPTextModelWithProjection as LoraCLIPText
 from loralib.share_lora_clip import CLIPVisionModelWithProjection as LoraCLIPVision
@@ -95,31 +94,25 @@ class HypCLIP(BaseModel):
         vision_body = vision_model.vision_model
         text_head = nn.ModuleList([])
         vision_head = nn.ModuleList([])
-        text_head = nn.ModuleList([text_model.text_projection])
-        vision_head = nn.ModuleList([vision_model.visual_projection])
+        text_head = text_model.text_projection
+        vision_head = vision_model.visual_projection
+        mapper = None
 
         if self.manifold_name !=  EUCLID:
-            text_head.append(
-                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-            )
-            vision_head.append(
-                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalize=False)
-            )
+            mapper =  ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r) 
 
 
-        self.vision_model = CLIPVision(
+        self.vision_model = CLIPEncoder(
             config=config,
             body=vision_body,
             head=vision_head,
-            num_trainable_blocks=config.vision_trainable_blocks,
-            freeze_embedding=config.freeze_embedding,
+            manifold_mapper=mapper
         )
-        self.text_model = CLIPText(
+        self.text_model = CLIPEncoder(
             config=config,
             body=text_body,
             head=text_head,
-            num_trainable_blocks=config.text_trainable_blocks,
-            freeze_embeddings=config.freeze_embedding,
+            manifold_mapper=mapper
         )
 
 class HypGraphCLIP(BaseModel):
@@ -334,32 +327,24 @@ class HypCLIPWithQueue(BaseModelWithQueue):
 
         text_body = text_model.text_model
         vision_body = vision_model.vision_model
-        text_head = nn.ModuleList([])
-        vision_head = nn.ModuleList([])
-        text_head = nn.ModuleList([text_model.text_projection])
-        vision_head = nn.ModuleList([vision_model.visual_projection])
+        text_head = text_model.text_projection
+        vision_head = vision_model.visual_projection
+        mapper = None
 
         if self.config.manifold !=  EUCLID:
-            text_head.append(
-                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
-            )
-            vision_head.append(
-                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r, use_normalized=True)
-            )
+            mapper =ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
-        self.vision_model = CLIPVision(
+        self.vision_model = CLIPEncoder(
             config=config,
             body=vision_body,
             head=vision_head,
-            num_trainable_blocks=config.vision_trainable_blocks,
-            freeze_embedding=config.freeze_embedding,
+            manifold_mapper=mapper
         )
-        self.text_model = CLIPText(
+        self.text_model = CLIPEncoder(
             config=config,
             body=text_body,
             head=text_head,
-            num_trainable_blocks=config.text_trainable_blocks,
-            freeze_embeddings=config.freeze_embedding,
+            manifold_mapper=mapper
         )        
 
         self._init_queue(config, vision_model.config.projection_dim)
@@ -462,33 +447,25 @@ class HypCLIPDistilled(DistiledBaseModel):
 
         text_body = text_model.text_model
         vision_body = vision_model.vision_model
-        text_head = nn.ModuleList([])
-        vision_head = nn.ModuleList([])
-        text_head = nn.ModuleList([text_model.text_projection])
-        vision_head = nn.ModuleList([vision_model.visual_projection])
+        text_head = text_model.text_projection
+        vision_head = vision_model.visual_projection
+        mapper = None
 
         if self.config.manifold !=  EUCLID:
-            text_head.append(
-                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
-            )
-            vision_head.append(
-                ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
-            )
+            mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
 
-        self.vision_model = CLIPVision(
+        self.vision_model = CLIPEncoder(
             config=config,
             body=vision_body,
             head=vision_head,
-            num_trainable_blocks=config.vision_trainable_blocks,
-            freeze_embedding=config.freeze_embedding,
+            mapper=mapper
         )
-        self.text_model = CLIPText(
+        self.text_model = CLIPEncoder(
             config=config,
             body=text_body,
             head=text_head,
-            num_trainable_blocks=config.text_trainable_blocks,
-            freeze_embeddings=config.freeze_embedding,
+            mapper=mapper
         )        
         self.vision_teacher = LavisEncoder(
             config,

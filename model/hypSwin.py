@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model.baseModel import BaseModel
-from .modules.text_model import BLIPText
+from .modules.model import BLIPText
 from .modules.vision_model import BLIPVision, CLIPVision
 from .modules.swin_model import VisModel 
 from transformers import BlipForImageTextRetrieval 

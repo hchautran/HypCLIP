@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from .modules.text_model import BLIPText, BLIPGraphText
-from .modules.vision_model import BLIPVision, BLIPGraphVision
+from .modules.model import BLIPEncoder
 from .modules.lavis_model import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
 from transformers import BlipForImageTextRetrieval
 from .modules.utils import ManifoldMapper
@@ -68,25 +67,24 @@ class HypBLIPWithQueue(BaseModelWithQueue):
       
         text_body = model.text_encoder
         vision_body = model.vision_model
-        text_head = nn.ModuleList([model.text_proj])
-        vision_head = nn.ModuleList([model.vision_proj])
+        text_head = model.text_proj
+        vision_head = model.vision_proj
+        mapper = None
    
-        text_head.append(
-            ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
-        )
-        vision_head.append(
-            ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
-        )
+        if self.config.manifold != EUCLID:
+            mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
-        self.vision_model = BLIPVision(
+        self.vision_model = BLIPEncoder(
             config,
             body=vision_body,
             head=vision_head,
+            manifold_mapper=mapper
         )
-        self.text_model = BLIPText(
+        self.text_model = BLIPEncoder(
             config,
             body=text_body,
             head=text_head,
+            manifold_mapper=mapper
         )
         self._init_queue(config, 256)
 
@@ -449,9 +447,9 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 head=vision_head,
                 manifold_mapper=self.mapper,
                 num_layers=1,
+                hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
-                hidden_size=256,
-                num_hidden_layers=6,
+                num_hidden_layers=config.num_proj_layers,
             )
             self.text_model = LorentzGraphModel(
                 manifold=self.manifold,
@@ -461,10 +459,10 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 body=text_body,
                 head=text_head,
                 manifold_mapper=self.mapper,
-                graph_hidden_channels=config.graph_hidden_channels,
                 num_layers=1,
-                hidden_size=256,
-                num_hidden_layers=6
+                hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
+                num_hidden_layers=config.num_proj_layers,
             )
         else:
             self.vision_model = GraphModel(
@@ -474,10 +472,10 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 body=vision_body,
                 head=vision_head,
                 manifold_mapper=self.mapper,
-                graph_hidden_channels=config.graph_hidden_channels,
                 num_layers=1,
-                hidden_size=256,
-                num_hidden_layers=6
+                hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
+                num_hidden_layers=config.num_proj_layers,
             )
             self.text_model = GraphModel(
                 ft_in=model.config.text_config.hidden_size,
@@ -486,10 +484,10 @@ class HypGraphBLIPWithQueue(BaseModelWithQueue):
                 body=text_body,
                 head=text_head,
                 manifold_mapper=self.mapper,
-                graph_hidden_channels=config.graph_hidden_channels,
                 num_layers=1,
-                hidden_size=256,
-                num_hidden_layers=6,
+                hidden_size=config.proj_layer_hidden_sizes,
+                graph_hidden_channels=config.graph_hidden_channels,
+                num_hidden_layers=config.num_proj_layers,
             )
         
         self._init_queue(config, model.config.image_text_hidden_size)

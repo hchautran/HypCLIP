@@ -77,16 +77,16 @@ class GNN(torch.nn.Module):
     def __init__(self, ft_in ,hidden_channels, ft_out, num_heads=4):
         super(GNN, self).__init__()
         torch.manual_seed(12345)
-        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)  
+        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.6, heads=num_heads, concat=True)  
         self.act1 = nn.GELU()
-        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.6, heads=num_heads, concat=True)
         # self.act2 = nn.GELU()
         # self.conv3 = GATv2Conv(hidden_channels, hidden_channels, dropout=0.4, heads=1, concat=False)
         self.lin = nn.Sequential(
-            nn.Dropout(0.2),
+            nn.Dropout(0.3),
             nn.Linear(in_features=hidden_channels, out_features=hidden_channels*4),
             nn.GELU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.3),
             nn.Linear(in_features=hidden_channels*4 , out_features=hidden_channels),
         )
         self.final_lin = nn.Linear(hidden_channels, ft_out)
@@ -169,18 +169,18 @@ class LorentzGNN(torch.nn.Module):
         super(LorentzGNN, self).__init__()
         torch.manual_seed(12345)
         self.manifold = manifold
-        self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4 ,dropout=0.7)  
+        self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4 ,dropout=0.6)  
         # self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.5)
-        # self.act1 = nn.GELU()
+        self.act1 = nn.GELU()
         # self.act1 = LorentzAct(nn.GELU(), manifold=manifold)
-        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4 ,dropout=0.7)
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4 ,dropout=0.6)
         # self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         # self.act2 = LorentzAct(nn.GELU(), manifold=manifold)
         # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         self.lin = nn.Sequential(
-            LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.2),
+            LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.3),
             LorentzAct(nn.GELU(), manifold=manifold),
-            LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.2),
+            LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.3),
         )
         self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.1)
 
@@ -273,13 +273,13 @@ class LorentzGraphHead(nn.Module):
         begin_index += hidden_states[i].shape[1]
         edge_index = torch.tensor([starts, ends], dtype=torch.long).to(output.get_device())
         edge_index = add_self_loops(edge_index)[0]
+
         graphs = []
         for i in range(bs):
             graphs.append(Data(x=output[i,:,:], edge_index=edge_index))
         data_batch = Batch.from_data_list(graphs) 
         data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0]
         graph_output, graph_mean = self.gnn(data_batch, batch_size=bs)
-
 
         output = self.manifold.get_space(graph_output) + self.manifold.get_space(pooled_output)
         output = self.manifold.add_time(output)
@@ -348,7 +348,7 @@ class LorentzGraphModel(nn.Module):
                 pooled_output = outputs[1]
             pooled_output = self.head(pooled_output)
             if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
                 for hidden_state in outputs.hidden_states:
                     lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
 
