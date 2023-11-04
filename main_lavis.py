@@ -59,19 +59,19 @@ if __name__ == "__main__":
         )
         metric = trainer.evaluate(mode='test')
         print(metric)
-        # metric = trainer.evaluate(mode='val')
-        # print(metric)
+        metric = trainer.evaluate(mode='val')
+        print(metric)
         trainer.train()
     # print(model)
     # inner_training_loop()
 
-    config.epochs = 6 
+    config.epochs = 5 
     config.enable_log = True 
     for curv in [2.0]:
         config.curv = curv
-        for use_graph in [True, False]:
+        for use_graph in [False]:
             config.use_graph=use_graph
-            for manifold in [LORENTZ, EUCLID]:
+            for manifold in [EUCLID, LORENTZ]:
                 config.manifold = manifold 
                 inner_training_loop()
     

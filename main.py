@@ -76,10 +76,10 @@ if __name__ == "__main__":
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 6 
-        config.enable_log = False 
+        config.epochs = 3 
+        config.enable_log = True 
         config.model_ckt = model_ckt
-        for use_graph in [True, True]:
+        for use_graph in [True, False]:
             config.use_graph = use_graph 
             for manifold in [LORENTZ, EUCLID]:
                 config.manifold = manifold

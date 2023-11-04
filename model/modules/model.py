@@ -40,7 +40,7 @@ class CLIPEncoder(nn.Module):
         last_hidden_state = outputs[0]
         pooled_output = self.head(pooled_output)
         if self.manifold_mapper is not None:
-            pooled_output = self.manifold_mapper(pooled_output, use_normalized=(pixel_values is None))
+            pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
 
         return last_hidden_state, pooled_output 
 
