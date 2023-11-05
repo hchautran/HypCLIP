@@ -77,10 +77,11 @@ if __name__ == "__main__":
             trainer.train()
 
         config.epochs = 3 
-        config.enable_log = True 
         config.model_ckt = model_ckt
-        for use_graph in [True, False]:
-            config.use_graph = use_graph 
-            for manifold in [LORENTZ, EUCLID]:
-                config.manifold = manifold
-                inner_training_loop()
+        for manifold in [LORENTZ, EUCLID]:
+            config.manifold = manifold
+            for use_margin_loss in [False, True]:
+                config.use_margin_loss = use_margin_loss
+                for use_graph in [True, False]:
+                    config.use_graph = use_graph 
+                    inner_training_loop()

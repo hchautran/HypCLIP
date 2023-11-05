@@ -61,7 +61,9 @@ BLIP_BASE = "Salesforce/blip-image-captioning-base"
 BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
 BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
 FLICKR = "nlphuji/flickr30k"
+
 CACHE_DIR = '/mnt/data/.cache'
+
 # CACHE_DIR = '/Volumes/ExtraSpace/.cache'
 config_args = {
     "training_config": {
@@ -113,7 +115,7 @@ config_args = {
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_neg_margin": (
-            1.8,
+            0.9,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "max_txt_len": (35, "max_txt_len"),
@@ -124,7 +126,7 @@ config_args = {
         "eval_freq": (1100, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (True, "enable log"),
-        "use_margin_loss": (True, "use margin loss"),
+        "use_margin_loss": (False, "use margin loss"),
         "use_graph_loss": (False, "use margin loss for graph"),
         "use_entailment_loss": (False, "use entailment loss"),
         "hyp_margin_loss_weight": (0.0, "hyperbolic margin loss weight"),
@@ -147,7 +149,7 @@ config_args = {
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (None, "clipping radius"),
-        "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
+        "vision_trainable_blocks": (2, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (12, "number of trainable blocks in text model"),
         "num_vision_hidden_states": (2, "number of trainable blocks in vision model"),
         "num_text_hidden_states": (2, "number of trainable blocks in text model"),

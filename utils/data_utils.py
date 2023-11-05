@@ -6,7 +6,7 @@ import numpy as np
 from transformers import CLIPProcessor 
 from datasets import dataset_dict 
 from datasets import load_dataset
-
+from lavis.datasets.builders import load_dataset as lavis_dataset
 class Flickr_dataset(Dataset):
     def __init__(self, dataset, load_raw_image=False):  
         self.dataset = dataset
@@ -25,6 +25,8 @@ class Flickr_dataset(Dataset):
             'caption': data['caption'][int(index % self.cap_per_img)],
         }
         return out
+
+
 
 class CoFlickr_dataset(Dataset):
     def __init__(self, dataset):  
@@ -92,6 +94,8 @@ def collate_func(batch, processor):
 
 
 
+
+
 def co_collate_func(batch, clip_processor, blip_processor):
     # print(batch)
     df = pd.DataFrame(batch)
@@ -117,7 +121,40 @@ def co_collate_func(batch, clip_processor, blip_processor):
     data['img_id'] = torch.tensor(list(df['img_id'])) 
     return data
 
+def get_coco_dataloader(dataset, batch_size, vis_processor, txt_processor, mode='train'):
+    COCO_PATH = "/mnt/data/itr_dataset/dataset/coco_images"
+    def coco_collate_func(batch, processor):
+    # print(batch)
+        data = {}
+        data['pixel_values']= vis_processor(batch['image'])
+        data['img_id'] = batch['image_id']
+        data['input_ids'] = batch['image_id']
+        data['attention_mask'] = txt_processor(batch['text_input'])
+        return data
 
+    coco_dataset = get_coco(cache_dir=COCO_PATH) 
+    custom_sampler = UniqueClassSampler(coco_dataset, batch_size)
+    if mode == 'train':
+        return DataLoader(
+            coco_dataset, 
+            batch_size=batch_size, 
+            collate_fn = lambda batch: collate_func(batch, processor),
+            shuffle=True
+        )
+
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn = lambda batch: collate_func(batch, processor),
+            sampler=custom_sampler,
+        ) 
+    else:
+        return DataLoader(
+            flickr_dataset, 
+            batch_size=batch_size, 
+            collate_fn = lambda batch: collate_func(batch, processor),
+            shuffle=False
+        )
 
 def get_dataloader(dataset, batch_size, processor, mode='train', use_random_sampler=False):
     flickr_dataset = Flickr_dataset(dataset) 
@@ -198,3 +235,8 @@ def get_flickr(flickr_ckt, cache_dir):
         'val' : flickr30k.filter(lambda x: x['split'] == 'val')['test'], 
     }) 
     return ds
+
+
+def get_coco(cache_dir):
+    coco_dataset = lavis_dataset("coco_caption", vis_path=cache_dir)
+    return coco_dataset

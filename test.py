@@ -3,88 +3,84 @@ from transformers import (
     CLIPProcessor,
 )
 from datasets import load_dataset
-from model.hypBLIP import LavisBLIP, LavisHypGraphBLIPWithQueue 
-from model.hypCLIP import HypCLIPDistilled 
+from model.hypBLIP import LavisBLIP, LavisBLIPWithQueue ,LavisHypGraphBLIPWithQueue, LavisHypGraphBLIP
+from model.perceiverModel import PerceiverLavisBLIPWithQueue 
+# from model.hypCLIP import HypGraphCLIPWithQueue 
 from utils.data_utils import get_dataloader, lavis_preprocess_img
 from trainer import MyTrainer
-from coTrainer import MyTrainer as Trainer 
+from trainer_lavis import MyTrainer as LavisTrainer, DistilTrainer
 from accelerate import find_executable_batch_size
-from utils.data_utils import get_flickr, get_co_dataloader, co_preprocess_img, CoFlickr_dataset
-from transformers import CLIPProcessor 
+from utils.data_utils import get_coco
+from tqdm.auto import tqdm
 
-from lavis.models import load_model_and_preprocess, load_model
+from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ, POINCARE 
+    from config import EUCLID, LORENTZ, POINCARE
+    COCO_PATH = "/mnt/data/itr_dataset/dataset/coco_images"
 
     config = parser.parse_args()
-    blip_model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=True)
-    dataset = get_flickr(config.dataset, cache_dir=config.cache_dir)
-    clip_processor = CLIPProcessor.from_pretrained(
-        config.model_ckt, cache_dir=config.cache_dir
-    )
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
+    dataset = get_coco(cache_dir=COCO_PATH)
+    print(len(dataset["train"]))
+    print(len(dataset["test"]))
+    print(len(dataset["val"]))
+    for batch in tqdm(dataset['train']):
+        print(vis_processors['eval'](batch['image']).shape)
+        print(txt_processors['eval'](batch['text_input']))
+    
 
-    dataset = dataset.map(
-        lambda sample: co_preprocess_img(sample, blip_processor=vis_processors['eval'], clip_processor=clip_processor)
-    ).remove_columns(["image"])
-    dataset.set_format("numpy")
+    # dataset = dataset.map(
+        # lambda sample: lavis_preprocess_img(sample, processor=vis_processors['eval'])
+    # ).remove_columns(["image"])
+    # dataset.set_format("numpy")
+    
 
 
-    @find_executable_batch_size(starting_batch_size=config.batch_size)
-    def inner_training_loop(batch_size):
-        config.batch_size = batch_size
-        train_loader = get_co_dataloader(
-            dataset["train"],
-            config.batch_size,
-            blip_processor=blip_model.tokenizer,
-            clip_processor=clip_processor,
-            mode="train",
-            use_random_sampler=False,
-        )
-        test_loader = get_co_dataloader(
-            dataset["test"], 
-            5, 
-            blip_processor=blip_model.tokenizer, 
-            clip_processor=clip_processor ,
-            mode="test"
-        )
-        val_loader = get_co_dataloader(
-            dataset["val"], 
-            5, 
-            blip_processor=blip_model.tokenizer, 
-            clip_processor=clip_processor ,
-            mode="val"
-        )
-        model = HypCLIPDistilled(config, blip_model)
+    # @find_executable_batch_size(starting_batch_size=config.batch_size)
+    # def inner_training_loop(batch_size):
+    #     config.batch_size = batch_size
+    #     train_loader = get_dataloader(
+    #         dataset["train"],
+    #         config.batch_size,
+    #         processor=model.tokenizer,
+    #         mode="train",
+    #         use_random_sampler=False,
+    #     )
+    #     test_loader = get_dataloader(
+    #         dataset["test"], 5, processor=model.tokenizer, mode="test"
+    #     )
+    #     val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
+    #     config.model_ckt = 'lavis/blip-base'
+    #     queue_model = LavisBLIPWithQueue(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
+    #     # queue_model = PerceiverLavisBLIPWithQueue(config, model) 
+    #     # distiled_model = DistilLavisBLIP(config, model)
 
-        trainer = Trainer(
-            model=model,
-            config=config,
-            dataset=dataset,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            test_loader=test_loader,
-            blip_processor=blip_model.tokenizer,
-            clip_processor=clip_processor,
-        )
-        # metric = trainer.evaluate(mode='test')
-        # print(metric)
-        # metric = trainer.evaluate(mode='val')
-        # print(metric)
-        trainer.train()
-    # print(model)
-    # inner_training_loop()
+    #     trainer = LavisTrainer(
+    #         model=queue_model,
+    #         config=config,
+    #         dataset=dataset,
+    #         train_loader=train_loader,
+    #         val_loader=val_loader,
+    #         test_loader=test_loader,
+    #         processor=model.tokenizer,
+    #     )
+    #     metric = trainer.evaluate(mode='test')
+    #     print(metric)
+    #     metric = trainer.evaluate(mode='val')
+    #     print(metric)
+    #     trainer.train()
+    # # print(model)
+    # # inner_training_loop()
 
-    config.epochs = 5 
-    config.enable_log = True 
-    config.eval_freq = 725 
-    config.hyp_margin_loss_weight=1.0
-    for curv in [2.0]:
-        config.curv = curv
-        for use_graph in [False]:
-            config.use_graph=use_graph
-            for manifold in [LORENTZ, EUCLID]:
-                config.manifold = manifold 
-                inner_training_loop()
+    # config.epochs = 5 
+    # config.enable_log = True 
+    # for curv in [2.0]:
+    #     config.curv = curv
+    #     for use_graph in [False]:
+    #         config.use_graph=use_graph
+    #         for manifold in [EUCLID, LORENTZ]:
+    #             config.manifold = manifold 
+    #             inner_training_loop()
     
