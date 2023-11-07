@@ -76,12 +76,13 @@ if __name__ == "__main__":
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 3 
+        config.epochs = 10 
+        config.enable_log = True
         config.model_ckt = model_ckt
         for manifold in [LORENTZ, EUCLID]:
             config.manifold = manifold
-            for use_margin_loss in [False, True]:
-                config.use_margin_loss = use_margin_loss
-                for use_graph in [True, False]:
-                    config.use_graph = use_graph 
+            for use_graph in [True, False]:
+                config.use_graph = use_graph 
+                for use_margin_loss in [True]:
+                    config.use_margin_loss = use_margin_loss
                     inner_training_loop()

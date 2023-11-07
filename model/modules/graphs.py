@@ -88,6 +88,7 @@ class GNN(torch.nn.Module):
             nn.GELU(),
             nn.Dropout(0.3),
             nn.Linear(in_features=hidden_channels*4 , out_features=hidden_channels),
+            nn.GELU(),
         )
         self.final_lin = nn.Linear(hidden_channels, ft_out)
 
@@ -181,6 +182,7 @@ class LorentzGNN(torch.nn.Module):
             LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.3),
             LorentzAct(nn.GELU(), manifold=manifold),
             LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.3),
+            LorentzAct(nn.GELU(), manifold=manifold),
         )
         self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.1)
 
@@ -348,7 +350,7 @@ class LorentzGraphModel(nn.Module):
                 pooled_output = outputs[1]
             pooled_output = self.head(pooled_output)
             if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
                 for hidden_state in outputs.hidden_states:
                     lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
 

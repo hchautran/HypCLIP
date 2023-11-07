@@ -33,20 +33,18 @@ def itm_t2i(itm_t2i_logits:torch.Tensor, targets:torch.Tensor):
     
     for index in range(int(n_text/5)):
         for i in range(5):
-            inds = np.argsort(itm_t2i_logits[5 * index + i])[::-1]
-            target = np.take(targets[5 * index + i], inds)
-            if index in target:
+            if index in targets[5 * index + i]:
+                inds = np.argsort(itm_t2i_logits[5 * index + i])[::-1]
+                target = np.take(targets[5 * index + i], inds)
                 ranks[5 * index + i] = np.where(target == index)[0][0]
             else:
-                # print(index)
                 ranks[5 * index + i] = 1e20 
-
-
     # Compute metrics
     r1 = 1.0 * len(np.where(ranks < 1)[0]) / len(ranks)
     r5 = 1.0 * len(np.where(ranks < 5)[0]) / len(ranks)
     r10 = 1.0 * len(np.where(ranks < 10)[0]) / len(ranks)
     return r1, r5, r10
+
 
 def i2t(sims_i2t):
     # sims (n_imgs, n_caps)
@@ -61,12 +59,13 @@ def i2t(sims_i2t):
                 rank = tmp
         ranks[index] = rank
 
-
     # Compute metrics
     r1 = 1.0 * len(np.where(ranks < 1)[0]) / len(ranks)
     r5 = 1.0 * len(np.where(ranks < 5)[0]) / len(ranks)
     r10 = 1.0 * len(np.where(ranks < 10)[0]) / len(ranks)
     return r1, r5, r10
+
+
 
 def t2i(sims_t2i):
     # sims (n_caps, n_imgs)

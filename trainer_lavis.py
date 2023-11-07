@@ -170,6 +170,22 @@ class MyTrainer:
                     break
         print("Finished Training")
 
+    def get_itm_result(self, text_embeds:torch.Tensor, image_embeds:torch.Tensor, sims_t2i:torch.Tensor, k=20):
+        indices = sims_t2i.topk(k).indices
+        all_logits = []
+        for i in range(indices.shape[0]):
+            k_image_embeds = image_embeds.index_select(dim=0, index=indices[i].to(image_embeds.device))
+            itm_text_inputs = text_embeds[i].expand(k_image_embeds.shape)
+            itm_image_inputs = k_image_embeds 
+            logits = self.model.itm_head(itm_image_inputs, itm_text_inputs).T
+            all_logits.append(torch.nn.functional.softmax(logits, dim=-1))
+        
+        all_logits = torch.cat(all_logits, dim=0)
+        return all_logits, indices
+
+            
+            
+
     def evaluate(self, mode="val"):
         print("Evaluating current epoch", self.current_epoch)
         self.model.eval()
@@ -204,7 +220,16 @@ class MyTrainer:
 
             metrics = evaluate_recall(sims_t2i=sims_t2i, mode=mode)
             # eu_metrics = evaluate_recall(sims_t2i=eu_sims_t2i, mode=mode)
+            if self.config.use_itm_head:
+                t2i_logits, targets = self.get_itm_result(image_embeds=all_vision_embeds, text_embeds=all_text_embeds, sims_t2i=sims_t2i.to(self.device)) 
+                i1, i5, i10= itm_t2i(t2i_logits, targets)
+                itm_r_all = i1 + i5 + i10 + metrics[f'{mode}/r10_i2t'] + metrics[f'{mode}/r5_i2t'] +  metrics[f'{mode}/r1_i2t'] 
+                metrics['itm/r1_t2i'] = i1
+                metrics['itm/r5_t2i'] = i5
+                metrics['itm/r10_t2i'] = i10
+                metrics['itm/r_all'] = itm_r_all
             metrics["epoch"] = self.current_epoch
+
             # eu_metrics["epoch"] = self.current_epoch
         return metrics
 

@@ -50,17 +50,17 @@ def get_lora_clip(config, vision_model, text_model):
     vision_peft_config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION, 
         inference_mode=False, 
-        r=32, 
-        lora_alpha=32, 
-        lora_dropout=0.1, 
+        r=64, 
+        lora_alpha=64, 
+        lora_dropout=0.2, 
         target_modules=vision_target_modules
     )
     text_peft_config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION, 
         inference_mode=False, 
-        r=32, 
-        lora_alpha=32, 
-        lora_dropout=0.1, 
+        r=64, 
+        lora_alpha=64, 
+        lora_dropout=0.2, 
         target_modules=text_target_modules
     )
     text_lora_model = get_peft_model(text_model, text_peft_config)
