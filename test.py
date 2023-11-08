@@ -1,34 +1,68 @@
 import torch
-from transformers import (
-    CLIPProcessor,
-)
-from datasets import load_dataset
-from model.hypBLIP import LavisBLIP, LavisBLIPWithQueue ,LavisHypGraphBLIPWithQueue, LavisHypGraphBLIP
-from model.perceiverModel import PerceiverLavisBLIPWithQueue 
+from model.hypCLIP import HypGraphCLIPWithQueue, HypCLIPWithQueue 
+from model.hypBLIP import HypBLIPWithQueue, HypGraphBLIPWithQueue
+
+from model.hypBLIP import LavisBLIPWithQueue ,LavisHypGraphBLIPWithQueue
+from lavis.datasets.builders import load_dataset
 # from model.hypCLIP import HypGraphCLIPWithQueue 
-from utils.data_utils import get_dataloader, lavis_preprocess_img
-from trainer import MyTrainer
-from trainer_lavis import MyTrainer as LavisTrainer, DistilTrainer
-from accelerate import find_executable_batch_size
-from utils.data_utils import get_coco
+from utils.data_utils import get_coco_dataloader, get_coco 
 from tqdm.auto import tqdm
 
 from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ, POINCARE
-    COCO_PATH = "/mnt/data/itr_dataset/dataset/coco_images"
+    from config import EUCLID, LORENTZ, POINCARE, LAVIS_BLIP_BASE_FLICKR
+    COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
 
     config = parser.parse_args()
-    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
-    dataset = get_coco(cache_dir=COCO_PATH)
-    print(len(dataset["train"]))
-    print(len(dataset["test"]))
-    print(len(dataset["val"]))
-    for batch in tqdm(dataset['train']):
-        print(vis_processors['eval'](batch['image']).shape)
-        print(txt_processors['eval'](batch['text_input']))
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
+    tokenizer = model.tokenizer
+    coco_dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
+    train_loader  = get_coco_dataloader(
+        coco_dataset=coco_dataset,
+        batch_size=config.batch_size,
+        vis_processor=vis_processors['eval'],
+        txt_processor=txt_processors['eval'],
+        tokenizer=model.tokenizer,
+        mode='train',
+    ) 
+    test_loader  = get_coco_dataloader(
+        coco_dataset=coco_dataset,
+        batch_size=5,
+        vis_processor=vis_processors['eval'],
+        txt_processor=txt_processors['eval'],
+        tokenizer=model.tokenizer,
+        mode='test',
+    ) 
+    val_loader  = get_coco_dataloader(
+        coco_dataset=coco_dataset,
+        batch_size=5,
+        vis_processor=vis_processors['eval'],
+        txt_processor=txt_processors['eval'],
+        tokenizer=model.tokenizer,
+        mode='val',
+    ) 
+    print(coco_dataset['val'])
+    print(coco_dataset['train'])
+    print(coco_dataset['test'])
+    print(len(coco_dataset['test'].img2txt))
+    print(len(coco_dataset['test'].image))
+
+    for i in range(len(coco_dataset['test'].text)):
+        img_index = coco_dataset['test'].txt2img[i]
+        img = coco_dataset['test'][img_index] 
+        print(coco_dataset['test'].text[i]
+        print(img)
+
+        # break
+
+    # for batch in tqdm(test_loader):
+        # print(batch['pixel_values'].shape)
+        # print(batch['input_ids'].shape)
+        # print(batch['attention_mask'].shape)
+        # print(batch['img_id'].shape)
+        # break
     
 
     # dataset = dataset.map(
@@ -38,49 +72,44 @@ if __name__ == "__main__":
     
 
 
-    # @find_executable_batch_size(starting_batch_size=config.batch_size)
-    # def inner_training_loop(batch_size):
-    #     config.batch_size = batch_size
-    #     train_loader = get_dataloader(
-    #         dataset["train"],
-    #         config.batch_size,
-    #         processor=model.tokenizer,
-    #         mode="train",
-    #         use_random_sampler=False,
-    #     )
-    #     test_loader = get_dataloader(
-    #         dataset["test"], 5, processor=model.tokenizer, mode="test"
-    #     )
-    #     val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
-    #     config.model_ckt = 'lavis/blip-base'
-    #     queue_model = LavisBLIPWithQueue(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
-    #     # queue_model = PerceiverLavisBLIPWithQueue(config, model) 
-    #     # distiled_model = DistilLavisBLIP(config, model)
+    @find_executable_batch_size(starting_batch_size=config.batch_size)
+    def inner_training_loop(batch_size):
+        config.batch_size = batch_size
 
-    #     trainer = LavisTrainer(
-    #         model=queue_model,
-    #         config=config,
-    #         dataset=dataset,
-    #         train_loader=train_loader,
-    #         val_loader=val_loader,
-    #         test_loader=test_loader,
-    #         processor=model.tokenizer,
-    #     )
-    #     metric = trainer.evaluate(mode='test')
-    #     print(metric)
-    #     metric = trainer.evaluate(mode='val')
-    #     print(metric)
-    #     trainer.train()
-    # # print(model)
-    # # inner_training_loop()
+        config.model_ckt = LAVIS_BLIP_BASE_FLICKR 
+        # queue_model = LavisBLIPWithQueue(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
+        # if config.use_graph:
+            # model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIPWithQueue(config)
+        # else:
+            # model = HypCLIPWithQueue(config) if "clip" in config.model_ckt else HypBLIPWithQueue(config)
+        # queue_model = PerceiverLavisBLIPWithQueue(config, model) 
+        # distiled_model = DistilLavisBLIP(config, model)
+        queue_model = LavisBLIPWithQueue(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
 
-    # config.epochs = 5 
-    # config.enable_log = True 
-    # for curv in [2.0]:
-    #     config.curv = curv
-    #     for use_graph in [False]:
-    #         config.use_graph=use_graph
-    #         for manifold in [EUCLID, LORENTZ]:
-    #             config.manifold = manifold 
-    #             inner_training_loop()
+        trainer = LavisTrainer(
+            model=queue_model,
+            config=config,
+            dataset=coco_dataset,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            test_loader=test_loader,
+            processor=model.tokenizer,
+        )
+        # metric = trainer.evaluate(mode='test')
+        # print(metric)
+        # metric = trainer.evaluate(mode='val')
+        # print(metric)
+        trainer.train()
+    # print(model)
+    # inner_training_loop()
+
+    config.epochs = 5 
+    config.enable_log = False 
+    for curv in [2.0]:
+        config.curv = curv
+        for use_graph in [False, True]:
+            config.use_graph=use_graph
+            for manifold in [LORENTZ, EUCLID]:
+                config.manifold = manifold 
+                # inner_training_loop()
     

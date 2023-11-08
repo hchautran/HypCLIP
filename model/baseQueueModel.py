@@ -7,27 +7,16 @@ from lavis.models.albef_models import compute_sim_matrix
 from lavis.models.base_model import (
     MomentumDistilationMixin,
     SharedQueueMixin,
-    all_gather_with_grad,
-    concat_all_gather,
 )
 from lavis.models.blip_models.blip import BlipBase
-from lavis.models.blip_models.blip_outputs import (
-    BlipOutput,
-    BlipSimilarity,
-    BlipIntermediateOutput,
-)
-from lavis.models.med import XBertEncoder
-from lavis.models.vit import VisionTransformerEncoder
+from lavis.models import BlipRetrieval 
 from torch import nn
 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
-from hyptorch.geoopt import PoincareBall 
 from hyptorch.geoopt import Euclidean 
 from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
-from .modules.hyp_discriminator import HypDiscriminator 
 from .modules.utils import ManifoldMapper
-from peft import get_peft_model, LoraConfig, TaskType
 
 EUCLID = 'euclidean'
 POINCARE = 'poincare'

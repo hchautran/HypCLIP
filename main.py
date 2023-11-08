@@ -76,7 +76,7 @@ if __name__ == "__main__":
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 10 
+        config.epochs = 5 
         config.enable_log = True
         config.model_ckt = model_ckt
         for manifold in [LORENTZ, EUCLID]:

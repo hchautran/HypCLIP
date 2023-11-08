@@ -8,7 +8,7 @@ from datasets import dataset_dict
 from datasets import load_dataset
 from lavis.datasets.builders import load_dataset as lavis_dataset
 class Flickr_dataset(Dataset):
-    def __init__(self, dataset, load_raw_image=False):  
+    def __init__(self, dataset):  
         self.dataset = dataset
         self.dataset_len = len(dataset)
         self.cap_per_img = 5
@@ -26,6 +26,24 @@ class Flickr_dataset(Dataset):
         }
         return out
 
+class COCO_eval_dataset(Dataset):
+    def __init__(self, dataset):  
+        self.dataset = dataset
+        self.img2txt = dataset.img2txt
+        self.txt2img= dataset.txt2img
+        self.text = dataset.text
+
+    def __len__(self):
+        return len(self.text) 
+    
+    def __getitem__(self, index): 
+        data = self.dataset[int(index / self.cap_per_img)]
+        out = {
+            'img_id': data['img_id'],
+            'pixel_values': data['pixel_values'],
+            'caption': data['caption'][int(index % self.cap_per_img)],
+        }
+        return out
 
 
 class CoFlickr_dataset(Dataset):
@@ -121,38 +139,35 @@ def co_collate_func(batch, clip_processor, blip_processor):
     data['img_id'] = torch.tensor(list(df['img_id'])) 
     return data
 
-def get_coco_dataloader(dataset, batch_size, vis_processor, txt_processor, mode='train'):
-    COCO_PATH = "/mnt/data/itr_dataset/dataset/coco_images"
-    def coco_collate_func(batch, processor):
-    # print(batch)
+def get_coco_dataloader(coco_dataset, batch_size, vis_processor, txt_processor, tokenizer ,mode='train'):
+    def coco_collate_func(batch):
+        df = pd.DataFrame(batch)
+        # print(df)
         data = {}
-        data['pixel_values']= vis_processor(batch['image'])
-        data['img_id'] = batch['image_id']
-        data['input_ids'] = batch['image_id']
-        data['attention_mask'] = txt_processor(batch['text_input'])
+        pixel_values = []
+        texts = []
+        for i, image in enumerate(list(df['image'])):
+            pixel_values.append(vis_processor(image).unsqueeze_(0))
+            texts.append(txt_processor(list(df['text_input'])[i]))
+        text_inputs = tokenizer(texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+        data['pixel_values'] = torch.cat(pixel_values, dim=0)
+        data['img_id'] = torch.tensor(list(df['image_id']))
+        data['input_ids'] = text_inputs['input_ids']
+        data['attention_mask'] = text_inputs['attention_mask']
         return data
 
-    coco_dataset = get_coco(cache_dir=COCO_PATH) 
-    custom_sampler = UniqueClassSampler(coco_dataset, batch_size)
     if mode == 'train':
         return DataLoader(
-            coco_dataset, 
+            coco_dataset[mode], 
             batch_size=batch_size, 
-            collate_fn = lambda batch: collate_func(batch, processor),
+            collate_fn=coco_collate_func,
             shuffle=True
-        )
-
-        return DataLoader(
-            flickr_dataset, 
-            batch_size=batch_size, 
-            collate_fn = lambda batch: collate_func(batch, processor),
-            sampler=custom_sampler,
         ) 
     else:
         return DataLoader(
-            flickr_dataset, 
+            coco_dataset[mode], 
             batch_size=batch_size, 
-            collate_fn = lambda batch: collate_func(batch, processor),
+            collate_fn=coco_collate_func,
             shuffle=False
         )
 
@@ -237,6 +252,18 @@ def get_flickr(flickr_ckt, cache_dir):
     return ds
 
 
-def get_coco(cache_dir):
-    coco_dataset = lavis_dataset("coco_caption", vis_path=cache_dir)
+def get_coco(vis_processor, txt_processor):
+    from lavis.datasets.datasets.retrieval_datasets import RetrievalDataset
+    coco_dataset = {}
+    coco_dataset = RetrievalDataset(
+        vis_processor=vis_processor,
+        text_processor=txt_processor,
+        ann_paths=[
+            '/mnt/data/itr_dataset/dataset/coco/annotations/coco_karpathy_train.json',
+            '/mnt/data/itr_dataset/dataset/coco/annotations/coco_karpathy_test.json',
+            '/mnt/data/itr_dataset/dataset/coco/annotations/coco_karpathy_val.json',
+        ],
+        vis_root='/mnt/data/itr_dataset/dataset/coco/images/',
+    )
+
     return coco_dataset

@@ -16,7 +16,7 @@ from lavis.models import load_model_and_preprocess, load_model
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ, POINCARE 
+    from config import EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR 
 
     config = parser.parse_args()
     model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
@@ -43,7 +43,7 @@ if __name__ == "__main__":
             dataset["test"], 5, processor=model.tokenizer, mode="test"
         )
         val_loader = get_dataloader(dataset["val"], 5, processor=model.tokenizer, mode="val")
-        config.model_ckt = 'lavis/blip-base'
+        config.model_ckt = LAVIS_BLIP_BASE_FLICKR 
         queue_model = LavisBLIPWithQueue(config, model) if not config.use_graph else LavisHypGraphBLIPWithQueue(config, model)
         # queue_model = PerceiverLavisBLIPWithQueue(config, model) 
         # distiled_model = DistilLavisBLIP(config, model)
@@ -67,11 +67,12 @@ if __name__ == "__main__":
 
     config.epochs = 5 
     config.enable_log = True 
+    config.use_margin_loss = True
     for curv in [2.0]:
         config.curv = curv
         for use_graph in [False]:
             config.use_graph=use_graph
-            for manifold in [EUCLID, LORENTZ]:
+            for manifold in [EUCLID]:
                 config.manifold = manifold 
                 inner_training_loop()
     

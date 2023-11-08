@@ -4,8 +4,8 @@ import torch.nn.functional as F
 from .seq_linear import HypSeqLinear, LorentzSeqLinear
 from hyptorch.lorentz.layers import LorentzMLR 
 from hyptorch.lorentz.manifold import CustomLorentz 
-from hyptorch.poincare.layers import MobiusAct, MobiusLinear 
 from hyptorch.poincare.layers.PMLR import UnidirectionalPoincareMLR
+from .graphs import LorentzGraphModel 
 class HypDiscriminator(nn.Module):
     def __init__(self, manifold, dim=512, layer_dims=[512], dropout=0.5, act_func='relu', fourier=False):
         super(HypDiscriminator, self).__init__()

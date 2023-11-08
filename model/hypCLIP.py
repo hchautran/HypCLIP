@@ -379,7 +379,8 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
-                shared_proj_layers=config.shared_proj_layers
+                shared_proj_layers=config.shared_proj_layers,
+                use_root=config.use_root
             )
             self.text_model = LorentzGraphModel(
                 manifold=self.manifold,
@@ -393,7 +394,8 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 graph_hidden_channels=config.graph_hidden_channels,
                 hidden_size=config.proj_layer_hidden_sizes,
                 num_hidden_layers=config.num_proj_layers,
-                shared_proj_layers=config.shared_proj_layers
+                shared_proj_layers=config.shared_proj_layers,
+                use_root=config.use_root
             )
         else:
             self.vision_model = GraphModel(
@@ -407,7 +409,8 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
-                shared_proj_layers=config.shared_proj_layers
+                shared_proj_layers=config.shared_proj_layers,
+                use_root=config.use_root
             )
             self.text_model = GraphModel(
                 ft_in=text_model.config.hidden_size,
@@ -420,7 +423,8 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
-                shared_proj_layers=config.shared_proj_layers
+                shared_proj_layers=config.shared_proj_layers,
+                use_root=config.use_root
             )
         
         self._init_queue(config, vision_model.config.projection_dim)

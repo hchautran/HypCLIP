@@ -60,6 +60,7 @@ CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 BLIP_BASE = "Salesforce/blip-image-captioning-base"
 BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
 BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
+LAVIS_BLIP_BASE_FLICKR = "blip-itm-base-flickr"
 FLICKR = "nlphuji/flickr30k"
 
 CACHE_DIR = '/mnt/data/.cache'
@@ -131,11 +132,12 @@ config_args = {
         "use_entailment_loss": (False, "use entailment loss"),
         "hyp_margin_loss_weight": (0.0, "hyperbolic margin loss weight"),
         "num_proj_layers": (3, "number of project layers"),
-        "proj_layer_hidden_sizes": (768, "hidden size of proj layers"),
+        "proj_layer_hidden_sizes": (512, "hidden size of proj layers"),
         "normalize_text_embed": (False,""),
         "normalize_image_embed": (False,""),
         "shared_proj_layers": (False, "number of project layers"),
         "use_itm_head": (True, "use itm head"),
+        "use_root": (True, "use graph root"),
         "graph_hidden_channels": (512, "graph size"),
     },
     "hybrid_model_config": {
@@ -149,10 +151,10 @@ config_args = {
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (None, "clipping radius"),
-        "vision_trainable_blocks": (2, "number of trainable blocks in vision model"),
-        "text_trainable_blocks": (12, "number of trainable blocks in text model"),
-        "num_vision_hidden_states": (2, "number of trainable blocks in vision model"),
-        "num_text_hidden_states": (2, "number of trainable blocks in text model"),
+        "vision_trainable_blocks": (1, "number of trainable blocks in vision model"),
+        "text_trainable_blocks": (1, "number of trainable blocks in text model"),
+        "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),
+        "num_text_hidden_states": (1, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (True, "freeze embedding layers"),

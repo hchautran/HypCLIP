@@ -222,6 +222,7 @@ class DistilLavisBLIP(BaseDistilModel):
                     num_layers=1,
                     hidden_size=config.proj_layer_hidden_sizes,
                     num_hidden_layers=config.num_proj_layers,
+                    use_root=config.use_root
                 )
                 self.text_model = LavisLorentzBLIPGraphHead(
                     manifold=self.manifold,
@@ -234,6 +235,7 @@ class DistilLavisBLIP(BaseDistilModel):
                     num_layers=1,
                     hidden_size=config.proj_layer_hidden_sizes,
                     num_hidden_layers=config.num_proj_layers,
+                    use_root=config.use_root
                 )
             else:
                 self.vision_model = LavisBLIPGraphHead(
@@ -246,6 +248,7 @@ class DistilLavisBLIP(BaseDistilModel):
                     num_layers=1,
                     hidden_size=config.proj_layer_hidden_sizes,
                     num_hidden_layers=config.num_proj_layers,
+                    use_root=config.use_root
                 )
                 self.text_model = LavisBLIPGraphHead(
                     ft_in=768,
@@ -257,6 +260,7 @@ class DistilLavisBLIP(BaseDistilModel):
                     num_layers=1,
                     hidden_size=config.proj_layer_hidden_sizes,
                     num_hidden_layers=config.num_proj_layers,
+                    use_root=config.use_root
                 )
 
 
@@ -301,6 +305,7 @@ class LavisHypGraphBLIP(BaseModel):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
             self.text_model = LavisLorentzBLIPGraphHead(
                 manifold=self.manifold,
@@ -314,6 +319,7 @@ class LavisHypGraphBLIP(BaseModel):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
         else:
             self.vision_model = LavisBLIPGraphHead(
@@ -327,6 +333,7 @@ class LavisHypGraphBLIP(BaseModel):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
             self.text_model = LavisBLIPGraphHead(
                 ft_in=768,
@@ -339,6 +346,7 @@ class LavisHypGraphBLIP(BaseModel):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
 
         # self.eu_logit_scale = model.temp
@@ -369,6 +377,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
             self.text_model = LavisLorentzBLIPGraphHead(
                 manifold=self.manifold,
@@ -382,6 +391,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
         else:
             self.vision_model = LavisBLIPGraphHead(
@@ -395,6 +405,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
             self.text_model = LavisBLIPGraphHead(
                 ft_in=768,
@@ -407,6 +418,7 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 hidden_size=config.proj_layer_hidden_sizes,
                 graph_hidden_channels=config.graph_hidden_channels,
                 num_hidden_layers=config.num_proj_layers,
+                use_root=config.use_root
             )
 
         # self.eu_logit_scale = model.temp

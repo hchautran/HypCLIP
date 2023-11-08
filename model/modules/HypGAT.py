@@ -21,28 +21,28 @@ from typing import Any
 import torch.nn as nn
 
 
-# class LorentzGCN(MessagePassing):
-#     def __init__(self, manifold:CustomLorentz, ft_in, hidden_channels, dropout=0.4):
-#         super().__init__(aggr="add")
-#         self.manifold = manifold
-#         self.ft_in = ft_in
-#         self.hidden_channels = hidden_channels
-#         self.linear = LorentzLinear(manifold, ft_in + 1, hidden_channels + 1, dropout=dropout)
-#         # self.act = LorentzAct(nn.GELU(), manifold=manifold)
+class LorentzGCN(MessagePassing):
+    def __init__(self, manifold:CustomLorentz, ft_in, hidden_channels, dropout=0.4):
+        super().__init__(aggr="add")
+        self.manifold = manifold
+        self.ft_in = ft_in
+        self.hidden_channels = hidden_channels
+        self.linear = LorentzLinear(manifold, ft_in + 1, hidden_channels + 1, dropout=dropout)
+        # self.act = LorentzAct(nn.GELU(), manifold=manifold)
 
-#     def forward(self, x, edge_index):
-#         out = self.propagate(edge_index, x=x)
-#         self.manifold.assert_check_point_on_manifold(x)
-#         out= self.manifold.projx(out + x)
-#         self.manifold.assert_check_point_on_manifold(x)
-#         return self.linear(out)
+    def forward(self, x, edge_index):
+        out = self.propagate(edge_index, x=x)
+        self.manifold.assert_check_point_on_manifold(x)
+        out= self.manifold.projx(out + x)
+        self.manifold.assert_check_point_on_manifold(x)
+        return self.linear(out)
 
-#     def message(self, x_j):
-#         return x_j
+    def message(self, x_j):
+        return x_j
 
-#     def message_and_aggregate(self, adj_t, x):
-#         output = adj_t.matmul(x)
-#         return output 
+    def message_and_aggregate(self, adj_t, x):
+        output = adj_t.matmul(x)
+        return output 
 
 
 class LorentzGAT(MessagePassing):

@@ -7,9 +7,16 @@ from model.baseQueueModel import BaseModelWithQueue
 from tqdm.auto import tqdm
 import torch
 from config import EUCLID, POINCARE, LORENTZ
+from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_FLICKR 
 import time
 
-
+names = {
+   CLIP_BASE_PATCH_32: 'clip_base_32', 
+   CLIP_BASE_PATCH_32: 'clip_base_16',
+   CLIP_LARGE_PATCH_14: 'clip_large_14', 
+   BLIP_BASE_FLICKR: 'hf_blip_base', 
+   LAVIS_BLIP_BASE_FLICKR: 'lv_blip_base' 
+}
 
 class MyTrainer:
     def __init__(
@@ -84,7 +91,7 @@ class MyTrainer:
         ) = self.accelerator.prepare(
             self.optimizer, train_loader, val_loader, test_loader, self.scheduler
         )
-        self.name = f'{config.model_ckt.split("/")[-1]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}'
+        self.name = f'{names[config.model_ckt]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.use_graph}'
         print("RUNNING:", self.name)
 
         if self.enable_log:
@@ -158,19 +165,20 @@ class MyTrainer:
                 elif epoch > self.config.min_epochs:
                     waiting += 1
                 if waiting < self.patience:
-                    self.train_loader = self.accelerator.prepare(
-                        get_dataloader(
-                            self.dataset["train"],
-                            self.config.batch_size,
-                            processor=self.processor,
-                            mode="train",
-                        )
-                    )
+                    pass 
+                #     self.train_loader = self.accelerator.prepare(
+                #         get_dataloader(
+                #             self.dataset["train"],
+                #             self.config.batch_size,
+                #             processor=self.processor,
+                #             mode="train",
+                #         )
+                #     )
                 else:
                     break
         print("Finished Training")
 
-    def get_itm_result(self, text_embeds:torch.Tensor, image_embeds:torch.Tensor, sims_t2i:torch.Tensor, k=20):
+    def get_itm_result(self, text_embeds:torch.Tensor, image_embeds:torch.Tensor, sims_t2i:torch.Tensor, k=10):
         indices = sims_t2i.topk(k).indices
         all_logits = []
         for i in range(indices.shape[0]):
@@ -312,7 +320,8 @@ class DistilTrainer:
         ) = self.accelerator.prepare(
             self.optimizer, train_loader, val_loader, test_loader, self.scheduler
         )
-        self.name = f'{config.model_ckt.split("/")[-1]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.ft_out}'
+        
+        self.name = f'{names[config.model_ckt]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.use_graph}'
         print("RUNNING:", self.name)
 
         if self.enable_log:
