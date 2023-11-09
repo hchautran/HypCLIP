@@ -85,3 +85,48 @@ def t2i(sims_t2i):
     r5 = 1.0 * len(np.where(ranks < 5)[0]) / len(ranks)
     r10 = 1.0 * len(np.where(ranks < 10)[0]) / len(ranks)
     return r1, r5, r10
+
+def report_metrics(scores_i2t, scores_t2i, txt2img, img2txt, mode='val'):
+
+    # Images->Text
+    ranks = np.zeros(scores_i2t.shape[0])
+    for index, score in enumerate(scores_i2t):
+        inds = np.argsort(score)[::-1]
+        # Score
+        rank = 1e20
+        for i in img2txt[index]:
+            tmp = np.where(inds == i)[0][0]
+            if tmp < rank:
+                rank = tmp
+        ranks[index] = rank
+
+    # Compute metrics
+    tr1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+    tr5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+    tr10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+
+    # Text->Images
+    ranks = np.zeros(scores_t2i.shape[0])
+
+    for index, score in enumerate(scores_t2i):
+        inds = np.argsort(score)[::-1]
+        ranks[index] = np.where(inds == txt2img[index])[0][0]
+
+    # Compute metrics
+    ir1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+    ir5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+    ir10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+    output = {
+        f'{mode}/r1_i2t': tr1,
+        f'{mode}/r5_i2t': tr5,
+        f'{mode}/r10_i2t': tr10,
+        f'{mode}/r_i2t': tr1 + tr5 + tr10,
+        f'{mode}/r1_t2i': ir1,
+        f'{mode}/r5_t2i': ir5,
+        f'{mode}/r10_t2i': ir10,
+        f'{mode}/r_t2i': ir1 + ir5 + ir10,
+        f'{mode}/r_all': tr1 + tr5 + tr10 + ir1 + ir5 + ir10,
+    }
+
+
+    return eval_result

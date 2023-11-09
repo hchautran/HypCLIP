@@ -396,7 +396,7 @@ class LorentzGraphModel(nn.Module):
                 pooled_output = outputs[1]
             pooled_output = self.head(pooled_output)
             if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
                 for hidden_state in outputs.hidden_states:
                     lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
 

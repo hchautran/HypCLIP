@@ -14,11 +14,12 @@ if __name__ == "__main__":
     from config import parser
     from config import EUCLID, LORENTZ, POINCARE, LAVIS_BLIP_BASE_FLICKR
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
+    FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
     config = parser.parse_args()
-    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
     tokenizer = model.tokenizer
-    coco_dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
+    coco_dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
     train_loader  = get_coco_dataloader(
         coco_dataset=coco_dataset,
         batch_size=config.batch_size,
@@ -49,10 +50,13 @@ if __name__ == "__main__":
     print(len(coco_dataset['test'].img2txt))
     print(len(coco_dataset['test'].image))
 
+    for data in coco_dataset['train']:
+        print(data)
+
     for i in range(len(coco_dataset['test'].text)):
         img_index = coco_dataset['test'].txt2img[i]
         img = coco_dataset['test'][img_index] 
-        print(coco_dataset['test'].text[i]
+        print(coco_dataset['test'].text[i])
         print(img)
 
         # break

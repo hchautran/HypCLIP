@@ -104,7 +104,7 @@ config_args = {
             "The number of steps that should pass before gradients are accumulated",
         ),
         "lorentz_pos_margin": (
-            0.0,
+            0.8,
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
@@ -112,11 +112,11 @@ config_args = {
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
-            1.0,
+            0.75,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_neg_margin": (
-            0.9,
+            0.75,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "max_txt_len": (35, "max_txt_len"),
@@ -151,8 +151,8 @@ config_args = {
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (None, "clipping radius"),
-        "vision_trainable_blocks": (1, "number of trainable blocks in vision model"),
-        "text_trainable_blocks": (1, "number of trainable blocks in text model"),
+        "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
+        "text_trainable_blocks": (12, "number of trainable blocks in text model"),
         "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),
         "num_text_hidden_states": (1, "number of trainable blocks in text model"),
         "ft_out": (512, "final project dimension"),

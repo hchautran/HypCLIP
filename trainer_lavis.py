@@ -4,6 +4,7 @@ from utils.data_utils import get_dataloader
 from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import evaluate_recall, itm_t2i
 from model.baseQueueModel import BaseModelWithQueue
+from lavis import BlipRetrieval
 from tqdm.auto import tqdm
 import torch
 from config import EUCLID, POINCARE, LORENTZ
@@ -12,7 +13,7 @@ import time
 
 names = {
    CLIP_BASE_PATCH_32: 'clip_base_32', 
-   CLIP_BASE_PATCH_32: 'clip_base_16',
+   CLIP_BASE_PATCH_16: 'clip_base_16',
    CLIP_LARGE_PATCH_14: 'clip_large_14', 
    BLIP_BASE_FLICKR: 'hf_blip_base', 
    LAVIS_BLIP_BASE_FLICKR: 'lv_blip_base' 
@@ -165,15 +166,15 @@ class MyTrainer:
                 elif epoch > self.config.min_epochs:
                     waiting += 1
                 if waiting < self.patience:
-                    pass 
-                #     self.train_loader = self.accelerator.prepare(
-                #         get_dataloader(
-                #             self.dataset["train"],
-                #             self.config.batch_size,
-                #             processor=self.processor,
-                #             mode="train",
-                #         )
-                #     )
+                    # pass 
+                    self.train_loader = self.accelerator.prepare(
+                        get_dataloader(
+                            self.dataset["train"],
+                            self.config.batch_size,
+                            processor=self.processor,
+                            mode="train",
+                        )
+                    )
                 else:
                     break
         print("Finished Training")
@@ -420,11 +421,6 @@ class DistilTrainer:
         # print(all_logits.shape)
         # print((indices/5).int())
         return all_logits, indices
-
-            
-        
-        
-        
 
     def evaluate(self, mode="val"):
         print("Evaluating epoch", self.current_epoch)
