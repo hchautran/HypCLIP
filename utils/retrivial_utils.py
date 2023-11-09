@@ -86,7 +86,9 @@ def t2i(sims_t2i):
     r10 = 1.0 * len(np.where(ranks < 10)[0]) / len(ranks)
     return r1, r5, r10
 
-def report_metrics(scores_i2t, scores_t2i, txt2img, img2txt, mode='val'):
+def report_metrics(scores_i2t:torch.Tensor, scores_t2i:torch.Tensor, txt2img, img2txt, mode='val'):
+    scores_i2t = scores_i2t.numpy()
+    scores_t2i = scores_t2i.numpy()
 
     # Images->Text
     ranks = np.zeros(scores_i2t.shape[0])
@@ -127,6 +129,5 @@ def report_metrics(scores_i2t, scores_t2i, txt2img, img2txt, mode='val'):
         f'{mode}/r_t2i': ir1 + ir5 + ir10,
         f'{mode}/r_all': tr1 + tr5 + tr10 + ir1 + ir5 + ir10,
     }
+    return output
 
-
-    return eval_result

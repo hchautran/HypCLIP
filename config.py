@@ -61,9 +61,12 @@ BLIP_BASE = "Salesforce/blip-image-captioning-base"
 BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
 BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
 LAVIS_BLIP_BASE_FLICKR = "blip-itm-base-flickr"
+LAVIS_BLIP_BASE_COCO= "blip-itm-base-coco"
 FLICKR = "nlphuji/flickr30k"
 
 CACHE_DIR = '/mnt/data/.cache'
+COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
+FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
 # CACHE_DIR = '/Volumes/ExtraSpace/.cache'
 config_args = {
@@ -104,7 +107,7 @@ config_args = {
             "The number of steps that should pass before gradients are accumulated",
         ),
         "lorentz_pos_margin": (
-            0.8,
+            0.0,
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
@@ -112,22 +115,22 @@ config_args = {
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
         "euclid_pos_margin": (
-            0.75,
+            1.0,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_neg_margin": (
-            0.75,
+            0.9,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "max_txt_len": (35, "max_txt_len"),
         "negative_all_rank": (False, "negative_all_rank"),
         "alpha": (0.4, "alpha"),
-        "queue_size": (66000, "queue size"),
-        "batch_size": (60, "batch size"),
-        "eval_freq": (1100, "how often to compute val metrics (in epochs)"),
+        "queue_size": (65000, "queue size"),
+        "batch_size": (50, "batch size"),
+        "eval_freq": (1450, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (True, "enable log"),
-        "use_margin_loss": (False, "use margin loss"),
+        "use_margin_loss": (True, "use margin loss"),
         "use_graph_loss": (False, "use margin loss for graph"),
         "use_entailment_loss": (False, "use entailment loss"),
         "hyp_margin_loss_weight": (0.0, "hyperbolic margin loss weight"),

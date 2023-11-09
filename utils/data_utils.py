@@ -3,7 +3,7 @@ import pandas as pd
 from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm.auto import tqdm
 import numpy as np
-from transformers import CLIPProcessor 
+from transformers import CLIPProcessor, BlipProcessor 
 from datasets import dataset_dict 
 from datasets import load_dataset
 from lavis.datasets.builders import load_dataset as lavis_dataset
@@ -26,24 +26,43 @@ class Flickr_dataset(Dataset):
         }
         return out
 
-class COCO_eval_dataset(Dataset):
-    def __init__(self, dataset):  
+class EvalDataset(Dataset):
+    def __init__(self, dataset, vis_processor, tokenizer, txt_processor=None):  
         self.dataset = dataset
+        self.txt_processor = txt_processor
+        self.vis_processor = vis_processor 
+        self.tokenizer = tokenizer 
         self.img2txt = dataset.img2txt
-        self.txt2img= dataset.txt2img
+        self.txt2img = dataset.txt2img
         self.text = dataset.text
+        self.image = dataset.image
 
     def __len__(self):
-        return len(self.text) 
+        return len(self.dataset) 
     
     def __getitem__(self, index): 
-        data = self.dataset[int(index / self.cap_per_img)]
-        out = {
-            'img_id': data['img_id'],
-            'pixel_values': data['pixel_values'],
-            'caption': data['caption'][int(index % self.cap_per_img)],
-        }
-        return out
+        data =  self.dataset[index]
+        cap_indexes = self.dataset.img2txt[index]
+        captions = []
+        output = {}
+        for i in cap_indexes:
+            if self.txt_processor is not None:
+                captions.append(self.txt_processor(self.text[i]))
+            else:
+                captions.append(self.text[i])
+
+        if isinstance(self.tokenizer, CLIPProcessor) or isinstance(self.tokenizer, BlipProcessor):
+            text_inputs = self.tokenizer(text=captions, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+            output['pixel_values'] = self.vis_processor(images=data['image'], return_tensors='pt')['pixel_values']
+        else:
+            text_inputs = self.tokenizer(captions, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+            output['pixel_values'] = self.vis_processor(data['image']).unsqueeze_(0)
+
+
+        output['img_id'] = data['index']
+        output['input_ids'] = text_inputs['input_ids']
+        output['attention_mask'] = text_inputs['attention_mask']
+        return output
 
 
 class CoFlickr_dataset(Dataset):
@@ -139,17 +158,26 @@ def co_collate_func(batch, clip_processor, blip_processor):
     data['img_id'] = torch.tensor(list(df['img_id'])) 
     return data
 
-def get_coco_dataloader(coco_dataset, batch_size, vis_processor, txt_processor, tokenizer ,mode='train'):
+def get_dataloader(dataset,  vis_processor, tokenizer, txt_processor=None, mode='train', batch_size=1):
     def coco_collate_func(batch):
         df = pd.DataFrame(batch)
-        # print(df)
         data = {}
         pixel_values = []
         texts = []
+
         for i, image in enumerate(list(df['image'])):
-            pixel_values.append(vis_processor(image).unsqueeze_(0))
-            texts.append(txt_processor(list(df['text_input'])[i]))
-        text_inputs = tokenizer(texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+            if isinstance(vis_processor, CLIPProcessor) or isinstance(vis_processor, BlipProcessor):
+                pixel_values.append(vis_processor(images=image, return_tensors='pt')['pixel_values'])
+            else:
+                pixel_values.append(vis_processor(image).unsqueeze_(0))
+            if txt_processor is not None:
+                texts.append(txt_processor(list(df['text_input'])[i]))
+            else:
+                texts.append(list(df['text_input'])[i])
+        if isinstance(tokenizer, CLIPProcessor) or isinstance(tokenizer, BlipProcessor):
+            text_inputs = tokenizer(text=texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+        else:
+            text_inputs = tokenizer(texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
         data['pixel_values'] = torch.cat(pixel_values, dim=0)
         data['img_id'] = torch.tensor(list(df['image_id']))
         data['input_ids'] = text_inputs['input_ids']
@@ -158,44 +186,45 @@ def get_coco_dataloader(coco_dataset, batch_size, vis_processor, txt_processor, 
 
     if mode == 'train':
         return DataLoader(
-            coco_dataset[mode], 
+            dataset[mode], 
             batch_size=batch_size, 
             collate_fn=coco_collate_func,
             shuffle=True
         ) 
     else:
-        return DataLoader(
-            coco_dataset[mode], 
-            batch_size=batch_size, 
-            collate_fn=coco_collate_func,
-            shuffle=False
+        cur_dataset = EvalDataset(
+            dataset[mode], 
+            vis_processor=vis_processor,
+            txt_processor=txt_processor,
+            tokenizer=tokenizer
         )
+        return cur_dataset
 
-def get_dataloader(dataset, batch_size, processor, mode='train', use_random_sampler=False):
-    flickr_dataset = Flickr_dataset(dataset) 
-    custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
-    if mode == 'train':
-        if use_random_sampler:
-            return DataLoader(
-                flickr_dataset, 
-                batch_size=batch_size, 
-                collate_fn = lambda batch: collate_func(batch, processor),
-                shuffle=True
-            )
+# def get_dataloader(dataset, batch_size, processor, mode='train', use_random_sampler=False):
+#     flickr_dataset = Flickr_dataset(dataset) 
+#     custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
+#     if mode == 'train':
+#         if use_random_sampler:
+#             return DataLoader(
+#                 flickr_dataset, 
+#                 batch_size=batch_size, 
+#                 collate_fn = lambda batch: collate_func(batch, processor),
+#                 shuffle=True
+#             )
 
-        return DataLoader(
-            flickr_dataset, 
-            batch_size=batch_size, 
-            collate_fn = lambda batch: collate_func(batch, processor),
-            sampler=custom_sampler,
-        ) 
-    else:
-        return DataLoader(
-            flickr_dataset, 
-            batch_size=batch_size, 
-            collate_fn = lambda batch: collate_func(batch, processor),
-            shuffle=False
-        )
+#         return DataLoader(
+#             flickr_dataset, 
+#             batch_size=batch_size, 
+#             collate_fn = lambda batch: collate_func(batch, processor),
+#             sampler=custom_sampler,
+#         ) 
+#     else:
+#         return DataLoader(
+#             flickr_dataset, 
+#             batch_size=batch_size, 
+#             collate_fn = lambda batch: collate_func(batch, processor),
+#             shuffle=False
+#         )
 
 def get_co_dataloader(dataset, batch_size, clip_processor, blip_processor,mode='train', use_random_sampler=False):
     flickr_dataset = CoFlickr_dataset(dataset) 
@@ -267,3 +296,28 @@ def get_coco(vis_processor, txt_processor):
     )
 
     return coco_dataset
+
+def get_loaders(config, dataset, vis_processor, tokenizer, txt_processor=None):
+    train_loader  = get_dataloader(
+        dataset=dataset,
+        batch_size=config.batch_size,
+        vis_processor=vis_processor,
+        txt_processor=txt_processor,
+        tokenizer=tokenizer,
+        mode='train',
+    ) 
+    test_loader  = get_dataloader(
+        dataset=dataset,
+        vis_processor=vis_processor,
+        txt_processor=txt_processor,
+        tokenizer=tokenizer,
+        mode='test',
+    ) 
+    val_loader  = get_dataloader(
+        dataset=dataset,
+        vis_processor=vis_processor,
+        txt_processor=txt_processor,
+        tokenizer=tokenizer,
+        mode='val',
+    ) 
+    return train_loader, val_loader, test_loader
