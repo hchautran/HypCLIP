@@ -195,11 +195,11 @@ class LorentzGNN(torch.nn.Module):
         super(LorentzGNN, self).__init__()
         torch.manual_seed(12345)
         self.manifold = manifold
-        self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4 ,dropout=0.6)  
+        self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4 ,dropout=0.7)  
         # self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.5)
         self.act1 = nn.GELU()
         # self.act1 = LorentzAct(nn.GELU(), manifold=manifold)
-        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4 ,dropout=0.6)
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4 ,dropout=0.7)
         # self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         # self.act2 = LorentzAct(nn.GELU(), manifold=manifold)
         # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
@@ -209,7 +209,7 @@ class LorentzGNN(torch.nn.Module):
             LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.3),
             LorentzAct(nn.GELU(), manifold=manifold),
         )
-        self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.1)
+        self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.3)
 
     def forward(self, graphs, batch_size, use_root=False):
         x, edge_index, _ = graphs.x, graphs.edge_index, graphs.batch

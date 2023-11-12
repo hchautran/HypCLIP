@@ -79,7 +79,7 @@ class MyTrainer:
             )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=2
+            self.optimizer, 'max', factor=0.1, patience=1
         )
         
         (
@@ -115,7 +115,7 @@ class MyTrainer:
                 running_loss = 0.0
                 print('train loader length:', len(self.train_loader))
                 for data in tqdm(self.train_loader):
-                    start = time.time()
+                    if data['pixel_values'].shape[0] < self.config.batch_size: break
                     self.accelerator.free_memory()
                     self.optimizer.zero_grad()
                     current_step += 1
@@ -145,37 +145,23 @@ class MyTrainer:
                         print(stats)
                         print("Loss: {}".format(loss.item()))
                     if self.eval_freq != -1 and (current_step + 1) % self.eval_freq == 0:
-                        metrics = self.evaluate(mode='val')
+
+                        test_metrics = self.evaluate(mode='test')
+                        val_metrics = self.evaluate(mode='val')
+                        self.log(test_metrics)
+                        self.log(val_metrics)
+                        print(test_metrics)
+                        print(val_metrics)
+
+                        self.scheduler.step(test_metrics["test/r_all"])
+                        if best_r_all < test_metrics["test/r_all"]:
+                            best_r_all = test_metrics["test/r_all"]
+                            self.log({"best r_all": test_metrics["test/r_all"]})
+                            print("best r all", best_r_all)
+
                         self.model.train()
-                        print(metrics)
-                        self.log(metrics)
-                        self.scheduler.step(metrics["val/r_all"])
-                    print('infer time', time.time() - start)
 
                     
-                    # print('infer time', time.time() - start)
-                metrics= self.evaluate(mode='test')
-                print(metrics)
-                self.log(metrics)
-                if best_r_all < metrics["test/r_all"]:
-                    waiting = 0
-                    best_r_all = metrics["test/r_all"]
-                    self.log({"best r_all": metrics["test/r_all"]})
-                    print("best r all", best_r_all)
-                elif epoch > self.config.min_epochs:
-                    waiting += 1
-                if waiting < self.patience:
-                    pass 
-                #     self.train_loader = self.accelerator.prepare(
-                #         get_dataloader(
-                #             self.dataset["train"],
-                #             self.config.batch_size,
-                #             processor=self.processor,
-                #             mode="train",
-                #         )
-                #     )
-                else:
-                    break
         print("Finished Training")
 
     def get_itm_result(self, text_embeds:torch.Tensor, image_embeds:torch.Tensor, sims_t2i:torch.Tensor, k=10):
@@ -198,6 +184,7 @@ class MyTrainer:
         from torch.utils.data import DataLoader
         print("Evaluating current epoch", self.current_epoch)
         self.model.eval()
+
         dataset = self.val_loader if mode == "val" else self.test_loader
         all_text_embeds = []
         all_vision_embeds = []

@@ -87,7 +87,7 @@ if __name__ == "__main__":
         config.model_ckt = model_ckt
         for manifold in [LORENTZ, EUCLID]:
             config.manifold = manifold
-            for use_graph in [False, True]:
+            for use_graph in [True, False]:
                 config.use_graph = use_graph 
                 for use_margin_loss in [True]:
                     config.use_margin_loss = use_margin_loss
