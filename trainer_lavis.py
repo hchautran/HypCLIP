@@ -16,7 +16,7 @@ names = {
    CLIP_BASE_PATCH_16: 'clip_base_16',
    CLIP_LARGE_PATCH_14: 'clip_large_14', 
    BLIP_BASE_FLICKR: 'hf_blip_base', 
-   LAVIS_BLIP_BASE_FLICKR: 'lv_blip_base',
+   LAVIS_BLIP_BASE_FLICKR: 'lv_blip_base_FLICKR',
    LAVIS_BLIP_BASE_COCO: 'lv_blip_base_COCO' 
 }
 

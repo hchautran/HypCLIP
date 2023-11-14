@@ -80,7 +80,7 @@ class ManifoldMapper(nn.Module):
             if use_normalized:
                 x = F.normalize(x, p=2, dim=-1) 
             x = F.pad(x, (1,0), "constant", 0)
-            out = self.manifold.projx(x)
+            out = self.manifold.expmap0(x)
         else:
             out = self.manifold.expmap0(x)
         return out 

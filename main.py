@@ -5,11 +5,8 @@ from transformers import (
 from lavis.datasets.builders import load_dataset
 from model.hypCLIP import HypGraphCLIPWithQueue, HypCLIPWithQueue 
 from model.hypBLIP import HypBLIPWithQueue, HypGraphBLIPWithQueue
-from model.perceiverModel import PerceiverCLIPWithQueue
 from transformers import CLIPProcessor, BlipProcessor
 from trainer_lavis import MyTrainer as LavisTrainer
-from utils.data_utils import get_dataloader, preprocess_img
-from trainer import MyTrainer
 from accelerate import find_executable_batch_size
 from utils.data_utils import get_loaders 
 
@@ -44,21 +41,6 @@ if __name__ == "__main__":
             txt_processor=None,
             tokenizer=processor,
         )
-        # for batch in train_loader:
-        #     print(batch['input_ids'].shape)
-        #     print(batch['attention_mask'].shape)
-        #     print(batch['pixel_values'].shape)
-        #     break
-        # for batch in test_loader:
-        #     print(batch['input_ids'].shape)
-        #     print(batch['attention_mask'].shape)
-        #     print(batch['pixel_values'].shape)
-        #     break
-        # for batch in val_loader:
-        #     print(batch['input_ids'].shape)
-        #     print(batch['attention_mask'].shape)
-        #     print(batch['pixel_values'].shape)
-        #     break
 
 
         @find_executable_batch_size(starting_batch_size=config.batch_size)
@@ -82,13 +64,14 @@ if __name__ == "__main__":
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 3 
-        config.enable_log = True
-        config.model_ckt = model_ckt
-        for manifold in [LORENTZ, EUCLID]:
-            config.manifold = manifold
-            for use_graph in [True, False]:
-                config.use_graph = use_graph 
-                for use_margin_loss in [True]:
-                    config.use_margin_loss = use_margin_loss
-                    inner_training_loop()
+    config.epochs = 5 
+    config.enable_log = True 
+    config.use_entailment_loss = True 
+    config.use_margin_loss = True  
+    for curv in [2.0]:
+        config.curv = curv
+        for use_graph in [True, False]:
+            config.use_graph=use_graph
+            for manifold in [LORENTZ, EUCLID]:
+                config.manifold = manifold 
+                inner_training_loop(config.batch_size)

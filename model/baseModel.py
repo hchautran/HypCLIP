@@ -98,8 +98,8 @@ class BaseModel(nn.Module):
     def etailment_loss(self, text_feats:torch.Tensor, image_feats:torch.Tensor):
         entailment_loss = torch.tensor(0.0) 
         if isinstance(self.manifold, Lorentz):
-            angle = self.manifold.oxy_angle(text_feats, image_feats)
-            aperture = self.manifold.half_aperture(text_feats)
+            angle = self.manifold.oxy_angle(image_feats, text_feats)
+            aperture = self.manifold.half_aperture(image_feats)
             entailment_loss = torch.clamp(angle - aperture, min=0).mean()
         
         return entailment_loss

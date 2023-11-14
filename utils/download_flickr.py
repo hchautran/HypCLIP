@@ -15,6 +15,7 @@ from lavis.common.utils import (
     get_abs_path,
     get_cache_path,
 )
+
 import opendatasets as od
 
 
@@ -44,8 +45,10 @@ def move_directory(src_dir, dst_dir):
 
 
 if __name__ == "__main__":
+    import lavis 
+    lavis_path = '/'.join(lavis.__file__.split('/')[:-1])
 
-    config_path = get_abs_path("configs/datasets/flickr30k/defaults.yaml")
+    config_path = get_abs_path(f"{lavis_path}/configs/datasets/flickr30k/defaults.yaml")
 
     storage_dir = OmegaConf.load(
         config_path
