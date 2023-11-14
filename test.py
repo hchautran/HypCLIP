@@ -15,13 +15,13 @@ if __name__ == "__main__":
     from config import parser
     from config import EUCLID, LORENTZ, LAVIS_BLIP_BASE_COCO, LAVIS_BLIP_BASE_FLICKR
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
-    FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
+    # FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
     config = parser.parse_args()
     model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
     tokenizer = model.tokenizer
-    # dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
-    dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
+    dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
+    # dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
     train_loader, val_loader, test_loader= get_loaders(
         config, 
         dataset,
@@ -29,6 +29,10 @@ if __name__ == "__main__":
         txt_processor=txt_processors['eval'],
         tokenizer=model.tokenizer,
     )
+    for batch in tqdm(train_loader):
+        print(batch['pixel_values'].shape)
+    for batch in tqdm(test_loader):
+        print(batch['pixel_values'].shape)
 
 
     def inner_training_loop(batch_size):
@@ -60,4 +64,4 @@ if __name__ == "__main__":
                     config.use_graph=use_graph
                     for manifold in [LORENTZ, EUCLID]:
                         config.manifold = manifold 
-                        inner_training_loop(config.batch_size)
+                        # inner_training_loop(config.batch_size)

@@ -55,7 +55,7 @@ if __name__ == "__main__":
     ).datasets.flickr30k.build_info.images.storage
 
     storage_dir = Path(get_cache_path(storage_dir))
-    download_dir = storage_dir.parent / "download"
+    download_dir = storage_dir.parent /"download"
 
     if storage_dir.exists():
         print(f"Dataset already exists at {storage_dir}. Aborting.")
