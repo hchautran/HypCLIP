@@ -248,7 +248,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             aperture = self.manifold.half_aperture(x)
             entailment_loss = torch.clamp(angle - aperture, min=0).mean()
             
-            return entailment_loss
+        return entailment_loss
 
     def forward(
         self, 

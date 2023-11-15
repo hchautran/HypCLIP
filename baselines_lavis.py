@@ -8,7 +8,7 @@ from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
     from config import parser
-    from config import LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
+    from config import EUCLID, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
@@ -23,8 +23,11 @@ if __name__ == "__main__":
         dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
 
 
+
     def inner_training_loop(batch_size):
+
         config.batch_size = batch_size
+
         train_loader, val_loader, test_loader= get_loaders(
             config, 
             dataset,
@@ -41,20 +44,16 @@ if __name__ == "__main__":
             val_loader=val_loader,
             test_loader=test_loader,
         )
-        print(trainer.evaluate('test'))
-        print(trainer.evaluate('val'))
-        # trainer.train()
-
-
+        # print(trainer.evaluate('test'))
+        # print(trainer.evaluate('val'))
+        trainer.train()
 
     config.epochs = 3 
-    config.enable_log = False 
-    config.manifold = LORENTZ 
+    config.enable_log = True 
+    config.manifold = EUCLID
     config.use_entailment_loss = False 
-    for curv in [1.0, 2.0, 10.0]:
-        config.curv = curv
-        for margin_loss in [False, True]:
-            config.margin_loss = margin_loss 
-            for use_graph in [True, False]:
-                config.use_graph=use_graph
-                inner_training_loop(config.batch_size)
+    for use_margin_loss in [False, True]:
+        config.use_margin_loss = use_margin_loss
+        for use_graph in [False, True]:
+            config.use_graph=use_graph
+            inner_training_loop(config.batch_size)
