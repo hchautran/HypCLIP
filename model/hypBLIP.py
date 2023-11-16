@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from .modules.model import BLIPEncoder
-from .modules.lavis_model import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
+from .modules.blip import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
 from transformers import BlipForImageTextRetrieval
 from .modules.utils import ManifoldMapper
 from model.baseModel import BaseModel 

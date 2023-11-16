@@ -16,7 +16,7 @@ from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 from lavis.models import BlipRetrieval
-from .modules.lavis_model import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
+from .modules.blip import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
 
 EUCLID = "euclidean"
 POINCARE = "poincare"

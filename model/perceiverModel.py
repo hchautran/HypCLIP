@@ -5,7 +5,7 @@ from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 import torch.nn.functional as F
 from transformers import BlipForImageTextRetrieval
-from .modules.lavis_model import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
+from .modules.blip import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
 from transformers import PerceiverConfig
 from .modules.utils import freeze_blip, ManifoldMapper 
 from .modules.perceiver import MultiModalModel 

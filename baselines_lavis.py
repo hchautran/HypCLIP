@@ -44,9 +44,9 @@ if __name__ == "__main__":
             val_loader=val_loader,
             test_loader=test_loader,
         )
-        # print(trainer.evaluate('test'))
-        # print(trainer.evaluate('val'))
-        trainer.train()
+        print(trainer.evaluate('test'))
+        print(trainer.evaluate('val'))
+        # trainer.train()
 
     config.epochs = 3 
     config.enable_log = True 

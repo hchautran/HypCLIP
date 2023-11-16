@@ -153,7 +153,7 @@ config_args = {
         "atol": (1e-1, "The relative tolerance parameter"),
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
-        "clip_radius": (2.5, "clipping radius"),
+        "clip_radius": (None, "clipping radius"),
         "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (12, "number of trainable blocks in text model"),
         "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),

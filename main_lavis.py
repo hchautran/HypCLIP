@@ -3,7 +3,7 @@ from lavis.datasets.builders import load_dataset
 from trainer_queue import MyTrainer as LavisTrainer 
 from utils.data_utils import  get_loaders
 from tqdm.auto import tqdm
-
+from lavis import Blip2Qformer
 from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
@@ -41,19 +41,19 @@ if __name__ == "__main__":
             val_loader=val_loader,
             test_loader=test_loader,
         )
-        print(trainer.evaluate('test'))
-        print(trainer.evaluate('val'))
-        # trainer.train()
+        # print(trainer.evaluate('test'))
+        # print(trainer.evaluate('val'))
+        trainer.train()
 
 
 
-    config.epochs = 3 
-    config.enable_log = False 
+    config.epochs = 5 
+    config.enable_log = True 
     config.manifold = LORENTZ 
     config.use_entailment_loss = False 
     for curv in [1.0, 2.0, 10.0]:
         config.curv = curv
-        for margin_loss in [False, True]:
+        for margin_loss in [True, False]:
             config.margin_loss = margin_loss 
             for use_graph in [True, False]:
                 config.use_graph=use_graph

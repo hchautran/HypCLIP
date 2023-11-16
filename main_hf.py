@@ -61,7 +61,7 @@ if __name__ == "__main__":
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 3 
+        config.epochs = 5 
         config.enable_log = True 
         config.manifold = LORENTZ 
         config.use_entailment_loss = False 
