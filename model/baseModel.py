@@ -202,7 +202,7 @@ class BaseModel(nn.Module):
         input_ids: Optional[torch.LongTensor] = None,
         pixel_values: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
+        image_id: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CLIPOutput]:
 
         vision_outputs = self.vision_model(
@@ -213,7 +213,6 @@ class BaseModel(nn.Module):
         text_outputs = self.text_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            position_ids=position_ids,
         )
 
         image_embeds = vision_outputs[1]
@@ -238,12 +237,12 @@ class BaseModel(nn.Module):
             position_ids=position_ids,
         )
         text_embeds = text_outputs[1]
-        return text_embeds
+        return text_embeds, text_outputs[0] 
 
     def get_vision_features(self, pixel_values:torch.Tensor):
         vision_outputs = self.vision_model(
             pixel_values=pixel_values,
         )
-        return vision_outputs[1] 
+        return vision_outputs[1], vision_outputs[0]  
 
 

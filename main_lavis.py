@@ -51,10 +51,10 @@ if __name__ == "__main__":
     config.enable_log = True 
     config.manifold = LORENTZ 
     config.use_entailment_loss = False 
-    for curv in [1.0, 2.0, 10.0]:
+    for curv in [2.0]:
         config.curv = curv
-        for margin_loss in [True, False]:
-            config.margin_loss = margin_loss 
+        for use_margin_loss in [False]:
+            config.use_margin_loss = use_margin_loss 
             for use_graph in [True, False]:
                 config.use_graph=use_graph
                 inner_training_loop(config.batch_size)

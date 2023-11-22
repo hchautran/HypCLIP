@@ -3,8 +3,6 @@ from accelerate import Accelerator
 from utils.data_utils import get_dataloader
 from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import report_metrics 
-from model.baseQueueModel import BaseModelWithQueue
-from lavis import BlipRetrieval
 from tqdm.auto import tqdm
 import torch
 from config import EUCLID, POINCARE, LORENTZ

@@ -21,10 +21,12 @@ class Text(object):
     pass
 
 class LavisEncoder(nn.Module): 
-    def __init__(self, config, body, head, mapper=None, use_normalized=False ) -> None:
+    def __init__(self, config, vision_body, vision_head, text_body, text_head ,mapper=None, use_normalized=False ) -> None:
         super().__init__()
-        self.body = body
-        self.head = head 
+        self.vision_body = vision_body
+        self.vision_head = vision_head 
+        self.text_body = text_body
+        self.text_head = text_head 
         self.config = config
         self.mapper = mapper
         self.use_normalized = use_normalized
@@ -34,44 +36,46 @@ class LavisEncoder(nn.Module):
             pixel_values: Optional[torch.FloatTensor] = None,
             input_ids: Optional[torch.Tensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
-            position_ids: Optional[torch.Tensor] = None,
     ) -> torch.FloatTensor:
         if pixel_values is not None:
             # with torch.no_grad():
-            outputs = self.body.forward_features(
+            outputs = self.vision_body.forward_features(
                 pixel_values,
             )
             last_hidden_state = outputs
             pooled_output = last_hidden_state[:, 0, :]
-            pooled_output = self.head(pooled_output)
+            pooled_output = self.vision_head(pooled_output)
             if self.mapper is not None:
                     pooled_output = self.mapper(pooled_output, use_normalized=True)
         else:
             text = Text() 
             text.input_ids=input_ids
             text.attention_mask=attention_mask
-            outputs = self.body.forward_text(text)
+            outputs = self.text_body.forward_text(text)
 
             last_hidden_state = outputs.last_hidden_state
             pooled_output = last_hidden_state[:, 0, :]
-            pooled_output = self.head(pooled_output)
+            pooled_output = self.text_head(pooled_output)
             if self.mapper is not None:
-                pooled_output = self.mapper(pooled_output, use_normalized=False)
+                pooled_output = self.mapper(pooled_output, use_normalized=True)
 
 
         return last_hidden_state, pooled_output
 
 
-class LavisBLIPGraphHead(nn.Module): 
-    def __init__(self, ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, graph_hidden_channels=512, use_root=True) -> None:
+class LavisBLIPGraphModel(nn.Module): 
+    def __init__(self,  d_vision, d_text, ft_out, config, text_body, text_head, vision_body, vision_head ,manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, graph_hidden_channels=512, use_root=True) -> None:
         super().__init__()
         self.config = config
-        self.body = body
-        self.head = head 
+        self.text_body = text_body
+        self.text_head = text_head 
+        self.vision_body = vision_body
+        self.vision_head = vision_head 
         hidden_sizes = [hidden_size] * num_hidden_layers + [ft_out] 
         self.manifold_mapper = manifold_mapper
         self.graph_head = GraphHead(
-            sizes=[ft_in] * num_layers, 
+            text_sizes=[d_text] * num_layers, 
+            vision_sizes=[d_vision] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             graphs_hidden_channel=graph_hidden_channels,
             ft_out=ft_out,
@@ -83,23 +87,24 @@ class LavisBLIPGraphHead(nn.Module):
         pixel_values: Optional[torch.Tensor] = None, 
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
     ) -> torch.FloatTensor:
 
         if pixel_values is not None:
-            outputs = self.body.forward_features(pixel_values)
+            outputs = self.vision_body.forward_features(pixel_values)
             last_hidden_state = outputs
+            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = self.vision_head(pooled_output)
+            output, graph_output = self.graph_head(hidden_states=[last_hidden_state], pooled_output=pooled_output, mode='vision')
         else:
             text = Text() 
             text.input_ids=input_ids
             text.attention_mask=attention_mask
-            outputs = self.body.forward_text(text)
+            outputs = self.text_body.forward_text(text)
             last_hidden_state = outputs.last_hidden_state
+            pooled_output = last_hidden_state[:, 0, :]
+            pooled_output = self.text_head(pooled_output)
+            output, graph_output = self.graph_head(hidden_states=[last_hidden_state], pooled_output=pooled_output, mode='text')
 
-        pooled_output = last_hidden_state[:, 0, :]
-        pooled_output = self.head(pooled_output)
-
-        output, graph_output = self.graph_head(hidden_states=[last_hidden_state], pooled_output=pooled_output)
         if self.manifold_mapper is not None:
             output = self.manifold_mapper(output)
             graph_output = self.manifold_mapper(graph_output)
@@ -107,18 +112,21 @@ class LavisBLIPGraphHead(nn.Module):
         return last_hidden_state, output, graph_output
 
 
-class LavisLorentzBLIPGraphHead(nn.Module): 
-    def __init__(self, manifold:CustomLorentz ,ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, graph_hidden_channels=512, use_root=True) -> None:
+class LavisLorentzBLIPGraphModel(nn.Module): 
+    def __init__(self, manifold:CustomLorentz, d_vision, d_text, ft_out, config , text_body, text_head, vision_body, vision_head,  manifold_mapper, num_layers=1, hidden_size=512, num_hidden_layers=2, graph_hidden_channels=512, use_root=True) -> None:
         super().__init__()
         self.config = config
-        self.body = body
-        self.head = head 
+        self.text_body = text_body
+        self.text_head = text_head 
+        self.vision_body = vision_body
+        self.vision_head = vision_head 
         self.manifold = manifold
         hidden_sizes = [hidden_size] * num_hidden_layers + [ft_out] 
         self.manifold_mapper = manifold_mapper
         self.graph_head = LorentzGraphHead(
             manifold=manifold,
-            sizes=[ft_in] * num_layers, 
+            text_sizes=[d_text] * num_layers, 
+            vision_sizes=[d_vision] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             graphs_hidden_channel=graph_hidden_channels, 
             ft_out=ft_out,
@@ -132,34 +140,31 @@ class LavisLorentzBLIPGraphHead(nn.Module):
         pixel_values: Optional[torch.Tensor] = None, 
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
     ) -> torch.FloatTensor:
 
         if pixel_values is not None:
-            outputs = self.body.forward_features(
+            outputs = self.vision_body.forward_features(
                 pixel_values,
             )
+
             last_hidden_state = outputs
+            last_hidden_state = self.vision_head(last_hidden_state)
             pooled_output = last_hidden_state[:, 0, :]
-            pooled_output = self.head(pooled_output)
-            if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
-                lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
+            pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+            lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
+            output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output, mode='vision')
         else:
             text = Text() 
             text.input_ids=input_ids
             text.attention_mask=attention_mask
-            outputs = self.body.forward_text(text)
+            outputs = self.text_body.forward_text(text)
+
             last_hidden_state = outputs.last_hidden_state
+            last_hidden_state = self.text_head(last_hidden_state)
             pooled_output = last_hidden_state[:, 0, :]
-            pooled_output = self.head(pooled_output)
-
-            if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
-                lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
-
-
-        output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output)
+            pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+            lorentz_hidden_states = [self.manifold_mapper(last_hidden_state)]
+            output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output, mode='text')
 
         return last_hidden_state, output, graph_output
         
@@ -192,7 +197,6 @@ class LorentzFuseGraphHead(nn.Module):
         self.dropout_edge_ratio = dropout_edge_ratio
     
     def build_graph_edge(self, hidden_states_1:torch.Tensor, hidden_states_2:torch.Tensor ,batch_size:int ,data:torch.Tensor):
-
         ends = []
         starts = []
         begin_index = 1
@@ -213,7 +217,6 @@ class LorentzFuseGraphHead(nn.Module):
         begin_index += hidden_states_2[i].shape[1]
 
         edge_index = torch.tensor([starts, ends], dtype=torch.long).to(data.get_device())
-
         edge_index = add_self_loops(edge_index)[0]
 
         graphs = []

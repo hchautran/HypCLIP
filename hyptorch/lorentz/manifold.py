@@ -51,7 +51,7 @@ class CustomLorentz(Lorentz):
         x = manifold_in.logmap0(x)
         return self.expmap0(x)
 
-    def aspt_addition(self, x, y):
+    def pt_addition(self, x, y):
         """Parallel transport addition proposed by Chami et al. (2019)"""
         z = self.logmap0(y)
         z = self.transp0(x, z)

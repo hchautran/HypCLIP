@@ -1,12 +1,13 @@
 import wandb
 from accelerate import Accelerator
+from utils.data_utils import get_dataloader
 from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import report_metrics 
 from tqdm.auto import tqdm
 import torch
 from config import EUCLID, POINCARE, LORENTZ
-from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
 import torch.nn.functional as F
+from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
 import time
 
 names = {
@@ -77,7 +78,7 @@ class MyTrainer:
             )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=1
+            self.optimizer, 'max', factor=0.1, patience=6, min_lr=1e-7
         )
         
         (
@@ -104,6 +105,7 @@ class MyTrainer:
     def train(self):
         # loop over the dataset multiple times
         best_r_all = 0.0
+        waiting = 0
         for epoch in range(self.epochs):
             current_step = 0
             with self.accelerator.accumulate(self.model):
@@ -116,6 +118,7 @@ class MyTrainer:
                     self.accelerator.free_memory()
                     self.optimizer.zero_grad()
                     current_step += 1
+                    # assert len(img_ids) == len(set(img_ids))
 
                     loss, stats = self.model(
                         input_ids=data["input_ids"],
@@ -139,37 +142,27 @@ class MyTrainer:
                         print("Loss: {}".format(loss.item()))
                     if self.eval_freq != -1 and (current_step + 1) % self.eval_freq == 0:
 
-                        # itc_test_metrics, itm_test_metrics = self.evaluate(mode='test')
-                        # itc_val_metrics, itm_val_metrics = self.evaluate(mode='val')
-                        itc_test_metrics = self.evaluate(mode='test')
-                        itc_val_metrics = self.evaluate(mode='val')
-                        self.log(itc_test_metrics)
-                        self.log(itc_val_metrics)
-                        # self.log(itm_test_metrics)
-                        # self.log(itm_val_metrics)
-                        print(itc_test_metrics)
-                        print(itc_val_metrics)
-                        # print(itm_test_metrics)
-                        # print(itm_val_metrics)
+                        test_metrics = self.evaluate(mode='test')
+                        val_metrics = self.evaluate(mode='val')
+                        self.log(test_metrics)
+                        self.log(val_metrics)
+                        print(test_metrics)
+                        print(val_metrics)
 
-                        self.scheduler.step(itc_test_metrics["test/r_all"])
-                        if best_r_all < itc_test_metrics["test/r_all"]:
-                            best_r_all = itc_test_metrics["test/r_all"]
-                            self.log({"best r_all": itc_test_metrics["test/r_all"]})
+                        self.scheduler.step(test_metrics["test/r_all"])
+                        if best_r_all < test_metrics["test/r_all"]:
+                            best_r_all = test_metrics["test/r_all"]
+                            self.log({"best r_all": test_metrics["test/r_all"]})
                             print("best r all", best_r_all)
-                        
-                        # if best_r_all < itm_test_metrics["itm_test/r_all"]:
-                        #     best_r_all = itm_test_metrics["itm_test/r_all"]
-                        #     self.log({"itm best r_all": itm_test_metrics["itm_test/r_all"]})
-                        #     print("itm best r all", best_r_all)
-
 
                         self.model.train()
 
                     
         print("Finished Training")
 
-    def rerank(self, sims_matrix, vit_feats, text_ids, text_atts, num_images, num_texts, k=20):
+
+          
+    def rerank(self, sims_matrix, image_inputs, text_inputs, num_images, num_texts, k=20):
         print('reranking...')
         score_matrix_i2t = torch.full(
             (num_images, num_texts), -100.0
@@ -183,11 +176,10 @@ class MyTrainer:
             progress = tqdm(range(len(sims_matrix)))
             for i, sims in enumerate(sims_matrix):
                 topk_sim, topk_idx = sims.topk(k=k, dim=0)
-                image_inputs = vit_feats[i].repeat(k, 1, 1).to(self.model.device)
-                score = self.model.compute_itm(
-                    vit_feats=image_inputs,
-                    input_ids=text_ids[topk_idx],
-                    attention_mask=text_atts[topk_idx],
+                image_inputs = image_inputs[i].repeat(k, 1, 1).to(self.model.device)
+                score = self.model.head(
+                    image_inputs=image_inputs,
+                    text_inputs=text_inputs[topk_idx],
                 ).float()
                 score_matrix_i2t[i, topk_idx] = score + topk_sim
                 progress.update(1)
@@ -197,18 +189,16 @@ class MyTrainer:
 
             for i, sims in enumerate(sims_matrix):
                 topk_sim, topk_idx = sims.topk(k=k, dim=0)
-                image_inputs = vit_feats[topk_idx.cpu()].to(self.model.device)
+                image_inputs = image_inputs[topk_idx.cpu()].to(self.model.device)
                 score = self.model.compute_itm(
-                    vit_feats=image_inputs,
-                    input_ids=text_ids[i].repeat(k, 1),
-                    attention_mask=text_atts[i].repeat(k, 1),
+                    image_inputs=image_inputs,
+                    text_inputs=text_inputs[i].repeat(k, 1),
                 ).float()
                 score_matrix_t2i[i, topk_idx] = score + topk_sim
                 progress.update(1)
 
-        return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()
+        return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()  
             
-
     def evaluate(self, mode='val'):
         from torch.utils.data import DataLoader
         dataset = self.val_loader if mode == "val" else self.test_loader
@@ -219,66 +209,51 @@ class MyTrainer:
         loader = self.accelerator.prepare(DataLoader(dataset, batch_size=1, shuffle=False))
 
 
-        text_ids = []
         text_embeds = []
-        text_atts = []
-        vit_feats = []
         image_embeds = []
-        max_len=35
+        image_inputs= []
+        text_inputs= []
+
         with torch.no_grad():
             for data in tqdm(loader):
-                text_feat= self.model.get_text_features(
+                text_feat, text_hidden_states= self.model.get_text_features(
                     input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
                 )
-                vit_feat, image_feat = self.model.get_vision_features(
+                image_feat, image_hidden_states = self.model.get_vision_features(
                     pixel_values=data["pixel_values"][0]
                 )
-                text_embeds.append(text_feat)
-                cur_len = data['input_ids'].shape[-1]
-                input_ids = F.pad(data['input_ids'][0], (0, max_len - cur_len), "constant", 0)
-                attention_mask = F.pad(data['attention_mask'][0], (0, max_len - cur_len), "constant", 0) 
-                text_ids.append(input_ids)
-                text_atts.append(attention_mask)
-                vit_feats.append(vit_feat.cpu())
                 image_embeds.append(image_feat)
+                text_embeds.append(text_feat)
+                image_inputs.append(image_hidden_states.cpu())
+                text_inputs.append(text_hidden_states.cpu())
 
 
         text_embeds = torch.cat(text_embeds, dim=0)
-        text_ids = torch.cat(text_ids, dim=0)
-        text_atts = torch.cat(text_atts, dim=0)
-        vit_feats = torch.cat(vit_feats, dim=0)
         image_embeds = torch.cat(image_embeds, dim=0)
-
         sims_matrix = []
-        print(image_embeds.shape)
-        print(text_embeds.shape)
         for image_embed in image_embeds:
             sim_q2t = image_embed @ text_embeds.T
             sim_i2t, _ = sim_q2t.max(0)
             sims_matrix.append(sim_i2t)
         sims_matrix = torch.stack(sims_matrix, dim=0)
         itc_metrics = report_metrics(scores_t2i=sims_matrix.cpu().detach().T, scores_i2t=sims_matrix.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
-        print(itc_metrics)
+        # print(itc_metrics)
+        # score_matrix_i2t, score_matrix_t2i = self.rerank(
+        #     sims_matrix=sims_matrix, 
+        #     text_inputs=text_inputs,
+        #     image_inputs=image_inputs,
+        #     num_images=n_images,
+        #     num_texts=n_texts
+        # )
+        # itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
 
-
-        score_matrix_i2t, score_matrix_t2i = self.rerank(
-            sims_matrix=sims_matrix, 
-            vit_feats=vit_feats, 
-            text_ids=text_ids, 
-            text_atts=text_atts, 
-            num_images=n_images,
-            num_texts=n_texts
-        )
-        itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
-        print(itm_metrics)
+        # print(itm_metrics)
 
         itc_metrics["epoch"] = self.current_epoch
-        itm_metrics["epoch"] = self.current_epoch
         
         # return itc_metrics, itm_metrics
         return itc_metrics
         
-
     def save(self):
         torch.save(self.model, f"{self.save_dir}/{self.name}.pth")
 

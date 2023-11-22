@@ -16,7 +16,7 @@ from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
 from transformers.models.clip.modeling_clip import CLIPOutput
 from lavis.models import BlipRetrieval
-from .modules.blip import LavisEncoder, LavisBLIPGraphHead, LavisLorentzBLIPGraphHead 
+from .modules.blip import LavisEncoder
 
 EUCLID = "euclidean"
 POINCARE = "poincare"
@@ -75,25 +75,16 @@ def get_lora_clip(config, vision_model, text_model):
 class HypCLIP(BaseModel):
     def __init__(self, config) -> None:
         super(HypCLIP, self).__init__(config)
-        clip_config = CLIPConfig.from_pretrained(self.model_ckt) 
-        clip_config.text_config.r =  32 
-        clip_config.vision_config.r = 32 
-
-        text_model = LoraCLIPText.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir, config=clip_config.text_config
+        text_model = CLIPTextModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
         )
-        vision_model = LoraCLIPVision.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir, config=clip_config.vision_config
+        vision_model = CLIPVisionModelWithProjection.from_pretrained(
+            self.model_ckt, cache_dir=config.cache_dir
         )
-        mark_only_lora_as_trainable(model=text_model)
-        mark_only_lora_as_trainable(model=vision_model)
-
-
+        vision_model, text_model = get_lora_clip(config, vision_model=vision_model, text_model=text_model)
 
         text_body = text_model.text_model
         vision_body = vision_model.vision_model
-        text_head = nn.ModuleList([])
-        vision_head = nn.ModuleList([])
         text_head = text_model.text_projection
         vision_head = vision_model.visual_projection
         mapper = None
@@ -367,7 +358,7 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
         vision_head = vision_model.visual_projection
 
         if self.config.manifold !=  EUCLID:
-            self.vision_model = LorentzGraphModel(
+            self.vision_model = LavisLorentzBLIPGraphModel(
                 manifold=self.manifold,
                 ft_in=vision_model.config.hidden_size,
                 ft_out=vision_model.config.projection_dim,
@@ -432,56 +423,3 @@ class HypGraphCLIPWithQueue(BaseModelWithQueue):
 
 
 
-
-
-class HypCLIPDistilled(DistiledBaseModel):
-    def __init__(self, config, teacher_model:BlipRetrieval) -> None:
-        super(HypCLIPDistilled, self).__init__(config)
-        clip_config = CLIPConfig.from_pretrained(self.model_ckt) 
-        clip_config.text_config.r =  32 
-        clip_config.vision_config.r = 32 
-
-        text_model = CLIPTextModelWithProjection.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir
-        )
-        vision_model = CLIPVisionModelWithProjection.from_pretrained(
-            self.model_ckt, cache_dir=config.cache_dir
-        )
-        vision_model, text_model = get_lora_clip(config, vision_model=vision_model, text_model=text_model)
-
-        text_body = text_model.text_model
-        vision_body = vision_model.vision_model
-        text_head = text_model.text_projection
-        vision_head = vision_model.visual_projection
-        mapper = None
-
-        if self.config.manifold !=  EUCLID:
-            mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
-
-
-        self.vision_model = CLIPEncoder(
-            config=config,
-            body=vision_body,
-            head=vision_head,
-            mapper=mapper
-        )
-        self.text_model = CLIPEncoder(
-            config=config,
-            body=text_body,
-            head=text_head,
-            mapper=mapper
-        )        
-        self.vision_teacher = LavisEncoder(
-            config,
-            body=teacher_model.visual_encoder,
-            head=teacher_model.vision_proj,
-            mapper=None,
-            use_normalized=config.normalize_image_embed
-        )
-        self.text_teacher = LavisEncoder(
-            config,
-            body= teacher_model.text_encoder,
-            head=teacher_model.text_proj,
-            mapper=None,
-            use_normalized=config.normalize_text_embed
-        )

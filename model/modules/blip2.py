@@ -17,21 +17,23 @@ from hyptorch.lorentz.manifold import CustomLorentz
 from torch_geometric.utils import dropout_edge 
 from .graphs import LorentzProjLayers, LorentzGNN
 from lavis import Blip2Qformer
+import time
 
 class Text(object):
     pass
 
 class Blip2Encoder(nn.Module): 
-    def __init__(self, config, q_former, mapper=None, use_normalized=False ) -> None:
+    def __init__(self, config, model:Blip2Qformer, mapper=None ) -> None:
         super().__init__()
-        self.qformer = q_former
         self.config = config
         self.mapper = mapper
-        self.ln_vision = q_former.ln_vision
-        self.visual_encoder = q_former.visual_encoder
-        self.query_tokens = q_former.query_tokens
-        self.Qformer = q_former.Qformer
-        self.use_normalized = use_normalized
+        self.ln_vision = model.ln_vision
+        self.visual_encoder = model.visual_encoder
+        self.query_tokens = model.query_tokens
+        self.vision_proj = model.vision_proj
+        self.text_proj = model.text_proj
+        self.Qformer = model.Qformer
+        self.itm_head = model.itm_head
 
     def forward(
             self,
@@ -39,44 +41,41 @@ class Blip2Encoder(nn.Module):
             input_ids: Optional[torch.Tensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
     ) -> torch.FloatTensor:
+        vit_embeds = None
         if pixel_values is not None:
             with torch.no_grad():
-                image_embeds = self.ln_vision(self.visual_encoder(pixel_values))
-                image_embeds = image_embeds.float()
-                image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
-                    pixel_values.device
-                )
-
-            query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
-
+                vit_embeds = self.ln_vision(self.visual_encoder(pixel_values))
+            image_atts = torch.ones(vit_embeds.size()[:-1], dtype=torch.long).to(
+                pixel_values.device
+            )
+            query_tokens = self.query_tokens.expand(vit_embeds.shape[0], -1, -1)
             query_output = self.Qformer.bert(
                 query_embeds=query_tokens,
-                encoder_hidden_states=image_embeds,
+                encoder_hidden_states=vit_embeds,
                 encoder_attention_mask=image_atts,
                 return_dict=True,
             )
-            last_hidden_state=text_output.last_hidden_state
             pooled_output = self.vision_proj(query_output.last_hidden_state)
             if self.mapper is not None:
                 pooled_output = self.mapper(pooled_output, use_normalized=False)
 
         else: 
-            text = Text() 
-            text.input_ids=input_ids
-            text.attention_mask=attention_mask
             text_output = self.Qformer.bert(
-                text.input_ids,
-                attention_mask=text.attention_mask,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
                 return_dict=True,
             )
-            pooled_output =  self.text_proj(text_output.last_hidden_state[:, 0, :])
-            last_hidden_state=text_output.last_hidden_state
-
+            pooled_output = self.text_proj(text_output.last_hidden_state[:, 0, :])
             if self.mapper is not None:
                 pooled_output = self.mapper(pooled_output, use_normalized=False)
 
 
-        return last_hidden_state, pooled_output
+        return vit_embeds, pooled_output
+
+        
+
+    
+
 
 
 

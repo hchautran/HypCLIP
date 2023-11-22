@@ -54,8 +54,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.model_ckt = config.model_ckt
         self.clip_r = config.clip_radius
         self.queue_size = config.queue_size
-        self.vision_model = None
-        self.text_model = None
         self.weight_i2t = config.weight_i2t
         assert config.manifold in [EUCLID, POINCARE, LORENTZ]
         self.mapper = None           
@@ -73,8 +71,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
             self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
-        self.vision_model_m= None 
-        self.text_model_m = None 
+        self.model_m= None 
+        self.model = None 
 
         self.momentum = config.momentum
         self.logit_scale = nn.Parameter(torch.tensor(config.temp))
@@ -86,11 +84,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.beta = nn.Parameter(torch.tensor(config.soft_target_loss), requires_grad=False)
     
     def _init_queue(self, config, ft_out):
-        self.vision_model_m= deepcopy(self.vision_model) 
-        self.text_model_m= deepcopy(self.text_model) 
+        self.model_m= deepcopy(self.model) 
         self.model_pairs = [
-            [self.vision_model, self.vision_model_m],
-            [self.text_model, self.text_model_m],
+            [self.model, self.model_m],
         ]
         self.copy_params()
           # create the queue
@@ -145,7 +141,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             return hyp_dist
         else: 
             # if self.training:
-            #     hyp_dist = -self.manifold.sqdist_batch(x, y)
+            # hyp_dist = -self.manifold.sqdist_batch(x, y)
             # else:
             hyp_dist = -self.manifold.dist_batch(x, y)
             return hyp_dist
@@ -191,7 +187,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
     def margin_loss(self, pos_idx, text_feat, image_feat, text_world, image_world):
         if not self.config.use_margin_loss:
             return torch.tensor(0.0)
-        pos_mask = pos_idx * 1e9 
 
         sim_i2i = self.dist_func(image_feat, image_world) 
         sim_t2t = self.dist_func(text_feat, text_world) 
@@ -206,8 +201,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         bs = imgs.shape[0]
         _scale = self.logit_scale.exp()
         with torch.no_grad():
-            weights_i2t = F.softmax(sims_i2t * _scale, dim=1)
-            weights_t2i = F.softmax(sims_i2t.T * _scale, dim=1)
+            weights_i2t = F.softmax(sims_i2t / self.logit_scale, dim=1)
+            weights_t2i = F.softmax(sims_i2t.T / self.logit_scale, dim=1)
             mask = (torch.eye(bs) > 0).to(self.device)
 
             weights_i2t.masked_fill_(mask, 0)
@@ -241,14 +236,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         itm_acc = ((disc >0.5).float() == itm_labels).float().sum()/itm_labels.shape[0]
         return loss_itm, itm_acc
 
-    def etailment_loss(self, x:torch.Tensor, y:torch.Tensor):
-        entailment_loss = torch.tensor(0.0) 
-        if isinstance(self.manifold, Lorentz) and self.config.use_entailment_loss:
-            angle = self.manifold.oxy_angle(x, y)
-            aperture = self.manifold.half_aperture(x)
-            entailment_loss = torch.clamp(angle - aperture, min=0).mean()
-            
-        return entailment_loss
+
 
     def forward(
         self, 
@@ -269,11 +257,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         )
 
         
-        text_output = self.text_model(
+        text_output = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask
         )
-        image_output = self.vision_model(
+        image_output = self.model(
             pixel_values=pixel_values
         )
         text_embeds = text_output[1] 
@@ -291,27 +279,30 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         pos_idx = torch.eq(idx, idx_all).float()
         sim_targets = pos_idx / pos_idx.sum(1, keepdim=True)
         with torch.no_grad():
-            self.logit_scale.clamp_(0.001, 0.5)
-            self.eu_logit_scale.clamp_(0.001, 0.5)
+            self.logit_scale.clamp_(0.05, 0.1)
+            self.eu_logit_scale.clamp_(0.05, 0.1)
 
 
 
         # get momentum features
         with torch.no_grad():
             self._momentum_update()
-            image_embeds_m = self.vision_model_m(
+            image_embeds_m = self.model_m(
                 pixel_values=pixel_values 
             )
+
+            text_embeds_m = self.model_m(
+                input_ids=input_ids,
+                attention_mask=attention_mask
+            )
+
             image_feat_m = self.postprocess_embeds(image_embeds_m[1])
+            text_feat_m = self.postprocess_embeds(text_embeds_m[1])
+
             image_feat_m_all = torch.cat(
                 [image_feat_m.t(), self.image_queue.clone().detach()], dim=1
             )
 
-            text_embeds_m = self.text_model_m(
-                input_ids=input_ids,
-                attention_mask=attention_mask
-            )
-            text_feat_m = self.postprocess_embeds(text_embeds_m[1])
             text_feat_m_all = torch.cat(
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
@@ -335,7 +326,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
 
         margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
-        entailment_loss = self.etailment_loss(x=image_feat, y=text_feat)
 
         loss_i2t = -torch.sum(
             F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
@@ -355,7 +345,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
             "logits/itm_loss": loss_itm.item(),
-            "logits/entailment_loss": entailment_loss.item(),
             "logits/margin_loss": margin_loss.item(),
             "logits/min": sims.min().item(),
             "logits/mean": sims.mean().item(),
@@ -377,8 +366,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         input_ids: torch.Tensor, 
         attention_mask: torch.Tensor,
     ):
-        # TODO 
-        text_output = self.text_model(
+        text_output = self.model(
            input_ids=input_ids, 
            attention_mask=attention_mask, 
         )
@@ -387,6 +375,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
     def get_vision_features(self, pixel_values:torch.Tensor):
         # TODO 
-        image_output = self.vision_model(pixel_values=pixel_values)
+        image_output = self.model(pixel_values=pixel_values)
         image_feat = self.postprocess_embeds(image_output[1])
         return image_feat

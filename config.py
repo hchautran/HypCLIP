@@ -63,6 +63,7 @@ BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
 LAVIS_BLIP_BASE_FLICKR = "blip-itm-base-flickr"
 LAVIS_BLIP_BASE_COCO= "blip-itm-base-coco"
 FLICKR = "nlphuji/flickr30k"
+COCO = "coco"
 
 CACHE_DIR = '/mnt/data/.cache'
 COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
@@ -134,7 +135,7 @@ config_args = {
         "use_graph_loss": (False, "use margin loss for graph"),
         "use_entailment_loss": (False, "use entailment loss"),
         "hyp_margin_loss_weight": (0.0, "hyperbolic margin loss weight"),
-        "num_proj_layers": (3, "number of project layers"),
+        "num_proj_layers": (6, "number of project layers"),
         "proj_layer_hidden_sizes": (512, "hidden size of proj layers"),
         "normalize_text_embed": (False,""),
         "normalize_image_embed": (False,""),
@@ -152,7 +153,7 @@ config_args = {
         "curv": (1.0, "hyperbolic curvature"),
         "atol": (1e-1, "The relative tolerance parameter"),
         "rtol": (1e-1, "The absolute tolerance parameter"),
-        "temp": (0.07, "distance temperature"),
+        "temp": (0.05, "distance temperature"),
         "clip_radius": (None, "clipping radius"),
         "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (12, "number of trainable blocks in text model"),
@@ -170,12 +171,15 @@ config_args = {
         "cache_dir": (CACHE_DIR, "cache_dir"),
     },
     "perceiver": {
-        "num_latents": (128, "which dataset to use"),
-        "num_self_attends_per_block": (3, "cache_dir"),
-        "num_cross_attention_heads": (2, "cache_dir"),
-        "num_self_attention_heads": (2, "cache_dir"),
+        "num_latents": (24, "which dataset to use"),
+        "d_latents": (768, "d latent"),
+        "d_out": (512, "d out"),
+        "num_blocks": (1, "d out"),
+        "num_self_attends_per_block": (1, "cache_dir"),
+        "num_cross_attention_heads": (4, "cache_dir"),
+        "num_self_attention_heads": (6, "cache_dir"),
         "cross_attention_widening_factor": (4, "cache_dir"),
-        "attention_probs_dropout_prob": (0.5, "cache_dir"),
+        "attention_probs_dropout_prob": (0.3, "cache_dir"),
     }
 }
 

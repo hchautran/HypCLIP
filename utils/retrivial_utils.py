@@ -109,7 +109,6 @@ def report_metrics(scores_i2t:torch.Tensor, scores_t2i:torch.Tensor, txt2img, im
 
     # Text->Images
     ranks = np.zeros(scores_t2i.shape[0])
-
     for index, score in enumerate(scores_t2i):
         inds = np.argsort(score)[::-1]
         ranks[index] = np.where(inds == txt2img[index])[0][0]

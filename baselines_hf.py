@@ -62,10 +62,10 @@ if __name__ == "__main__":
             trainer.train()
 
         config.epochs = 3 
-        config.enable_log = True 
+        config.enable_log = False 
         config.use_entailment_loss = False 
         config.manifold = EUCLID
-        for use_margin_loss in [False, True]:
+        for use_margin_loss in [False]:
             config.use_margin_loss = use_margin_loss
             for use_graph in [False, True]:
                 config.use_graph=use_graph

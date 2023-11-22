@@ -82,6 +82,7 @@ class ManifoldMapper(nn.Module):
             x = F.pad(x, (1,0), "constant", 0)
             out = self.manifold.projx(x)
         else:
+
             out = self.manifold.expmap0(x)
         return out 
 

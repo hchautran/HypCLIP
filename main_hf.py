@@ -61,13 +61,13 @@ if __name__ == "__main__":
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 5 
+        config.epochs = 3 
         config.enable_log = True 
         config.manifold = LORENTZ 
         config.use_entailment_loss = False 
         for curv in [1.0, 2.0, 10.0]:
             config.curv = curv
-            for margin_loss in [True, False]:
+            for margin_loss in [False]:
                 config.margin_loss = margin_loss 
                 for use_graph in [True, False]:
                     config.use_graph=use_graph

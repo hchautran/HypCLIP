@@ -34,33 +34,41 @@ class ProjLayers(nn.Module):
     return outputs
 
 class GraphHead(nn.Module):
-    def __init__(self, sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graph_heads=4, graphs_hidden_channel=512, dropout_edge_ratio=0.1, shared=False, use_root=False):
+    def __init__(self, text_sizes=[768] ,vision_sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graphs_hidden_channel=256, dropout_edge_ratio=0.1, shared=False, use_root=False):
         super().__init__()
-        self.sizes = sizes
-        self.num_layers = len(sizes)
-        self.proj_layers = ProjLayers(sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
-        self.gnn = GNN(ft_in=proj_hidden_sizes[-1], hidden_channels=graphs_hidden_channel, num_heads=graph_heads ,ft_out=ft_out) 
-        self.final_proj = SeqLinear(ft_in=ft_out*2, layer_dims=[512 , ft_out], dropout=dropout, act_func='gelu')
-
+        self.text_sizes = text_sizes 
+        self.vision_sizes = vision_sizes 
+        self.num_text_layers = len(text_sizes)
+        self.num_vision_layers = len(vision_sizes)
+        self.vision_proj_layers = ProjLayers(sizes=vision_sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
+        self.text_proj_layers = ProjLayers(sizes=text_sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
+        self.gnn = GNN(ft_in=proj_hidden_sizes[-1], hidden_channels=graphs_hidden_channel, ft_out=ft_out) 
         if use_root:
-            self.root = nn.Parameter(data=torch.zeros((1,proj_hidden_sizes[-1]))) 
+            self.root = nn.Parameter(data=torch.zeros((1,proj_hidden_sizes[-1]), requires_grad=True))
         else:
             self.root = None 
-        # self.batch_norm = nn.BatchNorm1d(proj_hidden_sizes[-1])
-        self.dropout_edge_ratio =  dropout_edge_ratio
-
-    def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor):
+        # self.final_proj = LorentzSeqLinear(manifold, ft_in=ft_out*2 + 1, layer_dims=[513 ,ft_out + 1], dropout=dropout, act_func='gelu')
+        self.dropout_edge_ratio = dropout_edge_ratio
+    
+    def add_root(self, graph, bs):
+        starts = []
+        ends = []
+        if self.root is not None:
+            graph_size = graph.x.shape[0] // bs 
+            graph.x = torch.cat([graph.x, self.root])
+            for i in range(bs):
+                starts.append(graph.x.shape[0]-1)
+                starts.append(i * graph_size)
+                ends.append(i * graph_size)
+                ends.append(graph.x.shape[0]-1)
+            graph.edge_index = torch.cat([graph.edge_index, torch.tensor([starts, ends], dtype=torch.long).to(graph.x.get_device())], dim=-1)
+        return graph
+    
+    def build_graph(self, hidden_states, x):
+        bs = x.shape[0] 
         ends = []
         starts = []
         begin_index = 1
-        hidden_states = hidden_states[(len(hidden_states) - self.num_layers):] 
-        output = self.proj_layers(hidden_states)
-        
-
-        output = torch.cat(self.proj_layers(hidden_states), dim =-2)
-        bs = output.shape[0] 
-
-        output = torch.cat([pooled_output.view(bs, 1, -1), output], dim=-2)
         for i in range(len(hidden_states)):
             for j in range(hidden_states[i].shape[-2]):
                 starts.append(0)
@@ -68,40 +76,83 @@ class GraphHead(nn.Module):
                 ends.append(begin_index + j)
                 ends.append(0)
             begin_index += hidden_states[i].shape[1]
-
-        edge_index = torch.tensor([starts, ends], dtype=torch.long).to(output.get_device())
+        edge_index = torch.tensor([starts, ends], dtype=torch.long).to(x.get_device())
         edge_index = add_self_loops(edge_index)[0]
         graphs = []
         for i in range(bs):
-            graphs.append(Data(x=output[i,:,:], edge_index=edge_index))
+            graphs.append(Data(x=x[i,:,:], edge_index=edge_index))
 
         data_batch = Batch.from_data_list(graphs) 
         data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0]
-
-        if self.root is not None:
-            graph_size = data_batch.x.shape[0] // bs 
-            data_batch.x = torch.cat([data_batch.x, self.root])
-            for i in range(bs):
-                starts.append(data_batch.x.shape[0]-1)
-                starts.append(i * graph_size)
-                ends.append(i * graph_size)
-                ends.append(data_batch.x.shape[0]-1)
-            data_batch.edge_index = torch.cat([data_batch.edge_index, torch.tensor([starts, ends], dtype=torch.long).to(output.get_device())], dim=-1)
-
-        data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0]
+        return data_batch
         
-        graph_output, graph_mean = self.gnn(data_batch, batch_size=bs, use_root=(self.root is not None))
+    def build_graph_itm(self, text_hidden_states, vision_hidden_states, x_text, x_vision):
+        bs = x_text.shape[0] 
+        ends = []
+        starts = []
+
+        begin_index = 1
+        for i in range(len(text_hidden_states)):
+            for j in range(text_hidden_states[i].shape[-2]):
+                starts.append(0)
+                starts.append(begin_index + j)
+                ends.append(begin_index + j)
+                ends.append(0)
+            begin_index += text_hidden_states[i].shape[1]
+
+        text_edge_index = torch.tensor([starts, ends], dtype=torch.long).to(x_text.get_device())
+        text_edge_index = add_self_loops(text_edge_index)[0]
+
+        ends = []
+        starts = []
+        for i in range(len(vision_hidden_states)):
+            for j in range(vision_hidden_states[i].shape[-2]):
+                starts.append(0)
+                starts.append(begin_index + j)
+                ends.append(begin_index + j)
+                ends.append(0)
+            begin_index += vision_hidden_states[i].shape[1]
+        vision_edge_index = torch.tensor([starts, ends], dtype=torch.long).to(x_text.get_device())
+        vision_edge_index= add_self_loops(vision_edge_index)[0]
+
+        graphs = []
+        for i in range(bs):
+            graphs.append(Data(x=x_text[i,:,:], edge_index=text_edge_index))
+        for i in range(bs):
+            graphs.append(Data(x=x_vision[i,:,:], edge_index=vision_edge_index))
+
+        data_batch = Batch.from_data_list(graphs) 
+        data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0]
+        return data_batch
+
+    def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor, mode='text'):
+        if mode == 'text':
+            hidden_states = hidden_states[(len(hidden_states) - self.num_text_layers):] 
+            output = torch.cat(self.text_proj_layers(hidden_states), dim =-2)
+        else:
+            hidden_states = hidden_states[(len(hidden_states) - self.num_vision_layers):] 
+            output = torch.cat(self.vision_proj_layers(hidden_states), dim =-2)
+
+        bs = output.shape[0] 
+        output = torch.cat([pooled_output.view(bs, 1, -1), output], dim=-2)
+        graph = self.build_graph(hidden_states=hidden_states, x=output) 
+        graph = self.add_root(graph=graph, bs=bs) 
+        graph_output, mean = self.gnn(graph, batch_size=bs, use_root=(self.root is not None))
         output = graph_output + pooled_output
-        return output, graph_mean 
+
+        self.manifold.assert_check_point_on_manifold(output)
+        return output, mean
+    
+
 
 class GNN(torch.nn.Module):
     def __init__(self, ft_in ,hidden_channels, ft_out, num_heads=4):
         super(GNN, self).__init__()
         torch.manual_seed(12345)
-        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.6, heads=num_heads, concat=True)  
+        self.conv1 = GATv2Conv(ft_in, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)  
         self.act1 = nn.GELU()
-        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.6, heads=num_heads, concat=True)
-        # self.act2 = nn.GELU()
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels//num_heads, dropout=0.7, heads=num_heads, concat=True)
+        self.act2 = nn.GELU()
         # self.conv3 = GATv2Conv(hidden_channels, hidden_channels, dropout=0.4, heads=1, concat=False)
         self.lin = nn.Sequential(
             nn.Dropout(0.3),
@@ -118,7 +169,7 @@ class GNN(torch.nn.Module):
         x = self.conv1(x, edge_index)
         x = self.act1(x)
         x = self.conv2(x, edge_index)
-        # x = self.act2(x)
+        x = self.act2(x)
         # x = self.conv3(x, edge_index)
         if use_root:
             x = x[:x.shape[0]-1]
@@ -196,20 +247,19 @@ class LorentzGNN(torch.nn.Module):
         torch.manual_seed(12345)
         self.manifold = manifold
         self.conv1 = GATv2Conv(ft_in, hidden_channels//4, heads=4 ,dropout=0.7)  
-        # self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.5)
+        # self.conv1 = LorentzGAT(manifold, ft_in, hidden_channels, dropout=0.3)
         self.act1 = nn.GELU()
         # self.act1 = LorentzAct(nn.GELU(), manifold=manifold)
         self.conv2 = GATv2Conv(hidden_channels, hidden_channels//4, heads=4 ,dropout=0.7)
-        # self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
+        # self.conv2 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.3)
         # self.act2 = LorentzAct(nn.GELU(), manifold=manifold)
         # self.conv3 = LorentzGAT(manifold, hidden_channels, hidden_channels, dropout=0.5)
         self.lin = nn.Sequential(
-            LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.3),
+            LorentzLinear(manifold=manifold, in_features=hidden_channels + 1, out_features=hidden_channels*4 + 1, dropout=0.2, bias=True),
             LorentzAct(nn.GELU(), manifold=manifold),
-            LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.3),
-            LorentzAct(nn.GELU(), manifold=manifold),
+            LorentzLinear(manifold=manifold, in_features=hidden_channels*4 + 1, out_features=hidden_channels + 1, dropout=0.2, bias=True),
         )
-        self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.3)
+        self.final_lin = LorentzLinear(manifold=manifold, in_features=hidden_channels+ 1, out_features=ft_out + 1, dropout=0.2)
 
     def forward(self, graphs, batch_size, use_root=False):
         x, edge_index, _ = graphs.x, graphs.edge_index, graphs.batch
@@ -222,17 +272,21 @@ class LorentzGNN(torch.nn.Module):
         
         if use_root:
             x = x[:x.shape[0]-1]
+            root = x[-1]
             # print(x.shape)
-        x = x.view(batch_size, x.shape[0]//batch_size, -1)
-        graph_mean = self.manifold.centroid(x=x) 
+        else:
+            root = self.manifold.centroid(x=x) 
 
+        x = x.view(batch_size, x.shape[0]//batch_size, -1)
         x = x[:, 0, :]
         x = self.lin(x)
         # self.manifold.assert_check_point_on_manifold(x)
         # print(graph_mean)
         x = self.final_lin(x)
         self.manifold.assert_check_point_on_manifold(x)
-        return x, graph_mean
+        return x, root 
+    
+
 
 class LorentzProjLayers(nn.Module):
   def __init__(self, manifold:CustomLorentz ,sizes=[768], hidden_sizes=[512],  dropout=0.1, shared=False):
@@ -257,7 +311,6 @@ class LorentzProjLayers(nn.Module):
             dropout=dropout, 
             act_func='gelu'
         )  
-    self.layer_norm = nn.LayerNorm(hidden_sizes[-1])
 
   def forward(self, hidden_states:torch.Tensor):
     outputs = []
@@ -266,40 +319,49 @@ class LorentzProjLayers(nn.Module):
             output = self.projectors[i](hidden_states[i])
         else:
             output = self.projector(hidden_states[i])
-        output_space = self.manifold.get_space(output)
-        output_space = self.layer_norm(output_space)
-        outputs.append(self.manifold.add_time(output_space))
+        outputs.append(output)
 
     return outputs
 
 class LorentzGraphHead(nn.Module):
-    def __init__(self, manifold:CustomLorentz ,sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graphs_hidden_channel=256, dropout_edge_ratio=0.1, shared=False, use_root=False):
+    def __init__(self, manifold:CustomLorentz , text_sizes=[768] ,vision_sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graphs_hidden_channel=256, dropout_edge_ratio=0.1, shared=False, use_root=False):
         super().__init__()
-        self.sizes = sizes
+        self.text_sizes = text_sizes 
+        self.vision_sizes = vision_sizes 
         self.manifold = manifold
-        self.num_layers = len(sizes)
-        self.proj_layers = LorentzProjLayers(manifold=manifold, sizes=sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
-        self.gnn = LorentzGNN(manifold=manifold, ft_in=proj_hidden_sizes[-1], hidden_channels=graphs_hidden_channel, ft_out=ft_out) 
+
+        self.num_text_layers = len(text_sizes)
+        self.num_vision_layers = len(vision_sizes)
+        
+        # self.vision_proj_layers = ProjLayers(sizes=vision_sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
+        # self.text_proj_layers = ProjLayers(sizes=text_sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
+        self.gnn = LorentzGNN(manifold=manifold, ft_in=256, hidden_channels=graphs_hidden_channel, ft_out=ft_out) 
         if use_root:
             self.root = ManifoldParameter(data=manifold.origin((1,proj_hidden_sizes[-1] + 1)), manifold=manifold, requires_grad=False) 
         else:
             self.root = None 
         # self.final_proj = LorentzSeqLinear(manifold, ft_in=ft_out*2 + 1, layer_dims=[513 ,ft_out + 1], dropout=dropout, act_func='gelu')
         self.dropout_edge_ratio = dropout_edge_ratio
-
-    def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor):
+    
+    def add_root(self, graph, bs):
+        starts = []
+        ends = []
+        if self.root is not None:
+            graph_size = graph.x.shape[0] // bs 
+            graph.x = torch.cat([graph.x, self.root])
+            for i in range(bs):
+                starts.append(graph.x.shape[0]-1)
+                starts.append(i * graph_size)
+                ends.append(i * graph_size)
+                ends.append(graph.x.shape[0]-1)
+            graph.edge_index = torch.cat([graph.edge_index, torch.tensor([starts, ends], dtype=torch.long).to(graph.x.get_device())], dim=-1)
+        return graph
+    
+    def build_graph(self, hidden_states, x):
+        bs = x.shape[0] 
         ends = []
         starts = []
         begin_index = 1
-        hidden_states = hidden_states[(len(hidden_states) - self.num_layers):] 
-        output = self.proj_layers(hidden_states)
-        
-        output = torch.cat(self.proj_layers(hidden_states), dim =-2)
-        bs = output.shape[0] 
-
-        output = torch.cat([pooled_output.view(bs, 1, -1), output], dim=-2)
-        # self.manifold.assert_check_point_on_manifold(output)
-
         for i in range(len(hidden_states)):
             for j in range(hidden_states[i].shape[-2]):
                 starts.append(0)
@@ -307,36 +369,78 @@ class LorentzGraphHead(nn.Module):
                 ends.append(begin_index + j)
                 ends.append(0)
             begin_index += hidden_states[i].shape[1]
-        edge_index = torch.tensor([starts, ends], dtype=torch.long).to(output.get_device())
+        edge_index = torch.tensor([starts, ends], dtype=torch.long).to(x.get_device())
         edge_index = add_self_loops(edge_index)[0]
+        graphs = []
+        for i in range(bs):
+            graphs.append(Data(x=x[i,:,:], edge_index=edge_index))
+
+        data_batch = Batch.from_data_list(graphs) 
+        data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0]
+        return data_batch
+        
+    def build_graph_itm(self, text_hidden_states, vision_hidden_states, x_text, x_vision):
+        bs = x_text.shape[0] 
+        ends = []
+        starts = []
+
+        begin_index = 1
+        for i in range(len(text_hidden_states)):
+            for j in range(text_hidden_states[i].shape[-2]):
+                starts.append(0)
+                starts.append(begin_index + j)
+                ends.append(begin_index + j)
+                ends.append(0)
+            begin_index += text_hidden_states[i].shape[1]
+
+        text_edge_index = torch.tensor([starts, ends], dtype=torch.long).to(x_text.get_device())
+        text_edge_index = add_self_loops(text_edge_index)[0]
+
+        ends = []
+        starts = []
+        for i in range(len(vision_hidden_states)):
+            for j in range(vision_hidden_states[i].shape[-2]):
+                starts.append(0)
+                starts.append(begin_index + j)
+                ends.append(begin_index + j)
+                ends.append(0)
+            begin_index += vision_hidden_states[i].shape[1]
+        vision_edge_index = torch.tensor([starts, ends], dtype=torch.long).to(x_text.get_device())
+        vision_edge_index= add_self_loops(vision_edge_index)[0]
 
         graphs = []
         for i in range(bs):
-            graphs.append(Data(x=output[i,:,:], edge_index=edge_index))
+            graphs.append(Data(x=x_text[i,:,:], edge_index=text_edge_index))
+        for i in range(bs):
+            graphs.append(Data(x=x_vision[i,:,:], edge_index=vision_edge_index))
+
         data_batch = Batch.from_data_list(graphs) 
-        if self.root is not None:
-            graph_size = data_batch.x.shape[0] // bs 
-            data_batch.x = torch.cat([data_batch.x, self.root])
-            for i in range(bs):
-                starts.append(data_batch.x.shape[0]-1)
-                starts.append(i * graph_size)
-                ends.append(i * graph_size)
-                ends.append(data_batch.x.shape[0]-1)
-            data_batch.edge_index = torch.cat([data_batch.edge_index, torch.tensor([starts, ends], dtype=torch.long).to(output.get_device())], dim=-1)
-
         data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0]
+        return data_batch
 
-        graph_output, graph_mean = self.gnn(data_batch, batch_size=bs, use_root=(self.root is not None))
-
+    def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor, mode='text'):
+        if mode == 'text':
+            hidden_states = hidden_states[(len(hidden_states) - self.num_text_layers):] 
+            output = torch.cat(hidden_states, dim =-2)
+        else:
+            hidden_states = hidden_states[(len(hidden_states) - self.num_vision_layers):] 
+            output = torch.cat(hidden_states, dim =-2)
+        bs = output.shape[0] 
+        output = torch.cat([pooled_output.view(bs, 1, -1), output], dim=-2)
+        graph = self.build_graph(hidden_states=hidden_states, x=output) 
+        graph = self.add_root(graph=graph, bs=bs) 
+        graph_output, graph_mean  = self.gnn(graph, batch_size=bs, use_root=(self.root is not None))
         output = self.manifold.get_space(graph_output) + self.manifold.get_space(pooled_output)
         output = self.manifold.add_time(output)
+        # output = self.manifold.pt_addition(pooled_output, graph_output)
+
 
         self.manifold.assert_check_point_on_manifold(output)
         return output, graph_mean
-
+    
 
 class LorentzGraphModel(nn.Module): 
-    def __init__(self, manifold:CustomLorentz ,ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False, graph_hidden_channels=512, use_root=False) -> None:
+    def __init__(self, manifold:CustomLorentz , vision_ft_in, text_ft_in, ft_out, config , body, head, manifold_mapper=None, num_layers=1, hidden_size=512, num_hidden_layers=2, shared_proj_layers=False, graph_hidden_channels=512, use_root=False) -> None:
         super().__init__()
         self.config = config
         self.body = body
@@ -346,7 +450,8 @@ class LorentzGraphModel(nn.Module):
         self.manifold_mapper = manifold_mapper
         self.graph_head = LorentzGraphHead(
             manifold=manifold,
-            sizes=[ft_in] * num_layers, 
+            vision_sizes=[vision_ft_in] * num_layers, 
+            text_sizes=[text_ft_in] * num_layers, 
             proj_hidden_sizes=hidden_sizes, 
             ft_out=ft_out,
             graphs_hidden_channel=graph_hidden_channels,
@@ -377,10 +482,10 @@ class LorentzGraphModel(nn.Module):
             else:
                 pooled_output = outputs[1]
             pooled_output = self.head(pooled_output)
-            if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
-                for hidden_state in outputs.hidden_states:
-                    lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
+            pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+            for hidden_state in outputs.hidden_states:
+                lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
+            output, graph_output = self.graph_head(hidden_state=lorentz_hidden_states, pooled_output=pooled_output, mode='vision')
         else:
             outputs = self.body(
                 input_ids=input_ids,
@@ -395,12 +500,11 @@ class LorentzGraphModel(nn.Module):
             else:
                 pooled_output = outputs[1]
             pooled_output = self.head(pooled_output)
-            if self.manifold_mapper is not None:
-                pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
-                for hidden_state in outputs.hidden_states:
-                    lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
+            pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
+            for hidden_state in outputs.hidden_states:
+                lorentz_hidden_states.append(self.manifold_mapper(hidden_state))
 
-        output, graph_output = self.graph_head(hidden_states=lorentz_hidden_states, pooled_output=pooled_output)
+            output, graph_output = self.graph_head(hidden_state=lorentz_hidden_states, pooled_output=pooled_output, mode='text')
 
         return last_hidden_state, output, graph_output
 
