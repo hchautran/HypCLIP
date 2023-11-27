@@ -3,12 +3,12 @@ from lavis.datasets.builders import load_dataset
 from trainer_queue import MyTrainer as LavisTrainer 
 from utils.data_utils import  get_loaders
 from tqdm.auto import tqdm
-from lavis import Blip2Qformer
+from lavis import BlipRetrieval 
 from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
     from config import parser
-    from config import LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
+    from config import EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
@@ -45,16 +45,13 @@ if __name__ == "__main__":
         # print(trainer.evaluate('val'))
         trainer.train()
 
-
-
     config.epochs = 5 
     config.enable_log = True 
     config.manifold = LORENTZ 
-    config.use_entailment_loss = False 
-    for curv in [2.0]:
+    for curv in [2.0, 10.0, 5.0,1.0]:
         config.curv = curv
-        for use_margin_loss in [False]:
+        for use_margin_loss in [True]:
             config.use_margin_loss = use_margin_loss 
-            for use_graph in [True, False]:
+            for use_graph in [True]:
                 config.use_graph=use_graph
                 inner_training_loop(config.batch_size)

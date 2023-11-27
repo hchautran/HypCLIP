@@ -208,7 +208,6 @@ class BaseModel(nn.Module):
         vision_outputs = self.vision_model(
             pixel_values=pixel_values,
         )
-        
 
         text_outputs = self.text_model(
             input_ids=input_ids,

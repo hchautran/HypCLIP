@@ -272,19 +272,17 @@ class LorentzGNN(torch.nn.Module):
         
         if use_root:
             x = x[:x.shape[0]-1]
-            root = x[-1]
-            # print(x.shape)
-        else:
-            root = self.manifold.centroid(x=x) 
 
         x = x.view(batch_size, x.shape[0]//batch_size, -1)
+        graph_mean = self.manifold.centroid(x=x) 
+
         x = x[:, 0, :]
         x = self.lin(x)
         # self.manifold.assert_check_point_on_manifold(x)
         # print(graph_mean)
         x = self.final_lin(x)
         self.manifold.assert_check_point_on_manifold(x)
-        return x, root 
+        return x, graph_mean 
     
 
 
@@ -324,23 +322,14 @@ class LorentzProjLayers(nn.Module):
     return outputs
 
 class LorentzGraphHead(nn.Module):
-    def __init__(self, manifold:CustomLorentz , text_sizes=[768] ,vision_sizes=[768], proj_hidden_sizes=[512, 512], ft_out=512 ,dropout=0.1, graphs_hidden_channel=256, dropout_edge_ratio=0.1, shared=False, use_root=False):
+    def __init__(self, manifold:CustomLorentz, ft_in=256, ft_out=512 , graphs_hidden_channel=256, dropout_edge_ratio=0.1, use_root=False):
         super().__init__()
-        self.text_sizes = text_sizes 
-        self.vision_sizes = vision_sizes 
         self.manifold = manifold
-
-        self.num_text_layers = len(text_sizes)
-        self.num_vision_layers = len(vision_sizes)
-        
-        # self.vision_proj_layers = ProjLayers(sizes=vision_sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
-        # self.text_proj_layers = ProjLayers(sizes=text_sizes, hidden_sizes=proj_hidden_sizes, dropout=dropout, shared=shared)
-        self.gnn = LorentzGNN(manifold=manifold, ft_in=256, hidden_channels=graphs_hidden_channel, ft_out=ft_out) 
+        self.gnn = LorentzGNN(manifold=manifold, ft_in=ft_in, hidden_channels=graphs_hidden_channel, ft_out=ft_out) 
         if use_root:
-            self.root = ManifoldParameter(data=manifold.origin((1,proj_hidden_sizes[-1] + 1)), manifold=manifold, requires_grad=False) 
+            self.root = ManifoldParameter(data=manifold.origin((1, ft_in + 1)), manifold=manifold, requires_grad=False) 
         else:
             self.root = None 
-        # self.final_proj = LorentzSeqLinear(manifold, ft_in=ft_out*2 + 1, layer_dims=[513 ,ft_out + 1], dropout=dropout, act_func='gelu')
         self.dropout_edge_ratio = dropout_edge_ratio
     
     def add_root(self, graph, bs):
@@ -418,21 +407,17 @@ class LorentzGraphHead(nn.Module):
         data_batch.edge_index = dropout_edge(data_batch.edge_index, p=self.dropout_edge_ratio, training=self.training)[0]
         return data_batch
 
-    def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor, mode='text'):
-        if mode == 'text':
-            hidden_states = hidden_states[(len(hidden_states) - self.num_text_layers):] 
-            output = torch.cat(hidden_states, dim =-2)
-        else:
-            hidden_states = hidden_states[(len(hidden_states) - self.num_vision_layers):] 
-            output = torch.cat(hidden_states, dim =-2)
-        bs = output.shape[0] 
+    def forward(self, hidden_states:torch.Tensor, pooled_output:torch.Tensor):
+
+        bs = pooled_output.shape[0] 
+        output = torch.cat(hidden_states, dim =-2)
         output = torch.cat([pooled_output.view(bs, 1, -1), output], dim=-2)
         graph = self.build_graph(hidden_states=hidden_states, x=output) 
         graph = self.add_root(graph=graph, bs=bs) 
         graph_output, graph_mean  = self.gnn(graph, batch_size=bs, use_root=(self.root is not None))
-        output = self.manifold.get_space(graph_output) + self.manifold.get_space(pooled_output)
-        output = self.manifold.add_time(output)
-        # output = self.manifold.pt_addition(pooled_output, graph_output)
+        # output = self.manifold.get_space(graph_output) + self.manifold.get_space(pooled_output)
+        # output = self.manifold.add_time(output)
+        output = self.manifold.pt_addition(pooled_output, graph_output)
 
 
         self.manifold.assert_check_point_on_manifold(output)

@@ -170,7 +170,6 @@ class MyTrainer:
         print("Finished Training")
 
     def rerank(self, sims_matrix, vit_feats, text_ids, text_atts, num_images, num_texts, k=20):
-        print('reranking...')
         score_matrix_i2t = torch.full(
             (num_images, num_texts), -100.0
         ).to(self.model.device)
@@ -181,6 +180,7 @@ class MyTrainer:
 
         with torch.no_grad():
             progress = tqdm(range(len(sims_matrix)))
+            print('reranking text to image ...')
             for i, sims in enumerate(sims_matrix):
                 topk_sim, topk_idx = sims.topk(k=k, dim=0)
                 image_inputs = vit_feats[i].repeat(k, 1, 1).to(self.model.device)
@@ -196,6 +196,7 @@ class MyTrainer:
             progress = tqdm(range(len(sims_matrix)))
 
             for i, sims in enumerate(sims_matrix):
+                print('reranking image to text...')
                 topk_sim, topk_idx = sims.topk(k=k, dim=0)
                 image_inputs = vit_feats[topk_idx.cpu()].to(self.model.device)
                 score = self.model.compute_itm(
@@ -217,14 +218,13 @@ class MyTrainer:
         n_texts, n_images = len(texts), len(image)
 
         loader = self.accelerator.prepare(DataLoader(dataset, batch_size=1, shuffle=False))
-
-
         text_ids = []
         text_embeds = []
         text_atts = []
         vit_feats = []
         image_embeds = []
         max_len=35
+
         with torch.no_grad():
             for data in tqdm(loader):
                 text_feat= self.model.get_text_features(

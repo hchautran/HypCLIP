@@ -63,9 +63,9 @@ if __name__ == "__main__":
         itc_metrics= trainer.evaluate('test')
         print(itc_metrics)
         # print(itm_metrics)
-        itc_metrics= trainer.evaluate('val')
-        print(itc_metrics)
-        # trainer.train()
+        # itc_metrics= trainer.evaluate('val')
+        # print(itc_metrics)
+        trainer.train()
         # print(itm_metrics)
 
 

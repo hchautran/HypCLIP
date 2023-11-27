@@ -119,6 +119,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             num_params = sum(p.numel() for p in self.parameters())
         return num_params
 
+
+    
+
+    
+    
     
 
     
@@ -140,9 +145,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             hyp_dist = -self.manifold.dist_batch(x, y, device=device)
             return hyp_dist
         else: 
-            # if self.training:
-            # hyp_dist = -self.manifold.sqdist_batch(x, y)
-            # else:
             hyp_dist = -self.manifold.dist_batch(x, y)
             return hyp_dist
     
@@ -197,45 +199,55 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         return ((self.eu_margin_loss(pos_idx, sim_i2t, sim_t2t) + self.eu_margin_loss(pos_idx, sim_t2i, sim_i2i ))) / 2
 
 
-    def itm_loss(self, imgs, texts, sims_i2t):
-        bs = imgs.shape[0]
-        _scale = self.logit_scale.exp()
+    def itm_loss(self, text_hidden_states, image_hidden_states, sim_t2i, sim_i2t):
+        bs = text_hidden_states.shape[0]
         with torch.no_grad():
-            weights_i2t = F.softmax(sims_i2t / self.logit_scale, dim=1)
-            weights_t2i = F.softmax(sims_i2t.T / self.logit_scale, dim=1)
+            weights_t2i = F.softmax(sim_t2i/self.logit_scale, dim=1) + 1e-4
+            weights_i2t = F.softmax(sim_i2t/self.logit_scale, dim=1) + 1e-4
             mask = (torch.eye(bs) > 0).to(self.device)
-
             weights_i2t.masked_fill_(mask, 0)
             weights_t2i.masked_fill_(mask, 0) 
-            # select a negative image for each text
-            img_enc_neg = []    
-            for b in range(bs):
-                neg_idx = torch.multinomial(weights_t2i[b], 1).item()
-                img_enc_neg.append(imgs[neg_idx])
-            img_enc_neg = torch.stack(img_enc_neg,dim=0) 
 
-            # select a negative text for each image
-            cap_enc_neg = []
-            for b in range(bs):
-                neg_idx = torch.multinomial(weights_i2t[b], 1).item()
-                cap_enc_neg.append(texts[neg_idx])
-            cap_enc_neg = torch.stack(cap_enc_neg,dim=0)   
+        # select a negative image for each text
+        image_embeds_neg = []
+        for b in range(bs):
+            neg_idx = torch.multinomial(weights_t2i[b], 1).item()
+            image_embeds_neg.append(image_hidden_states[neg_idx])
+        image_embeds_neg = torch.stack(image_embeds_neg, dim=0)
 
-            cap_enc_all = torch.cat([texts, texts, cap_enc_neg],dim=0)     
-            img_enc_all = torch.cat([imgs, img_enc_neg, imgs],dim=0)
-            itm_labels = torch.cat(
-                [
-                    torch.ones(bs,dtype=torch.float),
-                    torch.zeros(2*bs,dtype=torch.float)
-                ],
-            dim=0).view(-1,1).to(imgs.device)
+        # select a negative text for each image
+        text_ids_neg = []
+        for b in range(bs):
+            neg_idx = torch.multinomial(weights_i2t[b], 1).item()
+            text_ids_neg.append(text_hidden_states[neg_idx])
+        text_ids_neg = torch.stack(text_ids_neg, dim=0)
 
-        disc = self.itm_head(img_enc_all, cap_enc_all)
-        class_weights = torch.tensor([[2.0]]).to(self.device)
-        loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels, pos_weight=class_weights)
-        itm_acc = ((disc >0.5).float() == itm_labels).float().sum()/itm_labels.shape[0]
+        text_hidden_states = torch.cat(
+            [text_hidden_states, text_hidden_states, text_ids_neg], dim=0
+        )  # pos, pos, neg
+
+        image_hidden_states = torch.cat(
+            [image_hidden_states, image_embeds_neg, image_hidden_states], dim=0
+        )  # pos, neg, pos
+
+
+        itm_score = self.model.compute_itm(
+            text_hidden_states=text_hidden_states, 
+            vision_hidden_states=image_hidden_states, 
+        ) 
+
+        itm_score = itm_score.mean(dim=1)
+
+        itm_labels = torch.cat(
+            [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
+            dim=0,
+        ).to(self.device)
+
+
+        itm_acc = (itm_score.argmax(-1) == itm_labels).float().sum()/itm_labels.shape[0]
+        loss_itm = F.cross_entropy(itm_score, itm_labels) 
         return loss_itm, itm_acc
-
+        
 
 
     def forward(
@@ -266,6 +278,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         )
         text_embeds = text_output[1] 
         image_embeds = image_output[1] 
+        text_hidden_states = text_output[0]
+        vision_hidden_states = image_output[0]
 
         text_feat = self.postprocess_embeds(text_embeds)
         image_feat = self.postprocess_embeds(image_embeds)
@@ -279,10 +293,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         pos_idx = torch.eq(idx, idx_all).float()
         sim_targets = pos_idx / pos_idx.sum(1, keepdim=True)
         with torch.no_grad():
-            self.logit_scale.clamp_(0.05, 0.1)
-            self.eu_logit_scale.clamp_(0.05, 0.1)
-
-
+            self.logit_scale.clamp_(0.001, 0.5)
 
         # get momentum features
         with torch.no_grad():
@@ -295,6 +306,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 input_ids=input_ids,
                 attention_mask=attention_mask
             )
+
 
             image_feat_m = self.postprocess_embeds(image_embeds_m[1])
             text_feat_m = self.postprocess_embeds(text_embeds_m[1])
@@ -336,7 +348,12 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
 
         sims = self.dist_func(image_feat, text_feat)
-        loss_itm, itm_acc = self.itm_loss(imgs=image_feat, texts=text_feat, sims_i2t=sims)
+        loss_itm, itm_acc = self.itm_loss(
+            text_hidden_states=text_hidden_states, 
+            image_hidden_states=vision_hidden_states, 
+            sim_i2t=sims, 
+            sim_t2i=sims.T
+        )
         
         # loss_itm, itm_acc = torch.tensor(0.0) , torch.tensor(0.0)
 
@@ -371,10 +388,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
            attention_mask=attention_mask, 
         )
         text_feat = self.postprocess_embeds(text_output[1])
-        return text_feat
+        return text_feat, text_output[0]
 
     def get_vision_features(self, pixel_values:torch.Tensor):
         # TODO 
         image_output = self.model(pixel_values=pixel_values)
         image_feat = self.postprocess_embeds(image_output[1])
-        return image_feat
+        return image_feat, image_output[0]
+    

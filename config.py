@@ -120,7 +120,7 @@ config_args = {
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_neg_margin": (
-            0.9,
+            0.5,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "max_txt_len": (35, "max_txt_len"),
@@ -141,7 +141,7 @@ config_args = {
         "normalize_image_embed": (False,""),
         "shared_proj_layers": (False, "number of project layers"),
         "use_itm_head": (True, "use itm head"),
-        "use_root": (True, "use graph root"),
+        "use_root": (False, "use graph root"),
         "graph_hidden_channels": (512, "graph size"),
     },
     "hybrid_model_config": {
@@ -154,7 +154,7 @@ config_args = {
         "atol": (1e-1, "The relative tolerance parameter"),
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.05, "distance temperature"),
-        "clip_radius": (None, "clipping radius"),
+        "clip_radius": (1.25, "clipping radius"),
         "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (12, "number of trainable blocks in text model"),
         "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),
@@ -171,15 +171,14 @@ config_args = {
         "cache_dir": (CACHE_DIR, "cache_dir"),
     },
     "perceiver": {
-        "num_latents": (24, "which dataset to use"),
-        "d_latents": (768, "d latent"),
-        "d_out": (512, "d out"),
+        "num_latents": (32, "which dataset to use"),
+        "d_latents": (512, "d latent"),
         "num_blocks": (1, "d out"),
-        "num_self_attends_per_block": (1, "cache_dir"),
-        "num_cross_attention_heads": (4, "cache_dir"),
-        "num_self_attention_heads": (6, "cache_dir"),
-        "cross_attention_widening_factor": (4, "cache_dir"),
-        "attention_probs_dropout_prob": (0.3, "cache_dir"),
+        "num_self_attends_per_block": (6, "cache_dir"),
+        "num_cross_attention_heads": (2, "cache_dir"),
+        "num_self_attention_heads": (2, "cache_dir"),
+        "cross_attention_widening_factor": (2, "cache_dir"),
+        "attention_probs_dropout_prob": (0.4, "cache_dir"),
     }
 }
 

@@ -223,10 +223,6 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
         
         model = get_lora_lavis_blip(config=config,model=model) 
         self.config = config
-        text_body = model.text_encoder
-        vision_body = model.visual_encoder
-        text_head = model.text_proj
-        vision_head = model.vision_proj
         mapper = None
         if config.manifold != EUCLID:
             mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
@@ -241,10 +237,6 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 vision_body=model.visual_encoder,
                 vision_head=model.vision_proj,
                 manifold_mapper=mapper,
-                num_layers=1,
-                hidden_size=config.proj_layer_hidden_sizes,
-                num_hidden_layers=config.num_proj_layers,
-                use_root=config.use_root
             )
             
         else:
@@ -257,11 +249,6 @@ class LavisHypGraphBLIPWithQueue(BaseModelWithQueue):
                 text_head=model.text_proj,
                 vision_body=model.visual_encoder,
                 vision_head=model.vision_proj,
-                manifold_mapper=mapper,
-                num_layers=1,
-                hidden_size=config.proj_layer_hidden_sizes,
-                num_hidden_layers=config.num_proj_layers,
-                use_root=config.use_root
             )
 
         # self.eu_logit_scale = model.temp
