@@ -172,9 +172,9 @@ config_args = {
     },
     "perceiver": {
         "num_latents": (32, "which dataset to use"),
-        "d_latents": (512, "d latent"),
+        "d_latents": (256, "d latent"),
         "num_blocks": (1, "d out"),
-        "num_self_attends_per_block": (6, "cache_dir"),
+        "num_self_attends_per_block": (12, "cache_dir"),
         "num_cross_attention_heads": (2, "cache_dir"),
         "num_self_attention_heads": (2, "cache_dir"),
         "cross_attention_widening_factor": (2, "cache_dir"),

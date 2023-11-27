@@ -144,7 +144,7 @@ class LavisBLIPGraphModel(nn.Module):
 
 
 class LavisLorentzBLIPGraphModel(nn.Module): 
-    def __init__(self, manifold:CustomLorentz, d_vision, d_text ,ft_out, config , text_body, text_head, vision_body, vision_head,  manifold_mapper) -> None:
+    def __init__(self, manifold:CustomLorentz, d_vision, d_text ,ft_out, config, text_body, text_head, vision_body, vision_head,  manifold_mapper) -> None:
         super().__init__()
         self.config = config
         self.text_body = text_body
@@ -167,11 +167,10 @@ class LavisLorentzBLIPGraphModel(nn.Module):
             config=head_config, 
             d_vision=d_vision,
             d_text=d_text,
-            num_blocks=2
+            num_blocks=config.num_blocks
         ) 
-        self.attn = nn.Parameter(torch.ones(config.num_latents + 1), requires_grad=False)
-        self.perceiver_proj_text = LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[2049, ft_out + 1], act_func='gelu', dropout=0.3)
-        self.perceiver_proj_vision= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[2049,ft_out + 1], act_func='gelu', dropout=0.3)
+        self.perceiver_proj_text = LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+        self.perceiver_proj_vision= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
         self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
         
     def forward(
@@ -184,46 +183,40 @@ class LavisLorentzBLIPGraphModel(nn.Module):
         if pixel_values is not None:
             outputs = self.vision_body.forward_features(pixel_values)
             last_hidden_state = outputs
-            pooled_output = last_hidden_state[:, 0, :]
-
-            vision_inputs = self.perceiver_head.get_vision_features(last_hidden_state)
-            pooled_output = self.vision_head(pooled_output)
+            pooled_output = self.vision_head(last_hidden_state[:, 0, :])
+            latents_output = self.perceiver_head.get_vision_features(last_hidden_state)
 
             pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
-            lorentz_hidden_states = self.manifold_mapper(vision_inputs)
-            lorentz_hidden_states = self.perceiver_proj_vision(lorentz_hidden_states) 
+            lorentz_latents = self.manifold_mapper(latents_output)
+            lorentz_latents = self.perceiver_proj_vision(lorentz_latents) 
             
         else:
             text = Text() 
             text.input_ids=input_ids
             text.attention_mask=attention_mask
             outputs = self.text_body.forward_text(text)
-            last_hidden_state = outputs.last_hidden_state[:,0,:].unsqueeze(1)
-
-            text_inputs = self.perceiver_head.get_text_features(last_hidden_state)
+            last_hidden_state = outputs.last_hidden_state
             pooled_output = self.text_head(outputs.last_hidden_state[:,0,:])
+            latents_output = self.perceiver_head.get_text_features(last_hidden_state)
 
             pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
-            lorentz_hidden_states = self.manifold_mapper(text_inputs)
-            lorentz_hidden_states = self.perceiver_proj_text(lorentz_hidden_states) 
+            lorentz_latents = self.manifold_mapper(latents_output)
+            lorentz_latents = self.perceiver_proj_text(lorentz_latents) 
 
-        output = self.manifold.centroid(torch.cat([lorentz_hidden_states], dim=1))
+        output = self.manifold.centroid(lorentz_latents)
         output = self.manifold.get_space(output) + self.manifold.get_space(pooled_output)
         output = self.manifold.add_time(output)
-        return last_hidden_state, output
+        return latents_output, output
     
-    def compute_itm(self, vision_hidden_states:torch.Tensor, text_hidden_states:torch.Tensor):
+    def compute_itm(self, vision_latents:torch.Tensor, text_latents:torch.Tensor):
 
-        itm_text, itm_vision = self.perceiver_head(
-            text_inputs=text_hidden_states, 
-            vision_inputs=vision_hidden_states, 
-            self_attend_mask=None,
+        itm_output = self.perceiver_head.compute_itm(
+            vision_latents=vision_latents, 
+            text_latents=text_latents, 
         ) 
 
-        itm_vision = self.manifold_mapper(itm_vision)
-        itm_text = self.manifold_mapper(itm_text)
-        hidden_states = torch.cat([itm_vision, itm_text], dim=1)
-        itm_score = self.itm_head(hidden_states)
+        itm_output = self.manifold_mapper(itm_output)
+        itm_score = self.itm_head(itm_output)
         return itm_score 
         
     

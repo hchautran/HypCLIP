@@ -5,7 +5,6 @@ from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import report_metrics 
 from tqdm.auto import tqdm
 import torch
-from config import EUCLID, POINCARE, LORENTZ
 from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
 import time
 import torch.nn.functional as F
@@ -62,7 +61,7 @@ class MyTrainer:
        
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=2
+            self.optimizer, 'max', factor=0.1, patience=1, min_lr=1e-6
         )
         
         (
@@ -163,11 +162,11 @@ class MyTrainer:
                 topk_sim, topk_idx = sims.topk(k=k, dim=0)
                 image_inputs = vit_feats[i].repeat(k, 1, 1).to(self.model.device)
                 score = self.model.model.compute_itm(
-                    vision_hidden_states=image_inputs,
-                    text_hidden_states=text_feats[topk_idx]
+                    vision_latents=image_inputs,
+                    text_latents=text_feats[topk_idx]
                 ).float()
                 score = score[:, :, 1].mean(dim=1)
-                score_matrix_i2t[i, topk_idx] = score + topk_sim
+                score_matrix_i2t[i, topk_idx] = F.softmax(score, 0) + topk_sim
                 progress.update(1)
 
             sims_matrix = sims_matrix.t()
@@ -178,12 +177,11 @@ class MyTrainer:
                 topk_sim, topk_idx = sims.topk(k=k, dim=0)
                 image_inputs = vit_feats[topk_idx.cpu()].to(self.model.device)
                 score = self.model.model.compute_itm(
-                    vision_hidden_states=image_inputs,
-                    text_hidden_states=text_feats[i].repeat(k, 1).unsqueeze_(1)
+                    vision_latents=image_inputs,
+                    text_latents=text_feats[i].repeat(k, 1, 1)
                 ).float()
-                # score = score[:,0,:]
                 score = score[:, :, 1].mean(dim=1)
-                score_matrix_t2i[i, topk_idx] = score + topk_sim
+                score_matrix_t2i[i, topk_idx] = F.softmax(score, 0) + topk_sim
                 progress.update(1)
 
         return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()

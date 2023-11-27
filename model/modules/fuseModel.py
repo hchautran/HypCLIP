@@ -110,7 +110,7 @@ class LavisEncoder(nn.Module):
 
 
 class FuseEncoder(nn.Module): 
-    def __init__(self, config, vision_bodies, text_bodies, vision_head, text_head, mapper=None, use_normalized=False ) -> None:
+    def __init__(self, manifold:CustomLorentz, config, d_vision, d_text, ft_out, vision_bodies, text_bodies, vision_head, text_head, mapper=None, use_normalized=False ) -> None:
         super().__init__()
         self.vision_bodies = nn.ModuleList([vision_bodies]) 
         self.text_bodies = nn.ModuleList([text_bodies]) 
@@ -119,6 +119,26 @@ class FuseEncoder(nn.Module):
         self.config = config
         self.mapper = mapper
         self.use_normalized = use_normalized
+        head_config = PerceiverConfig(
+            d_latents=config.d_latents, 
+            num_latents=config.num_latents, 
+            num_self_attends_per_block=config.num_self_attends_per_block,
+            num_cross_attention_heads=config.num_cross_attention_heads,
+            self_attention_widening_factor=4,
+            cross_attention_widening_factor=4,
+            num_self_attention_heads=config.num_self_attention_heads,
+            attention_probs_dropout_prob=config.attention_probs_dropout_prob
+        )
+        self.perceiver_head = MultiModalModel(
+            config=head_config, 
+            d_vision=d_vision,
+            d_text=d_text,
+            num_blocks=config.num_blocks
+        ) 
+        self.perceiver_proj_text = LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+        self.perceiver_proj_vision= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+        self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
+    
 
     def forward(
             self,

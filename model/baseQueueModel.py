@@ -232,8 +232,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
 
         itm_score = self.model.compute_itm(
-            text_hidden_states=text_hidden_states, 
-            vision_hidden_states=image_hidden_states, 
+            text_latents=text_hidden_states, 
+            vision_latents=image_hidden_states, 
         ) 
 
         itm_score = itm_score.mean(dim=1)
