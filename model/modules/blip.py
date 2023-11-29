@@ -13,9 +13,10 @@ from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
 from torch_geometric.utils import dropout_edge 
 from .perceiver import MultiModalModel 
-from hyptorch.lorentz.layers import LorentzMLR 
+from hyptorch.lorentz.layers import LorentzMLR, LorentzLinear
 from .seq_linear import LorentzSeqLinear, SeqLinear
 from transformers import PerceiverConfig
+from copy import deepcopy
 class Text(object):
     pass
 
@@ -169,9 +170,10 @@ class LavisLorentzBLIPGraphModel(nn.Module):
             d_text=d_text,
             num_blocks=config.num_blocks
         ) 
-        self.perceiver_proj_text = LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
-        self.perceiver_proj_vision= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
-        self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
+        self.perceiver_hidden_layers= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4 + 1, config.d_latents*4 + 1, config.d_latents+ 1], act_func='gelu', dropout=0.2)
+        self.perceiver_proj_text = LorentzLinear(manifold, config.d_latents +1 , ft_out + 1, dropout=0.1)
+        self.perceiver_proj_vision = LorentzLinear(manifold, config.d_latents +1 , ft_out + 1, dropout=0.1)
+        self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 1) 
         
     def forward(
         self,
@@ -181,13 +183,15 @@ class LavisLorentzBLIPGraphModel(nn.Module):
     ) -> torch.FloatTensor:
 
         if pixel_values is not None:
+            # with torch.no_grad():
             outputs = self.vision_body.forward_features(pixel_values)
             last_hidden_state = outputs
             pooled_output = self.vision_head(last_hidden_state[:, 0, :])
-            latents_output = self.perceiver_head.get_vision_features(last_hidden_state)
+            vision_state, latents_output = self.perceiver_head.get_vision_features(last_hidden_state)
 
             pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
-            lorentz_latents = self.manifold_mapper(latents_output)
+            lorentz_latents = self.manifold_mapper(vision_state[:,0,:])
+            lorentz_latents = self.perceiver_hidden_layers(lorentz_latents)
             lorentz_latents = self.perceiver_proj_vision(lorentz_latents) 
             
         else:
@@ -197,14 +201,14 @@ class LavisLorentzBLIPGraphModel(nn.Module):
             outputs = self.text_body.forward_text(text)
             last_hidden_state = outputs.last_hidden_state
             pooled_output = self.text_head(outputs.last_hidden_state[:,0,:])
-            latents_output = self.perceiver_head.get_text_features(last_hidden_state)
+            text_state, latents_output = self.perceiver_head.get_text_features(last_hidden_state, attention_mask=attention_mask)
 
             pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
-            lorentz_latents = self.manifold_mapper(latents_output)
+            lorentz_latents = self.manifold_mapper(text_state[:,0,:])
+            lorentz_latents = self.perceiver_hidden_layers(lorentz_latents)
             lorentz_latents = self.perceiver_proj_text(lorentz_latents) 
 
-        output = self.manifold.centroid(lorentz_latents)
-        output = self.manifold.get_space(output) + self.manifold.get_space(pooled_output)
+        output = self.manifold.get_space(lorentz_latents) + self.manifold.get_space(pooled_output)
         output = self.manifold.add_time(output)
         return latents_output, output
     
@@ -215,9 +219,10 @@ class LavisLorentzBLIPGraphModel(nn.Module):
             text_latents=text_latents, 
         ) 
 
-        itm_output = self.manifold_mapper(itm_output)
+        itm_output = self.manifold_mapper(itm_output[:,0,:])
+        itm_output = self.perceiver_hidden_layers(itm_output)
         itm_score = self.itm_head(itm_output)
-        return itm_score 
+        return itm_score
         
     
         

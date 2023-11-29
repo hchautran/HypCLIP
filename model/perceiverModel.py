@@ -248,7 +248,7 @@ class PerceiverCLIPWithQueue(BaseModelWithQueue):
         text_feat = self.postprocess_embeds(text_feat)
         return text_feat, text_inputs
 
-    def (self, pixel_values:torch.Tensor):
+    def get_text_features(self, pixel_values:torch.Tensor):
         image_output = self.vision_model.vision_model(
             pixel_values=pixel_values, 
             output_hidden_states=True

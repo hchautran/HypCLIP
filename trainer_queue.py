@@ -8,6 +8,7 @@ import torch
 from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
 import time
 import torch.nn.functional as F
+from bitsandbytes.optim import Adam8bit
 
 names = {
    CLIP_BASE_PATCH_32: 'clip_base_32', 
@@ -46,22 +47,13 @@ class MyTrainer:
         self.current_epoch = 0
         self.model = self.accelerator.prepare(model)
 
-        if config.optimizer == "adam":
-            self.optimizer = torch.optim.Adam(
-                self.model.parameters(),
-                lr=config.lr,
-            )
-        else:
-            self.optimizer = torch.optim.SGD(
-                self.model.parameters(),
-                lr=config.lr,
-                momentum=config.momentum,
-                weight_decay=config.weight_decay,
+        self.optimizer = Adam8bit(
+            self.model.parameters(),
+            lr=config.lr,
         )
-       
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=1, min_lr=1e-6
+            self.optimizer, 'max', factor=0.1, patience=2, min_lr=1e-7
         )
         
         (
@@ -165,8 +157,7 @@ class MyTrainer:
                     vision_latents=image_inputs,
                     text_latents=text_feats[topk_idx]
                 ).float()
-                score = score[:, :, 1].mean(dim=1)
-                score_matrix_i2t[i, topk_idx] = F.softmax(score, 0) + topk_sim
+                score_matrix_i2t[i, topk_idx] = topk_sim + score.squeeze_()
                 progress.update(1)
 
             sims_matrix = sims_matrix.t()
@@ -180,8 +171,7 @@ class MyTrainer:
                     vision_latents=image_inputs,
                     text_latents=text_feats[i].repeat(k, 1, 1)
                 ).float()
-                score = score[:, :, 1].mean(dim=1)
-                score_matrix_t2i[i, topk_idx] = F.softmax(score, 0) + topk_sim
+                score_matrix_t2i[i, topk_idx] = topk_sim + score.squeeze_()
                 progress.update(1)
 
         return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()
@@ -223,6 +213,7 @@ class MyTrainer:
 
             sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
             metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
+            print(metrics)
 
             score_matrix_i2t, score_matrix_t2i = self.rerank(
                 sims_matrix=sims_t2i.T, 

@@ -118,15 +118,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         else:
             num_params = sum(p.numel() for p in self.parameters())
         return num_params
-
-
     
 
-    
-    
-    
-
-    
     def get_euclid_dist(self, x:torch.Tensor, y:torch.tensor):
         if self.config.manifold == LORENTZ:
             x = self.manifold.get_space(x)
@@ -199,12 +192,13 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         return ((self.eu_margin_loss(pos_idx, sim_i2t, sim_t2t) + self.eu_margin_loss(pos_idx, sim_t2i, sim_i2i ))) / 2
 
 
-    def itm_loss(self, text_hidden_states, image_hidden_states, sim_t2i, sim_i2t):
+    def itm_loss(self, idx, text_hidden_states, image_hidden_states, sim_t2i, sim_i2t):
         bs = text_hidden_states.shape[0]
         with torch.no_grad():
+            mask = torch.eq(idx, idx.t())
+            
             weights_t2i = F.softmax(sim_t2i/self.logit_scale, dim=1) + 1e-4
             weights_i2t = F.softmax(sim_i2t/self.logit_scale, dim=1) + 1e-4
-            mask = (torch.eye(bs) > 0).to(self.device)
             weights_i2t.masked_fill_(mask, 0)
             weights_t2i.masked_fill_(mask, 0) 
 
@@ -213,14 +207,15 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         for b in range(bs):
             neg_idx = torch.multinomial(weights_t2i[b], 1).item()
             image_embeds_neg.append(image_hidden_states[neg_idx])
-        image_embeds_neg = torch.stack(image_embeds_neg, dim=0)
 
         # select a negative text for each image
         text_ids_neg = []
         for b in range(bs):
             neg_idx = torch.multinomial(weights_i2t[b], 1).item()
             text_ids_neg.append(text_hidden_states[neg_idx])
+
         text_ids_neg = torch.stack(text_ids_neg, dim=0)
+        image_embeds_neg = torch.stack(image_embeds_neg, dim=0)
 
         text_hidden_states = torch.cat(
             [text_hidden_states, text_hidden_states, text_ids_neg], dim=0
@@ -236,17 +231,22 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             vision_latents=image_hidden_states, 
         ) 
 
-        itm_score = itm_score.mean(dim=1)
-
         itm_labels = torch.cat(
-            [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
+            [torch.ones(bs, dtype=torch.float), torch.zeros(2 * bs, dtype=torch.float)],
             dim=0,
         ).to(self.device)
+        # pos_weight= torch.cat(
+            # [2*torch.ones(bs, dtype=torch.float), 1*torch.zeros(2 * bs, dtype=torch.float)],
+            # dim=0,
+        # ).to(self.device)
 
+        pos_weight = torch.tensor([2]).to(itm_score.device)
+        # print(itm_score)
+        itm_pred = (itm_score.squeeze_() > 0.0).float() 
+        itm_acc = (itm_pred == itm_labels).float().sum()/itm_labels.shape[0]
 
-        itm_acc = (itm_score.argmax(-1) == itm_labels).float().sum()/itm_labels.shape[0]
-        loss_itm = F.cross_entropy(itm_score, itm_labels) 
-        return loss_itm, itm_acc
+        loss_itm = F.binary_cross_entropy_with_logits(itm_score, itm_labels, pos_weight=pos_weight) 
+        return loss_itm,  itm_acc
         
 
 
@@ -330,6 +330,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
 
 
+
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
 
@@ -345,10 +346,12 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         loss_t2i = -torch.sum(
             F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_t2i_targets, dim=-1
         ).mean()      
+       
         loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
 
         sims = self.dist_func(image_feat, text_feat)
         loss_itm, itm_acc = self.itm_loss(
+            idx=idx,
             text_hidden_states=text_hidden_states, 
             image_hidden_states=vision_hidden_states, 
             sim_i2t=sims, 

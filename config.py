@@ -153,7 +153,7 @@ config_args = {
         "curv": (1.0, "hyperbolic curvature"),
         "atol": (1e-1, "The relative tolerance parameter"),
         "rtol": (1e-1, "The absolute tolerance parameter"),
-        "temp": (0.05, "distance temperature"),
+        "temp": (0.04, "distance temperature"),
         "clip_radius": (1.25, "clipping radius"),
         "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (12, "number of trainable blocks in text model"),
@@ -171,14 +171,14 @@ config_args = {
         "cache_dir": (CACHE_DIR, "cache_dir"),
     },
     "perceiver": {
-        "num_latents": (32, "which dataset to use"),
-        "d_latents": (256, "d latent"),
+        "num_latents": (24, "which dataset to use"),
+        "d_latents": (512, "d latent"),
         "num_blocks": (1, "d out"),
         "num_self_attends_per_block": (12, "cache_dir"),
-        "num_cross_attention_heads": (2, "cache_dir"),
-        "num_self_attention_heads": (2, "cache_dir"),
-        "cross_attention_widening_factor": (2, "cache_dir"),
-        "attention_probs_dropout_prob": (0.4, "cache_dir"),
+        "num_cross_attention_heads": (4, "cache_dir"),
+        "num_self_attention_heads": (4, "cache_dir"),
+        "cross_attention_widening_factor": (4, "cache_dir"),
+        "attention_probs_dropout_prob": (0.2, "cache_dir"),
     }
 }
 

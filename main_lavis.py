@@ -2,8 +2,6 @@ from model.hypBLIP import LavisBLIPWithQueue ,LavisHypGraphBLIPWithQueue
 from lavis.datasets.builders import load_dataset
 from trainer_queue import MyTrainer as LavisTrainer 
 from utils.data_utils import  get_loaders
-from tqdm.auto import tqdm
-from lavis import BlipRetrieval 
 from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
@@ -45,7 +43,7 @@ if __name__ == "__main__":
         # print(trainer.evaluate('val'))
         trainer.train()
 
-    config.epochs = 10 
+    config.epochs = 5 
     config.enable_log = True 
     config.manifold = LORENTZ 
     for curv in [5.0, 2.0, 10.0]:

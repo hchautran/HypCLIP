@@ -6,3 +6,4 @@ torch_geometric
 salesforce-lavis
 wandb
 peft
+bitsandbytes

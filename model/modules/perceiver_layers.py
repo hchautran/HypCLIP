@@ -65,9 +65,9 @@ class PerceiverSelfAttention(nn.Module):
         self.layernorm2 = nn.LayerNorm(kv_dim) if is_cross_attention else nn.Identity()
 
         # Projection matrices
-        self.query = bnn.Linear8bitLt(q_dim, qk_channels)
-        self.key = bnn.Linear8bitLt(kv_dim, qk_channels)
-        self.value = bnn.Linear8bitLt(kv_dim, v_channels)
+        self.query = nn.Linear(q_dim, qk_channels)
+        self.key = nn.Linear(kv_dim, qk_channels)
+        self.value = nn.Linear(kv_dim, v_channels)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
@@ -145,7 +145,7 @@ class PerceiverSelfAttention(nn.Module):
 class PerceiverSelfOutput(nn.Module):
     def __init__(self, config, input_channels, output_channels):
         super().__init__()
-        self.dense = bnn.Linear8bitLt(input_channels, output_channels)
+        self.dense = nn.Linear(input_channels, output_channels)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = self.dense(hidden_states)
@@ -255,18 +255,23 @@ class PerceiverAttention(nn.Module):
 class PerceiverMLP(nn.Module):
     """A Transformer-style dense module to follow attention."""
 
-    def __init__(self, config, input_size, widening_factor):
+    def __init__(self, config, input_size, widening_factor, dropout=0.1):
         super().__init__()
-        self.dense1 = bnn.Linear8bitLt(input_size, widening_factor * input_size)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dense1 = nn.Linear(input_size, widening_factor * input_size)
         if isinstance(config.hidden_act, str):
             self.intermediate_act_fn = ACT2FN[config.hidden_act]
         else:
             self.intermediate_act_fn = config.hidden_act
-        self.dense2 = bnn.Linear8bitLt(widening_factor * input_size, input_size)
+
+        self.dropout2 = nn.Dropout(dropout)
+        self.dense2 = nn.Linear(widening_factor * input_size, input_size)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.dropout1(hidden_states)
         hidden_states = self.dense1(hidden_states)
         hidden_states = self.intermediate_act_fn(hidden_states)
+        hidden_states = self.dropout2(hidden_states)
         hidden_states = self.dense2(hidden_states)
         return hidden_states
 
@@ -282,6 +287,7 @@ class PerceiverLayer(nn.Module):
         q_dim=None,
         kv_dim=None,
         widening_factor=4,
+        dropout=0.1,
         use_query_residual=True,
     ):
         super().__init__()
@@ -298,7 +304,7 @@ class PerceiverLayer(nn.Module):
             use_query_residual=use_query_residual,
         )
         self.layernorm = nn.LayerNorm(q_dim)
-        self.mlp = PerceiverMLP(config, input_size=q_dim, widening_factor=widening_factor)
+        self.mlp = PerceiverMLP(config, input_size=q_dim, widening_factor=widening_factor, dropout=dropout)
 
     def forward(
         self,

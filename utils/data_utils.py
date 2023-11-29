@@ -7,24 +7,11 @@ from transformers import CLIPProcessor, BlipProcessor
 from datasets import dataset_dict 
 from datasets import load_dataset
 from lavis.datasets.builders import load_dataset as lavis_dataset
-class Flickr_dataset(Dataset):
-    def __init__(self, dataset):  
-        self.dataset = dataset
-        self.dataset_len = len(dataset)
-        self.cap_per_img = 5
-        self.load_raw_image=True
 
-    def __len__(self):
-        return self.dataset_len  * self.cap_per_img
-    
-    def __getitem__(self, index): 
-        data = self.dataset[int(index / self.cap_per_img)]
-        out = {
-            'img_id': data['img_id'],
-            'pixel_values': data['pixel_values'],
-            'caption': data['caption'][int(index % self.cap_per_img)],
-        }
-        return out
+
+def parse_int(sample):
+    sample['img_id'] = int(sample['img_id'])
+    return sample
 
 class EvalDataset(Dataset):
     def __init__(self, dataset, vis_processor, tokenizer, txt_processor=None):  
@@ -65,24 +52,6 @@ class EvalDataset(Dataset):
         return output
 
 
-class CoFlickr_dataset(Dataset):
-    def __init__(self, dataset):  
-        self.dataset = dataset
-        self.dataset_len = len(dataset)
-        self.cap_per_img = 5
-
-    def __len__(self):
-        return self.dataset_len  * self.cap_per_img
-    
-    def __getitem__(self, index): 
-        data = self.dataset[int(index / self.cap_per_img)]
-        out = {
-            'img_id': data['img_id'],
-            'clip_pixel_values': data['clip_pixel_values'],
-            'blip_pixel_values': data['blip_pixel_values'],
-            'caption': data['caption'][int(index % self.cap_per_img)],
-        }
-        return out
 class UniqueClassSampler(Sampler):
     def __init__(self, data_source, batch_size):
         self.data_source = data_source
@@ -130,34 +99,6 @@ def collate_func(batch, processor):
     return data
 
 
-
-
-
-def co_collate_func(batch, clip_processor, blip_processor):
-    # print(batch)
-    df = pd.DataFrame(batch)
-    data = {} 
-    clip_data = clip_processor(
-        text=list(df['caption']), 
-        padding=True, 
-        return_tensors='pt',
-        truncation=True
-    )
-    blip_data = blip_processor(
-        text=list(df['caption']), 
-        padding=True, 
-        return_tensors='pt',
-        truncation=True
-    )
-    data['clip_input_ids'] = clip_data['input_ids'] 
-    data['clip_attention_mask'] = clip_data['attention_mask'] 
-    data['blip_input_ids'] = blip_data['input_ids'] 
-    data['blip_attention_mask'] = blip_data['attention_mask'] 
-    data['clip_pixel_values'] = torch.from_numpy(np.concatenate(list(df['clip_pixel_values']), 0))
-    data['blip_pixel_values'] = torch.from_numpy(np.concatenate(list(df['blip_pixel_values']), 0))
-    data['img_id'] = torch.tensor(list(df['img_id'])) 
-    return data
-
 def get_dataloader(dataset,  vis_processor, tokenizer, txt_processor=None, mode='train', batch_size=1):
     def coco_collate_func(batch):
         df = pd.DataFrame(batch)
@@ -178,10 +119,12 @@ def get_dataloader(dataset,  vis_processor, tokenizer, txt_processor=None, mode=
             text_inputs = tokenizer(text=texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
         else:
             text_inputs = tokenizer(texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+
         data['pixel_values'] = torch.cat(pixel_values, dim=0)
         data['img_id'] = torch.tensor(list(df['image_id']))
         data['input_ids'] = text_inputs['input_ids']
         data['attention_mask'] = text_inputs['attention_mask']
+
         return data
 
     if mode == 'train':
@@ -200,102 +143,9 @@ def get_dataloader(dataset,  vis_processor, tokenizer, txt_processor=None, mode=
         )
         return cur_dataset
 
-# def get_dataloader(dataset, batch_size, processor, mode='train', use_random_sampler=False):
-#     flickr_dataset = Flickr_dataset(dataset) 
-#     custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
-#     if mode == 'train':
-#         if use_random_sampler:
-#             return DataLoader(
-#                 flickr_dataset, 
-#                 batch_size=batch_size, 
-#                 collate_fn = lambda batch: collate_func(batch, processor),
-#                 shuffle=True
-#             )
-
-#         return DataLoader(
-#             flickr_dataset, 
-#             batch_size=batch_size, 
-#             collate_fn = lambda batch: collate_func(batch, processor),
-#             sampler=custom_sampler,
-#         ) 
-#     else:
-#         return DataLoader(
-#             flickr_dataset, 
-#             batch_size=batch_size, 
-#             collate_fn = lambda batch: collate_func(batch, processor),
-#             shuffle=False
-#         )
-
-def get_co_dataloader(dataset, batch_size, clip_processor, blip_processor,mode='train', use_random_sampler=False):
-    flickr_dataset = CoFlickr_dataset(dataset) 
-    custom_sampler = UniqueClassSampler(flickr_dataset, batch_size)
-    if mode == 'train':
-        if use_random_sampler:
-            return DataLoader(
-                flickr_dataset, 
-                batch_size=batch_size, 
-                collate_fn = lambda batch: co_collate_func(batch, clip_processor, blip_processor),
-                shuffle=True
-            )
- 
-        return DataLoader(
-            flickr_dataset, 
-            batch_size=batch_size, 
-            collate_fn = lambda batch: co_collate_func(batch, clip_processor, blip_processor),
-            sampler=custom_sampler,
-        ) 
-    else:
-        return DataLoader(
-            flickr_dataset, 
-            batch_size=batch_size, 
-            collate_fn = lambda batch: co_collate_func(batch, clip_processor, blip_processor),
-            shuffle=False
-        )
-        
-
-def preprocess_img(sample, processor:CLIPProcessor):
-    sample['pixel_values'] = processor(images=sample['image'])['pixel_values']
-    return sample
-
-def lavis_preprocess_img(sample, processor):
-    sample['pixel_values'] = processor(sample['image']).unsqueeze(0)
-    return sample
 
 
-def co_preprocess_img(sample, clip_processor, blip_processor):
-    sample['clip_pixel_values'] = clip_processor(images=sample['image'])['pixel_values']
-    sample['blip_pixel_values'] = blip_processor(sample['image']).unsqueeze(0)
-    return sample
 
-def parse_int(sample):
-    sample['img_id'] = int(sample['img_id'])
-    return sample
-    
-def get_flickr(flickr_ckt, cache_dir):
-    flickr30k = load_dataset(flickr_ckt, cache_dir=cache_dir).remove_columns(['sentids', 'filename']).map(parse_int)
-    ds = dataset_dict.DatasetDict({
-        'train' : flickr30k.filter(lambda x: x['split'] == 'train')['test'], 
-        'test' : flickr30k.filter(lambda x: x['split'] == 'test')['test'], 
-        'val' : flickr30k.filter(lambda x: x['split'] == 'val')['test'], 
-    }) 
-    return ds
-
-
-def get_coco(vis_processor, txt_processor):
-    from lavis.datasets.datasets.retrieval_datasets import RetrievalDataset
-    coco_dataset = {}
-    coco_dataset = RetrievalDataset(
-        vis_processor=vis_processor,
-        text_processor=txt_processor,
-        ann_paths=[
-            '/mnt/data/itr_dataset/dataset/coco/annotations/coco_karpathy_train.json',
-            '/mnt/data/itr_dataset/dataset/coco/annotations/coco_karpathy_test.json',
-            '/mnt/data/itr_dataset/dataset/coco/annotations/coco_karpathy_val.json',
-        ],
-        vis_root='/mnt/data/itr_dataset/dataset/coco/images/',
-    )
-
-    return coco_dataset
 
 def get_loaders(config, dataset, vis_processor, tokenizer, txt_processor=None):
     train_loader  = get_dataloader(
