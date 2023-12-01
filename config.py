@@ -60,8 +60,8 @@ CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 BLIP_BASE = "Salesforce/blip-image-captioning-base"
 BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
 BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
-LAVIS_BLIP_BASE_FLICKR = "blip-itm-base-flickr"
-LAVIS_BLIP_BASE_COCO= "blip-itm-base-coco"
+LAVIS_BLIP_BASE_FLICKR = "lavis-blip-itm-base-flickr"
+LAVIS_BLIP_BASE_COCO= "lavis-blip-itm-base-coco"
 FLICKR = "nlphuji/flickr30k"
 COCO = "coco"
 
@@ -108,10 +108,14 @@ config_args = {
             "The number of steps that should pass before gradients are accumulated",
         ),
         "lorentz_pos_margin": (
-            0.0,
+            0.5,
             "decision margin for hyperbolic maninfold (0.0 for no margin)",
         ),
         "lorentz_neg_margin": (
+            0.5,
+            "decision margin for hyperbolic manifold (0.0 for no margin)",
+        ),
+        "lorentz_image_neg_margin": (
             0.8,
             "decision margin for hyperbolic manifold (0.0 for no margin)",
         ),
@@ -120,7 +124,7 @@ config_args = {
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "euclid_neg_margin": (
-            0.5,
+            0.8,
             "decision margin for euclid manifold (0.0 for no margin)",
         ),
         "max_txt_len": (35, "max_txt_len"),
@@ -153,8 +157,8 @@ config_args = {
         "curv": (1.0, "hyperbolic curvature"),
         "atol": (1e-1, "The relative tolerance parameter"),
         "rtol": (1e-1, "The absolute tolerance parameter"),
-        "temp": (0.04, "distance temperature"),
-        "clip_radius": (1.25, "clipping radius"),
+        "temp": (0.05, "distance temperature"),
+        "clip_radius": (1.0, "clipping radius"),
         "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (12, "number of trainable blocks in text model"),
         "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),

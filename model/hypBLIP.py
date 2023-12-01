@@ -9,7 +9,6 @@ from model.baseQueueModel import BaseModelWithQueue
 from model.baseDistilledModel import BaseModel as BaseDistilModel 
 from .modules.utils import ManifoldMapper
 from peft import get_peft_model, LoraConfig, TaskType
-from typing import Optional, Tuple, Union
 import torch.nn.functional as F
 from lavis.models import BlipRetrieval
 from copy import deepcopy

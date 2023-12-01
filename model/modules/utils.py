@@ -5,6 +5,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.geoopt.manifolds.stereographic import PoincareBall 
+from peft import get_peft_model, LoraConfig, TaskType
+from transformers import AutoModel, AutoProcessor, BlipModel, CLIPModel
+from .fuseModel import LavisEncoder, CLIPEncoder, BLIPEncoder
+from lavis.models import load_model_and_preprocess
+from typing import List
 from typing import Union
 
 def fr(m):
@@ -97,3 +102,171 @@ class LorentzCentroidPooler(nn.Module):
     def forward(self, x, w=None ):
         pooled_x = self.manifold.centroid(x, w)
         return pooled_x
+
+
+def get_lora_lavis_blip(config, model):
+
+    target_modules = [ 
+        'text_proj', 
+        'vision_proj',
+    ]
+    for i in range(config.vision_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.attn.qkv',
+            f'*{index}.attn.proj',
+            f'*{index}.mlp.fc1', 
+            f'*{index}.mlp.fc2', 
+        ])
+    for i in range(config.text_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.attention.output.dense', 
+            f'*{index}.attention.self.query', 
+            f'*{index}.attention.self.value',
+            f'*{index}.attention.self.key', 
+        ])
+    peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=32, 
+        lora_alpha=32, 
+        lora_dropout=0.2, 
+        target_modules=target_modules
+    )
+    model = get_peft_model(model, peft_config) 
+    model.print_trainable_parameters()
+    return model
+
+def get_lora_blip(config, model):
+
+    target_modules = [ 
+        'text_proj', 
+        'vision_proj',
+    ]
+    for i in range(config.vision_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.self_attn.qkv',
+            f'*{index}.self_attn.projection',
+            f'*{index}.mlp.fc1', 
+            f'*{index}.mlp.fc2', 
+        ])
+    for i in range(config.text_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.attention.output.dense', 
+            f'*{index}.attention.self.query', 
+            f'*{index}.attention.self.value',
+            f'*{index}.attention.self.key', 
+        ])
+    peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=32, 
+        lora_alpha=32, 
+        lora_dropout=0.2, 
+        target_modules=target_modules
+    )
+    model = get_peft_model(model, peft_config) 
+    model.print_trainable_parameters()
+    return model
+
+def get_lora_clip(config, model):
+    target_modules = ['visual_projection', 'text_projection']
+  
+    for i in range(config.vision_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.self_attn.out_proj',
+            f'*{index}.self_attn.q_proj',
+            f'*{index}.self_attn.k_proj',
+            f'*{index}.self_attn.v_proj', 
+            f'*{index}.mlp.fc1', 
+            f'*{index}.mlp.fc2', 
+        ])
+    for i in range(config.text_trainable_blocks): 
+        index = 11 - i
+        target_modules.extend([
+            f'*{index}.self_attn.out_proj',
+            f'*{index}.self_attn.q_proj',
+            f'*{index}.self_attn.k_proj',
+            f'*{index}.self_attn.v_proj', 
+            f'*{index}.mlp.fc1', 
+            f'*{index}.mlp.fc2', 
+        ])
+    peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION, 
+        inference_mode=False, 
+        r=64, 
+        lora_alpha=64, 
+        lora_dropout=0.2, 
+        target_modules=target_modules
+    )
+    lora_model = get_peft_model(model, peft_config)
+    return lora_model 
+
+
+
+
+def prepare_processors_and_models(model_ckts:List[str]):
+    tokenizers = []
+    vis_processors = []
+    txt_processors = []
+    models = []
+    
+    for i, model_ckt in enumerate(model_ckts):
+        if 'lavis' in model_ckt:
+            if i == 0:
+                pass
+            model, vis_processor, txt_processor = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
+            tokenizers.append(model.tokenizer)
+            vis_processors.append(vis_processor['eval'])
+            txt_processors.append(txt_processor['eval'])
+            models.append(model)
+        else:
+            if i == 0:
+                pass
+            tokenizers.append(AutoProcessor.from_pretrained(model_ckt))
+            vis_processors.append(AutoProcessor.from_pretrained(model_ckt))
+            txt_processors.append(None)
+            models.append(AutoModel.from_pretrained(model_ckt))
+    return tokenizers, vis_processors, txt_processors, models
+
+def prepare_encoder(config, models):
+    vis_encoders = [] 
+    text_encoders = [] 
+    d_visions = []
+    d_texts= []
+    text_head = None
+    vision_head = None
+    for i, model in enumerate(models):
+        if isinstance(model, CLIPModel): 
+            if i == 0:
+                model = get_lora_clip(config, model)
+                text_head = model.text_projection
+                vision_head = model.visual_projection
+                
+            vis_encoders.append(CLIPEncoder(model.text_model)) 
+            text_encoders.append(CLIPEncoder(model.vision_model)) 
+            d_visions.append(model.config.vision_config.hidden_size)
+            d_texts.append(model.config.text_config.hidden_size)
+        elif isinstance(model, BlipModel): 
+            if i == 0:
+                model = get_lora_blip(config, model)
+                text_head = model.text_projection
+                vision_head = model.visual_projection
+            vis_encoders.append(BLIPEncoder(model.vision_model)) 
+            text_encoders.append(BLIPEncoder(model.text_model)) 
+            d_visions.append(model.config.vision_config.hidden_size)
+            d_texts.append(model.config.text_config.hidden_size)
+        else:
+            if i == 0:
+                model = get_lora_lavis_blip(config, model)
+                text_head = model.text_proj
+                vision_head = model.vision_proj
+            vis_encoders.append(LavisEncoder(model.visual_encoder)) 
+            text_encoders.append(LavisEncoder(model.text_encoder)) 
+            d_visions.append(768)
+            d_texts.append(768)
+    return vis_encoders, text_encoders, text_head, vision_head, d_visions, d_texts 

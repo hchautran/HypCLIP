@@ -9,14 +9,18 @@ from lavis.models.base_model import (
     SharedQueueMixin,
 )
 from lavis.models.blip_models.blip import BlipBase
-from lavis.models import BlipRetrieval 
 from torch import nn
 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
 from hyptorch.geoopt import Euclidean 
 from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
-from .modules.utils import ManifoldMapper
+from .modules.utils import (
+    prepare_encoder,
+    prepare_processors_and_models,
+    ManifoldMapper
+) 
+from .modules.fuseModel import FuseEncoder
 
 EUCLID = 'euclidean'
 POINCARE = 'poincare'
@@ -47,11 +51,13 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
     def __init__(
         self,
         config,
+        model_ckts,
     ):
         """ """
         super().__init__()
         self.config = config
-        self.model_ckt = config.model_ckt
+        self.model_ckt = model_ckts
+        self.num_models = len(model_ckts)
         self.clip_r = config.clip_radius
         self.queue_size = config.queue_size
         self.weight_i2t = config.weight_i2t
@@ -74,16 +80,24 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
         self.model_m= None 
-        self.model = None 
+        self.model = FuseEncoder(
+            config,           
+            d_visions=[100, 100], 
+            d_texts=[100, 100], 
+            ft_out=256, 
+            vision_bodies=[], 
+            text_bodies=[],
+            vision_head=None,
+            text_head=None,
+            mapper=None,
+            manifold=None, 
+        )
 
         self.momentum = config.momentum
         self.logit_scale = nn.Parameter(torch.tensor(config.temp))
-        self.eu_logit_scale = nn.Parameter(torch.tensor(config.temp))
 
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
-        self.negative_all_rank = config.negative_all_rank
-        self.beta = nn.Parameter(torch.tensor(config.soft_target_loss), requires_grad=False)
     
     def _init_queue(self, config, ft_out):
         self.model_m= deepcopy(self.model) 
@@ -244,15 +258,20 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
     def forward(
         self, 
-        input_ids: torch.LongTensor,
-        attention_mask: torch.Tensor,
-        pixel_values: torch.FloatTensor,
-        image_id: torch.FloatTensor,
+        data,
         epoch: int,
         iters: int,
         num_iters_per_epoch:int,
     ):
-        idx = image_id
+
+        idx = data['img_id'] 
+        input_ids = []
+        attention_masks = []
+        pixel_values = []
+        for i in range(self.num_models):
+            input_ids.append(data[f'input_ids_{i}'])
+            pixel_values.append(data[f'pixel_values_{i}'])
+            attention_masks.append(data[f'attention_mask_{i}'])
 
         alpha = self.alpha * self._rampup_factor(
             epoch=epoch,
@@ -262,7 +281,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         
         text_output = self.model(
             input_ids=input_ids,
-            attention_mask=attention_mask
+            attention_masks=attention_masks
         )
         image_output = self.model(
             pixel_values=pixel_values
@@ -295,7 +314,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
             text_embeds_m = self.model_m(
                 input_ids=input_ids,
-                attention_mask=attention_mask
+                attention_masks=attention_masks,
             )
 
             image_feat_m = self.postprocess_embeds(image_embeds_m[1])
@@ -319,9 +338,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 F.softmax(sim_t2i_m / self.logit_scale, dim=-1)
             ) + (1 - alpha) * sim_targets
            
-
-
-
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
 
@@ -329,10 +345,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         sim_t2i = self.dist_func(text_feat, image_feat_m_all.T)
       
 
-        # if epoch >= 0:
-        margin_loss  = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
-        # else:
-            # margin_loss  = torch.tensor(0.0) 
+        margin_loss = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
 
         loss_i2t = -torch.sum(
             F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
@@ -341,10 +354,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_t2i_targets, dim=-1
         ).mean()      
     
-       
         loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
       
-
         sims = self.dist_func(image_feat, text_feat)
         loss_itm, itm_acc = self.itm_loss(
             idx=idx,
@@ -378,18 +389,25 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
     def get_text_features(
         self,
-        input_ids: torch.Tensor, 
-        attention_mask: torch.Tensor,
+        data
     ):
+        input_ids = []
+        attention_masks = []
+        for i in range(self.num_models):
+            input_ids.append(data[f'input_ids_{i}'])
+            attention_masks.append(data[f'attention_mask_{i}'])
+
         text_output = self.model(
            input_ids=input_ids, 
-           attention_mask=attention_mask, 
+           attention_masks=attention_masks, 
         )
         text_feat = self.postprocess_embeds(text_output[1])
         return text_feat, text_output[0]
 
-    def get_vision_features(self, pixel_values:torch.Tensor):
-        # TODO 
+    def get_vision_features(self, data):
+        pixel_values = []
+        for i in range(self.num_models):
+            pixel_values.append(data[f'pixel_values_{i}'])
         image_output = self.model(pixel_values=pixel_values)
         image_feat = self.postprocess_embeds(image_output[1])
         return image_feat, image_output[0]

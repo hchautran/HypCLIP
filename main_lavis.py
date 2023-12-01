@@ -43,10 +43,10 @@ if __name__ == "__main__":
         # print(trainer.evaluate('val'))
         trainer.train()
 
-    config.epochs = 5 
+    config.epochs = 10 
     config.enable_log = True 
     config.manifold = LORENTZ 
-    for curv in [5.0, 2.0, 10.0]:
+    for curv in [2.0, 5.0 ,1.0, 10.0]:
         config.curv = curv
         for use_margin_loss in [True]:
             config.use_margin_loss = use_margin_loss 

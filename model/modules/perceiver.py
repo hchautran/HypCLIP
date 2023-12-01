@@ -184,9 +184,9 @@ class MultiModalModel(nn.Module,  ModuleUtilsMixin):
 
 
 class FuseQLayer(nn.Module):
-    def __init__(self, config:PerceiverConfig, hidden_sizes, latent_size, num_self_attend=None) -> None:
+    def __init__(self, config:PerceiverConfig, d_texts, d_visions, latent_size, num_self_attend=None) -> None:
         super().__init__()
-        self.cross_attns = nn.ModuleList([PerceiverLayer(
+        self.text_cross_attns = nn.ModuleList([PerceiverLayer(
             config,
             q_dim=latent_size,
             kv_dim=hidden_size,
@@ -194,7 +194,16 @@ class FuseQLayer(nn.Module):
             use_query_residual=True,
             num_heads=config.num_cross_attention_heads,
             widening_factor=config.cross_attention_widening_factor,
-        ) for hidden_size in hidden_sizes])
+        ) for hidden_size in d_texts])
+        self.vision_cross_attns = nn.ModuleList([PerceiverLayer(
+            config,
+            q_dim=latent_size,
+            kv_dim=hidden_size,
+            is_cross_attention=True,
+            use_query_residual=True,
+            num_heads=config.num_cross_attention_heads,
+            widening_factor=config.cross_attention_widening_factor,
+        ) for hidden_size in d_visions])
         self_attention_layers = []
         num_self_attends_per_block = num_self_attend if num_self_attend is not None else config.num_self_attends_per_block
 
@@ -220,21 +229,68 @@ class FuseQLayer(nn.Module):
             num_params = sum(p.numel() for p in self.parameters())
         return num_params
 
-    def forward(self, inputs, question, attention_masks=None):
-        states = []
+    def forward(self, text_inputs, vision_inputs, vision_question, text_question, attention_mask=None):
+        vision_cross_output = []
+        text_cross_output = []
+        for i in range(text_inputs):
+            vision_output = self.vision_cross_attn[i](
+                vision_question,
+                inputs=vision_inputs,
+            ) 
+            text_output = self.text_cross_attn[i](
+                text_question,
+                inputs=text_inputs,
+                inputs_mask=attention_mask
+            ) 
+            vision_cross_output.append(vision_output[0])
+            text_cross_output.append(text_output[0])
+        vision_states = torch.cat([vision_cross_output], dim=1)
+        text_states = torch.cat([text_cross_output], dim=1)
+        state = torch.cat([vision_states, text_states], dim=1)
+        for _, layer_module in enumerate(self.self_attends):
+            output = layer_module(state)
+            state = output[0] 
+        return state
+    
+    def get_vision_features(self, inputs, question):
+        text_cross_output = []
         for i, input in enumerate(inputs):
-            state = self.cross_attn[i](
+            cross_output = self.vision_cross_attns[i](
                 question,
                 inputs=input,
-                inputs_mask=attention_masks[i]
             ) 
-            states.append(state[0])
-        states = torch.cat(states, dim=1)
+            text_cross_output.append(cross_output[0])
+        text_cross_output = torch.cat(text_cross_output, dim=1) 
+        state = text_cross_output
         for _, layer_module in enumerate(self.self_attends):
-            output = layer_module(states)
-            states = output[0]
-            
-        return states 
+            self_output = layer_module(state)
+            state = self_output[0] 
+        return state, text_cross_output
+    
+    
+    def get_text_features(self, inputs, question, attention_masks):
+        vision_cross_output = []
+        for i, input in enumerate(inputs):
+            cross_output = self.text_cross_attns[i](
+                question,
+                inputs=input,
+                attention_mask=attention_masks[i]
+            ) 
+            vision_cross_output.append(cross_output[0])
+        vision_cross_output = torch.cat(vision_cross_output, dim=1) 
+        state = vision_cross_output
+        for _, layer_module in enumerate(self.self_attends):
+            self_output = layer_module(state)
+            state = self_output[0] 
+        return state, vision_cross_output
+    
+    
+    def compute_itm(self, cross_text_latents, cross_image_latents):
+        state = torch.cat([cross_image_latents, cross_text_latents], dim=1)
+        for _, layer_module in enumerate(self.self_attends):
+            output = layer_module(state)
+            state = output[0] 
+        return state
 
 
 class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
@@ -252,10 +308,7 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
         )
         nn.init.uniform_(self.vision_question.data, -config.initializer_range, config.initializer_range)
         nn.init.uniform_(self.text_question.data, -config.initializer_range, config.initializer_range)
-
-        self.vision_layers= FuseQLayer(config=config, hidden_size=d_visions, latent_size=config.d_latents) 
-        self.text_layers= FuseQLayer(config=config, hidden_size=d_texts, latent_size=config.d_latents) 
-        self.itm_head = QLayer(config=config, hidden_size=config.d_latents, latent_size=config.d_latents) 
+        self.multimodal_layer = FuseQLayer(config=config, d_texts=d_texts, d_vision=d_visions, latent_size=config.d_latents)
         self.mapper = mapper
 
     def num_parameters(self, only_trainable=True):
@@ -266,18 +319,23 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
             num_params = sum(p.numel() for p in self.parameters())
         return num_params
     
-    def forward(self, vision_inputs:List[torch.Tensor], text_inputs:List[torch.Tensor]):
+    def forward(self, vision_inputs:torch.Tensor, text_inputs:torch.Tensor, attention_masks=None):
         bs = vision_inputs.shape[0]
         vision_question = self.vision_question.expand(bs, -1, -1)
         text_question = self.text_question.expand(bs, -1, -1)
+        if attention_masks is not None:
+            attention_masks = [self.get_extended_attention_mask(attention_mask=attention_masks[i], input_shape=text_inputs[i].shape) for i in range(len(attention_masks))]
 
         for i in range(self.num_blocks):
-            itc_text = self.text_layer(text_inputs, text_question) 
-            itc_vision = self.vision_layer(vision_inputs, vision_question) 
-            vision_question = itc_vision
-            text_question = itc_text
+            state = self.multimodal_layer(
+                text_inputs, 
+                vision_inputs, 
+                text_question=text_question, 
+                vision_question=vision_question, 
+                attention_mask=attention_masks
+            ) 
 
-        return itc_text, itc_vision
+        return state 
 
 
     def get_vision_features(self, vision_inputs:torch.Tensor):
@@ -285,26 +343,24 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
         vision_question = self.vision_question.expand(bs, -1, -1)
 
         for i in range(self.num_blocks):
-            itc_vision = self.vision_layer(vision_inputs, vision_question) 
+            itc_vision, cross_vision = self.multimodal_layer.get_vision_features(vision_inputs, vision_question) 
             vision_question = itc_vision
 
-        return itc_vision 
+        return itc_vision, cross_vision
 
     def get_text_features(self, text_inputs:torch.Tensor, attention_masks:torch.Tensor=None): 
         bs = text_inputs.shape[0]
         text_question = self.text_question.expand(bs, -1, -1)
-        attention_masks = [
-            self.get_extended_attention_mask(attention_mask=attention_masks[i], input_shape=text_inputs[i].shape) for i in range(attention_masks) 
-        ]
+        attention_masks = [self.get_extended_attention_mask(attention_mask=attention_masks[i], input_shape=text_inputs[i].shape) for i in range(len(attention_masks))]
 
         for i in range(self.num_blocks):
-            itc_text = self.text_layer(text_inputs, text_question, attention_masks) 
+            itc_text, cross_text = self.multimodal_layer.get_text_features(text_inputs, text_question, attention_masks) 
             text_question = itc_text
 
-        return itc_text
+        return itc_text, cross_text
 
     def compute_itm(self, vision_latents:torch.Tensor, text_latents:torch.Tensor):
-        for i in range(3):
-            vision_latents = self.itm_head(text_latents, vision_latents) 
-        return vision_latents 
+        for i in range(self.num_blocks):
+            itm_states = self.multimodal_layer.compute_itm(text_latents, vision_latents) 
+        return itm_states 
         

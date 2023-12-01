@@ -53,7 +53,7 @@ class MyTrainer:
         )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=2, min_lr=1e-7
+            self.optimizer, 'max', factor=0.1, patience=3, min_lr=1e-8
         )
         
         (
@@ -157,7 +157,8 @@ class MyTrainer:
                     vision_latents=image_inputs,
                     text_latents=text_feats[topk_idx]
                 ).float()
-                score_matrix_i2t[i, topk_idx] = topk_sim + score.squeeze_()
+                score = score[:, 1]
+                score_matrix_i2t[i, topk_idx] = topk_sim + score 
                 progress.update(1)
 
             sims_matrix = sims_matrix.t()
@@ -171,7 +172,8 @@ class MyTrainer:
                     vision_latents=image_inputs,
                     text_latents=text_feats[i].repeat(k, 1, 1)
                 ).float()
-                score_matrix_t2i[i, topk_idx] = topk_sim + score.squeeze_()
+                score = score[:, 1]
+                score_matrix_t2i[i, topk_idx] = topk_sim + score 
                 progress.update(1)
 
         return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()
@@ -214,6 +216,7 @@ class MyTrainer:
             sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
             metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
             print(metrics)
+            metrics["epoch"] = self.current_epoch
 
             score_matrix_i2t, score_matrix_t2i = self.rerank(
                 sims_matrix=sims_t2i.T, 
@@ -223,7 +226,6 @@ class MyTrainer:
                 num_texts=n_texts
             )
 
-            metrics["epoch"] = self.current_epoch
             itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
             metrics.update(itm_metrics)
           

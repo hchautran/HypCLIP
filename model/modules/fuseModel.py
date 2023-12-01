@@ -108,8 +108,8 @@ class FuseEncoder(nn.Module):
     def __init__(self, config, d_visions, d_texts, ft_out, vision_bodies, text_bodies, vision_head, text_head, manifold:CustomLorentz=None ,mapper=None) -> None:
         super().__init__()
         self.manifold = manifold
-        self.vision_bodies = nn.ModuleList([vision_bodies]) 
-        self.text_bodies = nn.ModuleList([text_bodies]) 
+        self.vision_bodies = nn.ModuleList(vision_bodies) 
+        self.text_bodies = nn.ModuleList(text_bodies) 
         self.vision_head = vision_head 
         self.text_head = text_head
         self.config = config
@@ -159,7 +159,7 @@ class FuseEncoder(nn.Module):
             latents_output = self.perceiver_head.get_vision_features(last_hidden_states)
             if self.mapper is not None:
                 root = self.mapper(root, use_normalized=True)
-                lorentz_latents = self.mapper(latents_output)
+                lorentz_latents = self.mapper(latents_output[:,0,:])
             lorentz_latents = self.perceiver_proj_vision(lorentz_latents) 
 
         else:
@@ -181,19 +181,16 @@ class FuseEncoder(nn.Module):
             latents_output = self.perceiver_head.get_text_features(last_hidden_states, attention_mask=attention_mask)
             if self.mapper is not None:
                 root = self.mapper(root, use_normalized=False)
-                lorentz_latents = self.mapper(latents_output)
+                lorentz_latents = self.mapper(latents_output[:,0,:])
             lorentz_latents = self.perceiver_proj_text(lorentz_latents)
 
         if self.manifold is not None:
-            latent_centroid = self.manifold.centroid(lorentz_latents)
-            output = self.manifold.get_space(latent_centroid) + self.manifold.get_space(root)
+            output = self.manifold.get_space(lorentz_latents) + self.manifold.get_space(root)
             output = self.manifold.add_time(output)
         else:
-            latent_centroid = torch.mean(lorentz_latents, dim=1)
-            output = latent_centroid + root
+            output = lorentz_latents + root
 
-        return latents_output, output, latent_centroid
-    
+        return latents_output, output    
 
 
     def compute_itm(self, vision_hidden_states:torch.Tensor, text_hidden_states:torch.Tensor): 
