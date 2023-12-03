@@ -204,11 +204,12 @@ class FuseQLayer(nn.Module):
             num_heads=config.num_cross_attention_heads,
             widening_factor=config.cross_attention_widening_factor,
         ) for hidden_size in d_visions])
-        self_attention_layers = []
+        text_self_attends = []
+        vision_self_attends = []
         num_self_attends_per_block = num_self_attend if num_self_attend is not None else config.num_self_attends_per_block
 
         for _ in range(num_self_attends_per_block):
-            self_attention_layers.append(
+            text_self_attends.append(
                 PerceiverLayer(
                     config,
                     q_dim=latent_size,
@@ -219,7 +220,19 @@ class FuseQLayer(nn.Module):
                     widening_factor=config.self_attention_widening_factor,
                 )
             )
-        self.self_attends=nn.ModuleList(self_attention_layers)
+            vision_self_attends.append(
+                PerceiverLayer(
+                    config,
+                    q_dim=latent_size,
+                    kv_dim=latent_size,
+                    is_cross_attention=False,
+                    use_query_residual=True,
+                    num_heads=config.num_self_attention_heads,
+                    widening_factor=config.self_attention_widening_factor,
+                )
+            )
+        self.text_self_attends=nn.ModuleList(text_self_attends)
+        self.vision_self_attends=nn.ModuleList(vision_self_attends)
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
@@ -235,11 +248,11 @@ class FuseQLayer(nn.Module):
         for i in range(text_inputs):
             vision_output = self.vision_cross_attn[i](
                 vision_question,
-                inputs=vision_inputs,
+                inputs=vision_inputs[i],
             ) 
             text_output = self.text_cross_attn[i](
                 text_question,
-                inputs=text_inputs,
+                inputs=text_inputs[i],
                 inputs_mask=attention_mask
             ) 
             vision_cross_output.append(vision_output[0])
@@ -253,41 +266,41 @@ class FuseQLayer(nn.Module):
         return state
     
     def get_vision_features(self, inputs, question):
-        text_cross_output = []
+        cross_outputs = []
         for i, input in enumerate(inputs):
             cross_output = self.vision_cross_attns[i](
                 question,
                 inputs=input,
             ) 
-            text_cross_output.append(cross_output[0])
-        text_cross_output = torch.cat(text_cross_output, dim=1) 
-        state = text_cross_output
-        for _, layer_module in enumerate(self.self_attends):
+            cross_outputs.append(cross_output[0])
+        cross_output = torch.cat(cross_outputs, dim=1) 
+        state = cross_output
+        for _, layer_module in enumerate(self.vision_self_attends):
             self_output = layer_module(state)
             state = self_output[0] 
-        return state, text_cross_output
+        return state, cross_output
     
     
     def get_text_features(self, inputs, question, attention_masks):
-        vision_cross_output = []
+        cross_outputs = []
         for i, input in enumerate(inputs):
             cross_output = self.text_cross_attns[i](
                 question,
                 inputs=input,
                 attention_mask=attention_masks[i]
             ) 
-            vision_cross_output.append(cross_output[0])
-        vision_cross_output = torch.cat(vision_cross_output, dim=1) 
-        state = vision_cross_output
-        for _, layer_module in enumerate(self.self_attends):
+            cross_outputs.append(cross_output[0])
+        cross_output = torch.cat(cross_outputs, dim=1) 
+        state = cross_output
+        for _, layer_module in enumerate(self.text_self_attends):
             self_output = layer_module(state)
             state = self_output[0] 
-        return state, vision_cross_output
+        return state, cross_output
     
     
     def compute_itm(self, cross_text_latents, cross_image_latents):
         state = torch.cat([cross_image_latents, cross_text_latents], dim=1)
-        for _, layer_module in enumerate(self.self_attends):
+        for _, layer_module in enumerate(self.text_self_attends):
             output = layer_module(state)
             state = output[0] 
         return state
@@ -304,11 +317,11 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
             torch.empty(config.num_latents, config.d_latents)
         )
         self.text_question = nn.Parameter(
-            torch.empty(6, config.d_latents)
+            torch.empty(12, config.d_latents)
         )
         nn.init.uniform_(self.vision_question.data, -config.initializer_range, config.initializer_range)
         nn.init.uniform_(self.text_question.data, -config.initializer_range, config.initializer_range)
-        self.multimodal_layer = FuseQLayer(config=config, d_texts=d_texts, d_vision=d_visions, latent_size=config.d_latents)
+        self.multimodal_layer = FuseQLayer(config=config, d_texts=d_texts, d_visions=d_visions, latent_size=config.d_latents)
         self.mapper = mapper
 
     def num_parameters(self, only_trainable=True):
@@ -339,7 +352,7 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
 
 
     def get_vision_features(self, vision_inputs:torch.Tensor):
-        bs = vision_inputs.shape[0]
+        bs = vision_inputs[0].shape[0]
         vision_question = self.vision_question.expand(bs, -1, -1)
 
         for i in range(self.num_blocks):
@@ -349,7 +362,7 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
         return itc_vision, cross_vision
 
     def get_text_features(self, text_inputs:torch.Tensor, attention_masks:torch.Tensor=None): 
-        bs = text_inputs.shape[0]
+        bs = text_inputs[0].shape[0]
         text_question = self.text_question.expand(bs, -1, -1)
         attention_masks = [self.get_extended_attention_mask(attention_mask=attention_masks[i], input_shape=text_inputs[i].shape) for i in range(len(attention_masks))]
 

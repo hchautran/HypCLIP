@@ -63,6 +63,7 @@ class SeqLinear(nn.Module):
 class HypSeqLinear(nn.Module):
     def __init__(self, manifold ,ft_in, layer_dims, dropout=0.5, act_func='relu'):
         super(HypSeqLinear, self).__init__()
+        self.manifold = manifold
         self.linear = []
         self.norm = []
         self.dropout = []
@@ -88,7 +89,9 @@ class HypSeqLinear(nn.Module):
             x = self.linear[idx](x)
             if idx != (len(self.linear)-1): # last layer not use relu
                 x = self.act[idx](x)
+                x = self.manifold.logmap0(x)
                 x = self.norm[idx](x)
+                x = self.manifold.expmap0(x)
         return x  
 
 

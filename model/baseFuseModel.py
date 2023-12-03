@@ -12,12 +12,11 @@ from lavis.models.blip_models.blip import BlipBase
 from torch import nn
 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
-from hyptorch.geoopt import Euclidean 
+from hyptorch.geoopt import Euclidean, PoincareBall 
 from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .modules.utils import (
     prepare_encoder,
-    prepare_processors_and_models,
     ManifoldMapper
 ) 
 from .modules.fuseModel import FuseEncoder
@@ -51,13 +50,13 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
     def __init__(
         self,
         config,
-        model_ckts,
+        models,
     ):
         """ """
         super().__init__()
         self.config = config
-        self.model_ckt = model_ckts
-        self.num_models = len(model_ckts)
+        self.models=models 
+        self.num_models = len(models)
         self.clip_r = config.clip_radius
         self.queue_size = config.queue_size
         self.weight_i2t = config.weight_i2t
@@ -74,23 +73,28 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
+        elif config.manifold == POINCARE:
+            self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
+            self.manifold = PoincareBall(c=self.curv, learnable=config.curv_learnable)
+            self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
             self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
         self.model_m= None 
+        vis_encoders, text_encoders, text_head, vision_head, d_visions, d_texts = prepare_encoder(config, models)
         self.model = FuseEncoder(
             config,           
-            d_visions=[100, 100], 
-            d_texts=[100, 100], 
+            d_visions=d_visions, 
+            d_texts=d_texts, 
             ft_out=256, 
-            vision_bodies=[], 
-            text_bodies=[],
-            vision_head=None,
-            text_head=None,
-            mapper=None,
-            manifold=None, 
+            vision_bodies=vis_encoders, 
+            text_bodies=text_encoders,
+            vision_head=vision_head,
+            text_head=text_head,
+            mapper=(self.mapper if config.manifold != EUCLID else None),
+            manifold=(self.manifold if config.manifold != EUCLID else None), 
         )
 
         self.momentum = config.momentum
@@ -98,6 +102,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
+        self._init_queue(config, 256)
     
     def _init_queue(self, config, ft_out):
         self.model_m= deepcopy(self.model) 
@@ -111,13 +116,16 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.register_buffer("text_queue", torch.randn(self.queue_size, ft_out).T)
             self.image_queue = nn.functional.normalize(self.image_queue.T, dim=-1).T
             self.text_queue = nn.functional.normalize(self.text_queue.T, dim=-1).T
-            self.itm_head = DisModel(dim=ft_out, layer_dims=[512, 512, 1])
+        elif config.manifold == POINCARE:
+            self.register_buffer("image_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("text_queue", torch.randn(self.queue_size, ft_out).T)
+            self.image_queue = self.manifold.expmap0(nn.functional.normalize(self.image_queue.T, dim=-1)).T
+            self.text_queue = self.manifold.expmap0(nn.functional.normalize(self.text_queue.T, dim=-1)).T
         else:
             self.register_buffer("image_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
             self.register_buffer("text_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
             self.manifold.assert_check_point_on_manifold(self.image_queue.T)
             self.manifold.assert_check_point_on_manifold(self.text_queue.T)
-            self.itm_head = LorentzDisModel(self.manifold, dim=ft_out, layer_dims=[512, 512])
 
         self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
@@ -144,14 +152,14 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         y = F.normalize(y, p=2, dim=-1)
         return torch.matmul(x, y.T) 
             
-    def dist_func(self, x:torch.Tensor, y:torch.Tensor, device='gpu'):
+    def dist_func(self, x:torch.Tensor, y:torch.Tensor): 
         if self.config.manifold == EUCLID:
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
             eu_dis = torch.matmul(x, y.T) 
             return  eu_dis 
         elif self.config.manifold == POINCARE: 
-            hyp_dist = -self.manifold.dist_batch(x, y, device=device)
+            hyp_dist = -self.manifold.dist_batch(x, y, device=f'{"gpu" if self.training else "cpu"}')
             return hyp_dist
         else: 
             hyp_dist = -self.manifold.dist_batch(x, y)
@@ -197,13 +205,14 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         if not self.config.use_margin_loss:
             return torch.tensor(0.0)
 
-        sim_i2i = self.dist_func(image_feat, image_world) 
+        sim_i2i = self.dist_func(image_feat, image_world) - (pos_idx * 1e9)
         sim_t2t = self.dist_func(text_feat, text_world) 
-        sim_i2t = self.dist_func(image_feat, text_world) 
-        sim_t2i = self.dist_func(text_feat, image_world) 
         if self.config.manifold ==  LORENTZ:
-            return self.hyp_margin_loss(pos_idx, sim_i2i, sim_t2t) 
-        return ((self.eu_margin_loss(pos_idx, sim_i2t, sim_t2t) + self.eu_margin_loss(pos_idx, sim_t2i, sim_i2i ))) / 2
+            return self.hyp_margin_loss(pos_idx, sim_t2t, sim_i2i) 
+        elif self.config.manifold == POINCARE:
+            return self.hyp_margin_loss(pos_idx, sim_t2t, sim_i2i) 
+        else:
+            return self.eu_margin_loss(pos_idx, sim_t2t, sim_i2i) 
 
 
     def itm_loss(self, idx, text_hidden_states, image_hidden_states, sim_t2i, sim_i2t):
@@ -244,6 +253,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             text_latents=text_hidden_states, 
             vision_latents=image_hidden_states, 
         ) 
+        print(itm_score.shape)
 
         itm_labels = torch.cat(
             [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
@@ -364,7 +374,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             sim_i2t=sims, 
             sim_t2i=sims.T
         )
-        
 
         in_batch_target = torch.arange(bsize).to(self.device)
         stats = {
@@ -394,8 +403,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         input_ids = []
         attention_masks = []
         for i in range(self.num_models):
-            input_ids.append(data[f'input_ids_{i}'])
-            attention_masks.append(data[f'attention_mask_{i}'])
+            input_ids.append(data[f'input_ids_{i}'].squeeze())
+            attention_masks.append(data[f'attention_mask_{i}'].squeeze())
 
         text_output = self.model(
            input_ids=input_ids, 
@@ -407,7 +416,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
     def get_vision_features(self, data):
         pixel_values = []
         for i in range(self.num_models):
-            pixel_values.append(data[f'pixel_values_{i}'])
+            pixel_values.append(data[f'pixel_values_{i}'].squeeze(0))
         image_output = self.model(pixel_values=pixel_values)
         image_feat = self.postprocess_embeds(image_output[1])
         return image_feat, image_output[0]

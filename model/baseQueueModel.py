@@ -2,8 +2,6 @@ from copy import deepcopy
 
 import torch
 import torch.nn.functional as F
-from lavis.common.registry import registry
-from lavis.models.albef_models import compute_sim_matrix
 from lavis.models.base_model import (
     MomentumDistilationMixin,
     SharedQueueMixin,
@@ -13,6 +11,7 @@ from lavis.models import BlipRetrieval
 from torch import nn
 
 from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
+from hyptorch.geoopt import PoincareBall 
 from hyptorch.geoopt import Euclidean 
 from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
@@ -58,7 +57,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         assert config.manifold in [EUCLID, POINCARE, LORENTZ]
         self.mapper = None           
         self.curv = torch.as_tensor(config.curv if config.manifold != EUCLID else 0)
-        class_weight = torch.tensor([0.5, 1.0])
+        class_weight = torch.tensor([1.0, 1.0])
         self.itm_criterion = nn.CrossEntropyLoss(weight=class_weight, reduction='mean')
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
@@ -68,6 +67,10 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
+        elif config.manifold == POINCARE:
+            self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
+            self.manifold = PoincareBall(c=self.curv, learnable=config.curv_learnable)
+            self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
@@ -82,8 +85,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
-        self.negative_all_rank = config.negative_all_rank
-        self.beta = nn.Parameter(torch.tensor(config.soft_target_loss), requires_grad=False)
     
     def _init_queue(self, config, ft_out):
         self.model_m= deepcopy(self.model) 
@@ -97,13 +98,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.register_buffer("text_queue", torch.randn(self.queue_size, ft_out).T)
             self.image_queue = nn.functional.normalize(self.image_queue.T, dim=-1).T
             self.text_queue = nn.functional.normalize(self.text_queue.T, dim=-1).T
-            self.itm_head = DisModel(dim=ft_out, layer_dims=[512, 512, 1])
         else:
             self.register_buffer("image_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
             self.register_buffer("text_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
             self.manifold.assert_check_point_on_manifold(self.image_queue.T)
             self.manifold.assert_check_point_on_manifold(self.text_queue.T)
-            self.itm_head = LorentzDisModel(self.manifold, dim=ft_out, layer_dims=[512, 512])
 
         self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
@@ -130,14 +129,14 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         y = F.normalize(y, p=2, dim=-1)
         return torch.matmul(x, y.T) 
             
-    def dist_func(self, x:torch.Tensor, y:torch.Tensor, device='gpu'):
+    def dist_func(self, x:torch.Tensor, y:torch.Tensor): 
         if self.config.manifold == EUCLID:
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
             eu_dis = torch.matmul(x, y.T) 
             return  eu_dis 
         elif self.config.manifold == POINCARE: 
-            hyp_dist = -self.manifold.dist_batch(x, y, device=device)
+            hyp_dist = -self.manifold.dist_batch(x, y, device='cpu')
             return hyp_dist
         else: 
             hyp_dist = -self.manifold.dist_batch(x, y)
@@ -185,11 +184,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         sim_i2i = self.dist_func(image_feat, image_world) 
         sim_t2t = self.dist_func(text_feat, text_world) 
-        sim_i2t = self.dist_func(image_feat, text_world) 
-        sim_t2i = self.dist_func(text_feat, image_world) 
         if self.config.manifold ==  LORENTZ:
             return self.hyp_margin_loss(pos_idx, sim_i2i, sim_t2t) 
-        return ((self.eu_margin_loss(pos_idx, sim_i2t, sim_t2t) + self.eu_margin_loss(pos_idx, sim_t2i, sim_i2i ))) / 2
+        return self.eu_margin_loss(pos_idx, sim_i2i, sim_t2t) 
 
 
     def itm_loss(self, idx, text_hidden_states, image_hidden_states, sim_t2i, sim_i2t):
@@ -240,7 +237,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         loss_itm = self.itm_criterion(itm_score, itm_labels) 
         return loss_itm,  itm_acc
         
-
 
     def forward(
         self, 

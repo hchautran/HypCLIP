@@ -6,12 +6,12 @@ from lavis.models import load_model_and_preprocess
 
 if __name__ == "__main__":
     from config import parser
-    from config import EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
+    from config import POINCARE, EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
     config = parser.parse_args()
-    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
     tokenizer = model.tokenizer
     if "flickr" in config.dataset:
         config.model_ckt = LAVIS_BLIP_BASE_FLICKR
@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     def inner_training_loop(batch_size):
         config.batch_size = batch_size
-        train_loader, val_loader, test_loader= get_loaders(
+        train_loader, val_loader, test_loader = get_loaders(
             config, 
             dataset,
             vis_processor=vis_processors['eval'],
@@ -44,9 +44,9 @@ if __name__ == "__main__":
         trainer.train()
 
     config.epochs = 10 
-    config.enable_log = True 
-    config.manifold = LORENTZ 
-    for curv in [2.0, 5.0 ,1.0, 10.0]:
+    config.enable_log = False 
+    config.manifold = POINCARE 
+    for curv in [2.0, 5.0, 10.0, 1.0]:
         config.curv = curv
         for use_margin_loss in [True]:
             config.use_margin_loss = use_margin_loss 

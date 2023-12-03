@@ -1,22 +1,16 @@
 
 import torch
 import torch.nn as nn
-from .utils import freeze_clip, freeze_blip 
 from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
 import torch
 import torch.nn as nn
-from torch_geometric.data import Data, Batch
-from torch_geometric.utils import add_self_loops
-import torch.nn.functional as F
 from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
-from torch_geometric.utils import dropout_edge 
 from .perceiver import MultiModalModel 
-from hyptorch.lorentz.layers import LorentzMLR, LorentzLinear
-from .seq_linear import LorentzSeqLinear, SeqLinear
+from hyptorch.lorentz.layers import LorentzLinear
+from .seq_linear import  SeqLinear
 from transformers import PerceiverConfig
-from copy import deepcopy
 class Text(object):
     pass
 
@@ -138,12 +132,13 @@ class LavisBLIPGraphModel(nn.Module):
 
         hidden_states = torch.cat([itm_vision, itm_text], dim=1)
         hidden_states = self.perceiver_proj(hidden_states) 
-        itm_score = self.itm_head(hidden_states)
+        with torch.no_grad():
+            itm_score = self.itm_head(hidden_states)
         return itm_score 
         
     
 class LavisLorentzBLIPGraphModel(nn.Module): 
-    def __init__(self, manifold:CustomLorentz, d_vision, d_text ,ft_out, config, text_body, text_head, vision_body, vision_head,  manifold_mapper) -> None:
+    def __init__(self, manifold:CustomLorentz, d_vision, d_text ,ft_out, config, text_body, text_head, vision_body, vision_head,  manifold_mapper, itm_head=None) -> None:
         super().__init__()
         self.config = config
         self.text_body = text_body
@@ -181,7 +176,6 @@ class LavisLorentzBLIPGraphModel(nn.Module):
     ) -> torch.FloatTensor:
 
         if pixel_values is not None:
-            # with torch.no_grad():
             outputs = self.vision_body.forward_features(pixel_values)
             last_hidden_state = outputs
             pooled_output = self.vision_head(last_hidden_state[:, 0, :])
@@ -221,7 +215,3 @@ class LavisLorentzBLIPGraphModel(nn.Module):
         itm_score = self.itm_head(itm_output).mean(dim=1)
         return itm_score
         
-    
-        
- 
-

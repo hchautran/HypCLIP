@@ -87,7 +87,6 @@ class ManifoldMapper(nn.Module):
             x = F.pad(x, (1,0), "constant", 0)
             out = self.manifold.expmap0(x)
         else:
-
             out = self.manifold.expmap0(x)
         return out 
 
@@ -247,8 +246,8 @@ def prepare_encoder(config, models):
                 text_head = model.text_projection
                 vision_head = model.visual_projection
                 
-            vis_encoders.append(CLIPEncoder(model.text_model)) 
-            text_encoders.append(CLIPEncoder(model.vision_model)) 
+            vis_encoders.append(CLIPEncoder(model.vision_model)) 
+            text_encoders.append(CLIPEncoder(model.text_model)) 
             d_visions.append(model.config.vision_config.hidden_size)
             d_texts.append(model.config.text_config.hidden_size)
         elif isinstance(model, BlipModel): 

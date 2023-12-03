@@ -68,9 +68,9 @@ class FuseEvalDataset(Dataset):
     def __getitem__(self, index): 
         data =  self.dataset[index]
         cap_indexes = self.dataset.img2txt[index]
-        captions = []
         output = {}
         for i in range(len(self.txt_processors)):
+            captions = []
             for j in cap_indexes:
                 if self.txt_processors[i] is not None:
                     captions.append(self.txt_processors[i](self.text[j]))
@@ -138,24 +138,29 @@ def collate_func(batch, processor):
 def get_fused_dataloader(dataset,  vis_processors, tokenizers, txt_processors=None, mode='train', batch_size=1):
     def coco_collate_func(batch):
         df = pd.DataFrame(batch)
+        images = list(df['image']) 
+        texts = list(df['text_input'])
         data = {}
         for i, vis_processor in enumerate(vis_processors):
-            pixel_values = []
-            texts = []
-            for j, image in enumerate(list(df['image'])):
-                if isinstance(vis_processor, (BlipProcessor, CLIPProcessor)): 
-                    pixel_values.append(vis_processor(images=image, return_tensors='pt')['pixel_values'])
-                else:
+            text_inputs = []
+            if isinstance(vis_processor, (BlipProcessor, CLIPProcessor)): 
+                pixel_values = vis_processor(images=images, return_tensors='pt')['pixel_values']
+            else:
+                pixel_values = []
+                for image in list(images):
                     pixel_values.append(vis_processor(image).unsqueeze_(0))
+                pixel_values = torch.cat(pixel_values, dim=0)
+            for text in texts: 
                 if txt_processors[i] is not None:
-                    texts.append(txt_processors[i](list(df['text_input'])[j]))
+                    text_inputs.append(txt_processors[i](text))
                 else:
-                    texts.append(list(df['text_input'])[j])
-                if isinstance(tokenizers[i], (BlipProcessor, CLIPProcessor)):
-                    text_inputs = tokenizers[i](text=texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
-                else:
-                    text_inputs = tokenizers[i](texts, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
-            data[f'pixel_values_{i}'] = torch.cat(pixel_values, dim=0) 
+                    text_inputs.append(text)
+            if isinstance(tokenizers[i], (BlipProcessor, CLIPProcessor)):
+                text_inputs = tokenizers[i](text=text_inputs, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+            else:
+                text_inputs = tokenizers[i](text_inputs, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+            # data[f'pixel_values_{i}'] = torch.cat(pixel_values, dim=0) 
+            data[f'pixel_values_{i}'] = pixel_values 
             data[f'attention_mask_{i}'] = text_inputs['attention_mask'] 
             data[f'input_ids_{i}'] = text_inputs['input_ids'] 
 
@@ -250,27 +255,9 @@ def get_loaders(config, dataset, vis_processor, tokenizer, txt_processor=None):
     return train_loader, val_loader, test_loader
 
 
-def get_fused_loaders(config, dataset, vis_processors, tokenizers, txt_processors=None):
-    train_loader  = get_dataloader(
-        dataset=dataset,
-        batch_size=config.batch_size,
-        vis_processor=vis_processors,
-        txt_processor=txt_processors,
-        tokenizer=tokenizers,
-        mode='train',
-    ) 
-    test_loader  = get_dataloader(
-        dataset=dataset,
-        vis_processor=vis_processors,
-        txt_processor=txt_processors,
-        tokenizer=tokenizers,
-        mode='test',
-    ) 
-    val_loader  = get_dataloader(
-        dataset=dataset,
-        vis_processor=vis_processors,
-        txt_processor=txt_processors,
-        tokenizer=tokenizers,
-        mode='val',
-    ) 
+def get_fused_loaders(dataset, vis_processors, tokenizers, txt_processors=None):
+    train_loader = get_fused_dataloader(dataset, vis_processors=vis_processors, tokenizers=tokenizers, txt_processors=txt_processors, batch_size=40, mode='train') 
+    test_loader= get_fused_dataloader(dataset, vis_processors=vis_processors, tokenizers=tokenizers, txt_processors=txt_processors, batch_size=1, mode='test') 
+    val_loader= get_fused_dataloader(dataset, vis_processors=vis_processors, tokenizers=tokenizers, txt_processors=txt_processors, batch_size=1, mode='val') 
+ 
     return train_loader, val_loader, test_loader

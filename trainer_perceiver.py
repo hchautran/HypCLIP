@@ -65,7 +65,7 @@ class MyTrainer:
         ) = self.accelerator.prepare(
             self.optimizer, train_loader, val_loader, test_loader, self.scheduler
         )
-        self.name = f'{names[config.model_ckt]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.use_graph}'
+        self.name = f'perceiver_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.use_graph}'
         print("RUNNING:", self.name)
 
         if self.enable_log:
@@ -89,7 +89,7 @@ class MyTrainer:
                 running_loss = 0.0
                 print('train loader length:', len(self.train_loader))
                 for data in tqdm(self.train_loader):
-                    if data['pixel_values'].shape[0] < self.config.batch_size: break
+                    if data['img_id'].shape[0] < self.config.batch_size: break
                     self.accelerator.free_memory()
                     self.optimizer.zero_grad()
                     current_step += 1
@@ -138,11 +138,11 @@ class MyTrainer:
     def rerank(self, sims_matrix, vit_feats, text_feats, num_images, num_texts, k=20):
         score_matrix_i2t = torch.full(
             (num_images, num_texts), -100.0
-        ).to(self.model.device)
+        ).cpu()
 
         score_matrix_t2i = torch.full(
             (num_texts, num_images), -100.0
-        ).to(self.model.device)
+        ).cpu()
 
         with torch.no_grad():
             progress = tqdm(range(len(sims_matrix)))
@@ -155,7 +155,7 @@ class MyTrainer:
                     text_latents=text_feats[topk_idx]
                 ).float()
                 score = score[:, 1]
-                score_matrix_i2t[i, topk_idx] = topk_sim + score 
+                score_matrix_i2t[i, topk_idx] = topk_sim.cpu() + score.cpu()
                 progress.update(1)
 
             sims_matrix = sims_matrix.t()
@@ -170,10 +170,10 @@ class MyTrainer:
                     text_latents=text_feats[i].repeat(k, 1, 1)
                 ).float()
                 score = score[:, 1]
-                score_matrix_t2i[i, topk_idx] = topk_sim + score 
+                score_matrix_t2i[i, topk_idx] = topk_sim.cpu() + score.cpu() 
                 progress.update(1)
 
-        return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()
+        return score_matrix_i2t, score_matrix_t2i
             
 
     def evaluate(self, mode="val"):
@@ -195,10 +195,10 @@ class MyTrainer:
         with torch.no_grad():
             for data in tqdm(loader):
                 text_embeds, text_hidden_states = self.model.get_text_features(
-                    input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
+                    data=data
                 )
                 vision_embeds, vision_hidden_states = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0]
+                    data=data
                 )
                 all_text_embeds.append(text_embeds)
                 all_vision_embeds.append(vision_embeds)

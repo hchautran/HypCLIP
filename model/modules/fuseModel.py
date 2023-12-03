@@ -7,11 +7,13 @@ import torch
 import torch.nn as nn
 from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
+from hyptorch.geoopt import PoincareBall 
 from .perceiver import FuseMultiModalModel 
 from hyptorch.lorentz.layers import LorentzMLR 
-from .seq_linear import LorentzSeqLinear
+from hyptorch.poincare.layers import UnidirectionalPoincareMLR 
+from .seq_linear import LorentzSeqLinear, SeqLinear, HypSeqLinear
 from transformers import PerceiverConfig
-from typing import List
+from typing import List, Union
 
 class Text(object):
     pass
@@ -105,7 +107,7 @@ class LavisEncoder(nn.Module):
 
 
 class FuseEncoder(nn.Module): 
-    def __init__(self, config, d_visions, d_texts, ft_out, vision_bodies, text_bodies, vision_head, text_head, manifold:CustomLorentz=None ,mapper=None) -> None:
+    def __init__(self, config, d_visions, d_texts, ft_out, vision_bodies, text_bodies, vision_head, text_head, manifold:Union[CustomLorentz, PoincareBall]=None ,mapper=None) -> None:
         super().__init__()
         self.manifold = manifold
         self.vision_bodies = nn.ModuleList(vision_bodies) 
@@ -130,25 +132,36 @@ class FuseEncoder(nn.Module):
             d_texts=d_texts,
             num_blocks=config.num_blocks
         ) 
-        self.perceiver_proj_text = LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
-        self.perceiver_proj_vision= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
-        self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
+        if isinstance(self.manifold, CustomLorentz):
+            self.vision_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +256 +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +256 +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+            self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
+        elif isinstance(self.manifold, PoincareBall):
+            self.vision_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
+            self.itm_head = UnidirectionalPoincareMLR(ball=manifold, feat_dim=config.d_latents, num_outcome=2)
+        else: 
+            self.vision_perceiver_proj= SeqLinear(ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= SeqLinear(ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
+            self.itm_head = nn.Linear(config.d_latents, 2)
     
 
     def forward(
             self,
             pixel_values: List[torch.FloatTensor] = None,
             input_ids: List[torch.Tensor] = None,
-            attention_mask: List[torch.Tensor] = None,
+            attention_masks: List[torch.Tensor] = None,
     ) -> torch.FloatTensor:
         last_hidden_states = []
         if pixel_values is not None:
             for i in range(len(pixel_values)):
+                # print(pixel_values[i].shape)
                 if i == 0: 
-                    last_hidden_state, pooled_output = self.vision_bodies[i](
-                        pixel_values=pixel_values[i]
-                    )
-                    root = self.vision_head(pooled_output)
+                    with torch.no_grad():
+                        last_hidden_state, pooled_output = self.vision_bodies[i](
+                            pixel_values=pixel_values[i]
+                        )
+                        root = self.vision_head(pooled_output)
                 else:
                     with torch.no_grad():
                         last_hidden_state, _ = self.vision_bodies[i](
@@ -156,54 +169,65 @@ class FuseEncoder(nn.Module):
                         )
                 last_hidden_states.append(last_hidden_state)
 
-            latents_output = self.perceiver_head.get_vision_features(last_hidden_states)
+            latents_output, cross_latents = self.perceiver_head.get_vision_features(last_hidden_states)
             if self.mapper is not None:
-                root = self.mapper(root, use_normalized=True)
-                lorentz_latents = self.mapper(latents_output[:,0,:])
-            lorentz_latents = self.perceiver_proj_vision(lorentz_latents) 
-
+                root = self.mapper(root, use_normalized=False)
+                latents_output = self.mapper(latents_output[:,0,:])
+            else:
+                latents_output = latents_output[:,0,:]
+            latents_output = self.vision_perceiver_proj(torch.cat([latents_output, root],dim=-1))
         else:
             for i in range(len(input_ids)):
                 if i == 0:
+                    # with torch.no_grad():
                     last_hidden_state, pooled_output = self.text_bodies[i](
                         input_ids=input_ids[i], 
-                        attention_mask=attention_mask[i]
+                        attention_mask=attention_masks[i]
                     )
                     root = self.text_head(pooled_output)
                 else:
                     with torch.no_grad():
                         last_hidden_state, _ = self.text_bodies[i](
                             input_ids=input_ids[i], 
-                            attention_mask=attention_mask[i]
+                            attention_mask=attention_masks[i]
                         )
                 last_hidden_states.append(last_hidden_state)
 
-            latents_output = self.perceiver_head.get_text_features(last_hidden_states, attention_mask=attention_mask)
+            latents_output, cross_latents = self.perceiver_head.get_text_features(last_hidden_states, attention_masks=attention_masks)
             if self.mapper is not None:
-                root = self.mapper(root, use_normalized=False)
-                lorentz_latents = self.mapper(latents_output[:,0,:])
-            lorentz_latents = self.perceiver_proj_text(lorentz_latents)
+                root = self.mapper(root, use_normalized=True)
+                latents_output = self.mapper(latents_output[:,0,:])
+            else:
+                latents_output = latents_output[:,0,:]
+            latents_output = self.text_perceiver_proj(torch.cat([latents_output, root], dim=-1))
 
-        if self.manifold is not None:
-            output = self.manifold.get_space(lorentz_latents) + self.manifold.get_space(root)
-            output = self.manifold.add_time(output)
+        if isinstance(self.manifold, CustomLorentz):
+            # output = self.manifold.pt_addition(root, latents_output) 
+            # output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
+            # output = self.manifold.add_time(output)
+            output = latents_output 
+        elif isinstance(self.manifold, PoincareBall):
+            output = self.manifold.mobius_add(root, latents_output)
+            # output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
+            # output = self.manifold.add_time(output)
         else:
-            output = lorentz_latents + root
+            output = latents_output 
 
-        return latents_output, output    
+        return cross_latents, output    
 
 
-    def compute_itm(self, vision_hidden_states:torch.Tensor, text_hidden_states:torch.Tensor): 
-        itm, _ = self.perceiver_head.compute_itm(
-            text_inputs=text_hidden_states, 
-            vision_inputs=vision_hidden_states, 
+    def compute_itm(self, vision_latents:torch.Tensor, text_latents:torch.Tensor): 
+        itm = self.perceiver_head.compute_itm(
+            vision_latents=vision_latents, 
+            text_latents=text_latents, 
         ) 
 
         # itm_vision = self.manifold_mapper(itm_vision)
-        itm = self.manifold_mapper(itm)
+        if self.mapper is not None:
+            itm = self.mapper(itm)
         # hidden_states = torch.cat([itm_vision, itm_text], dim=1)
-        itm = self.perceiver_proj(itm) 
-        itm_score = self.itm_head(itm)
+        # itm = self.perceiver_proj(itm) 
+        itm_score = self.itm_head(itm).mean(dim=1)
         return itm_score 
 
 
