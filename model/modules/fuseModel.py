@@ -121,8 +121,8 @@ class FuseEncoder(nn.Module):
             num_latents=config.num_latents, 
             num_self_attends_per_block=config.num_self_attends_per_block,
             num_cross_attention_heads=config.num_cross_attention_heads,
-            self_attention_widening_factor=4,
-            cross_attention_widening_factor=4,
+            self_attention_widening_factor=2,
+            cross_attention_widening_factor=2,
             num_self_attention_heads=config.num_self_attention_heads,
             attention_probs_dropout_prob=config.attention_probs_dropout_prob
         )
@@ -133,16 +133,16 @@ class FuseEncoder(nn.Module):
             num_blocks=config.num_blocks
         ) 
         if isinstance(self.manifold, CustomLorentz):
-            self.vision_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +256 +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +256 +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+            self.vision_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
             self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
         elif isinstance(self.manifold, PoincareBall):
-            self.vision_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
+            self.vision_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
             self.itm_head = UnidirectionalPoincareMLR(ball=manifold, feat_dim=config.d_latents, num_outcome=2)
         else: 
-            self.vision_perceiver_proj= SeqLinear(ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= SeqLinear(ft_in=config.d_latents +256, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
+            self.vision_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
             self.itm_head = nn.Linear(config.d_latents, 2)
     
 
@@ -157,11 +157,11 @@ class FuseEncoder(nn.Module):
             for i in range(len(pixel_values)):
                 # print(pixel_values[i].shape)
                 if i == 0: 
-                    with torch.no_grad():
-                        last_hidden_state, pooled_output = self.vision_bodies[i](
-                            pixel_values=pixel_values[i]
-                        )
-                        root = self.vision_head(pooled_output)
+                    # with torch.no_grad():
+                    last_hidden_state, pooled_output = self.vision_bodies[i](
+                        pixel_values=pixel_values[i]
+                    )
+                    root = self.vision_head(pooled_output)
                 else:
                     with torch.no_grad():
                         last_hidden_state, _ = self.vision_bodies[i](
@@ -171,11 +171,11 @@ class FuseEncoder(nn.Module):
 
             latents_output, cross_latents = self.perceiver_head.get_vision_features(last_hidden_states)
             if self.mapper is not None:
-                root = self.mapper(root, use_normalized=False)
+                root = self.mapper(root, use_normalized=True)
                 latents_output = self.mapper(latents_output[:,0,:])
             else:
                 latents_output = latents_output[:,0,:]
-            latents_output = self.vision_perceiver_proj(torch.cat([latents_output, root],dim=-1))
+            latents_output = self.vision_perceiver_proj(latents_output)
         else:
             for i in range(len(input_ids)):
                 if i == 0:
@@ -195,23 +195,23 @@ class FuseEncoder(nn.Module):
 
             latents_output, cross_latents = self.perceiver_head.get_text_features(last_hidden_states, attention_masks=attention_masks)
             if self.mapper is not None:
-                root = self.mapper(root, use_normalized=True)
+                root = self.mapper(root, use_normalized=False)
                 latents_output = self.mapper(latents_output[:,0,:])
             else:
                 latents_output = latents_output[:,0,:]
-            latents_output = self.text_perceiver_proj(torch.cat([latents_output, root], dim=-1))
+            latents_output = self.text_perceiver_proj(latents_output)
 
         if isinstance(self.manifold, CustomLorentz):
             # output = self.manifold.pt_addition(root, latents_output) 
-            # output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
-            # output = self.manifold.add_time(output)
-            output = latents_output 
+            output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
+            output = self.manifold.add_time(output)
+            # output = latents_output 
         elif isinstance(self.manifold, PoincareBall):
             output = self.manifold.mobius_add(root, latents_output)
             # output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
             # output = self.manifold.add_time(output)
         else:
-            output = latents_output 
+            output = latents_output + output
 
         return cross_latents, output    
 

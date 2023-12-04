@@ -202,8 +202,8 @@ class MyTrainer:
                 )
                 all_text_embeds.append(text_embeds)
                 all_vision_embeds.append(vision_embeds)
-                all_vision_hidden_states.append(vision_hidden_states)
-                all_text_hidden_states.append(text_hidden_states)
+                all_vision_hidden_states.append(vision_hidden_states.cpu())
+                all_text_hidden_states.append(text_hidden_states.cpu())
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
@@ -215,16 +215,16 @@ class MyTrainer:
             print(metrics)
             metrics["epoch"] = self.current_epoch
 
-            score_matrix_i2t, score_matrix_t2i = self.rerank(
-                sims_matrix=sims_t2i.T, 
-                vit_feats=all_vision_hidden_states, 
-                text_feats=all_text_hidden_states, 
-                num_images=n_images,
-                num_texts=n_texts
-            )
+            # score_matrix_i2t, score_matrix_t2i = self.rerank(
+            #     sims_matrix=sims_t2i.T, 
+            #     vit_feats=all_vision_hidden_states, 
+            #     text_feats=all_text_hidden_states, 
+            #     num_images=n_images,
+            #     num_texts=n_texts
+            # )
 
-            itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
-            metrics.update(itm_metrics)
+            # itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
+            # metrics.update(itm_metrics)
           
 
         return metrics

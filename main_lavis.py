@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     config.epochs = 10 
     config.enable_log = False 
-    config.manifold = POINCARE 
+    config.manifold = LORENTZ 
     for curv in [2.0, 5.0, 10.0, 1.0]:
         config.curv = curv
         for use_margin_loss in [True]:

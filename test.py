@@ -10,6 +10,8 @@ from config import (
     POINCARE,
     CLIP_LARGE_PATCH_14, 
     CLIP_BASE_PATCH_16, 
+    BLIP_BASE_FLICKR,
+    BLIP_BASE_COCO,
     LAVIS_BLIP_BASE_FLICKR, 
     LAVIS_BLIP_BASE_COCO, 
     COCO_PATH, 
@@ -39,10 +41,10 @@ def run(config, vis_processors, txt_processors, tokenizers, dataset, models):
 
 
 if __name__ == '__main__':
-    dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
     model_ckts = [
         LAVIS_BLIP_BASE_COCO, 
         CLIP_BASE_PATCH_16, 
+        # BLIP_BASE_COCO, 
     ]
 
     if "flickr" in config.dataset:
@@ -54,10 +56,10 @@ if __name__ == '__main__':
 
 
     tokenizers, vis_processors, txt_processors, models = prepare_processors_and_models(model_ckts)
-    config.epochs = 100 
+    config.epochs = 10 
     config.enable_log = True 
     config.use_margin_loss = False 
-    for manifold in [EUCLID]:
+    config.curv = 2.0
+    for manifold in [LORENTZ, POINCARE]:
         config.manifold = manifold 
         run(config, vis_processors=vis_processors, tokenizers=tokenizers, txt_processors=txt_processors, dataset=dataset, models=models)
-            

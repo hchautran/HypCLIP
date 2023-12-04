@@ -182,6 +182,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         sims = sims - neg_margin 
         sims_i2i = sims_i2i - neg_margin 
         sims = (sims - pos_margin) * sign 
+        sims_i2i = (sims_i2i - pos_margin) * sign 
 
         sims = torch.cat([torch.clamp(sims, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
         loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
@@ -196,6 +197,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         sims = sims + neg_margin 
         sims_i2i = sims_i2i + neg_margin 
         sims = (sims + pos_margin) * sign 
+        sims_i2i = (sims_i2i + pos_margin) * sign 
 
         sims = torch.cat([torch.clamp(sims, min=0.0) , torch.clamp(sims_i2i, min=0.0)], dim=-1) 
         loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
@@ -205,7 +207,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         if not self.config.use_margin_loss:
             return torch.tensor(0.0)
 
-        sim_i2i = self.dist_func(image_feat, image_world) - (pos_idx * 1e9)
+        sim_i2i = self.dist_func(image_feat, image_world)
         sim_t2t = self.dist_func(text_feat, text_world) 
         if self.config.manifold ==  LORENTZ:
             return self.hyp_margin_loss(pos_idx, sim_t2t, sim_i2i) 

@@ -163,9 +163,9 @@ class LavisLorentzBLIPGraphModel(nn.Module):
             d_text=d_text,
             num_blocks=config.num_blocks
         ) 
-        self.perceiver_hidden_layers= SeqLinear(ft_in=config.d_latents , layer_dims=[config.d_latents*4, config.d_latents*4 , config.d_latents], act_func='gelu', dropout=0.2)
-        self.perceiver_proj_text = LorentzLinear(manifold, config.d_latents +1 , ft_out + 1, dropout=0.1)
-        self.perceiver_proj_vision = LorentzLinear(manifold, config.d_latents +1 , ft_out + 1, dropout=0.1)
+        self.perceiver_hidden_layers= SeqLinear(ft_in=config.d_latents , layer_dims=[config.d_latents*4, config.d_latents*4 , ft_out], act_func='gelu', dropout=0.2)
+        # self.perceiver_proj_text = LorentzLinear(manifold, config.d_latents +1 , ft_out + 1, dropout=0.1)
+        # self.perceiver_proj_vision = LorentzLinear(manifold, config.d_latents +1 , ft_out + 1, dropout=0.1)
         self.itm_head = nn.Linear(config.d_latents, 2) 
         
     def forward(
@@ -183,8 +183,8 @@ class LavisLorentzBLIPGraphModel(nn.Module):
 
             vision_state = self.perceiver_hidden_layers(vision_state[:, 0, :])
             pooled_output = self.manifold_mapper(pooled_output, use_normalized=False)
-            vision_state = self.manifold_mapper(vision_state)
-            lorentz_latents = self.perceiver_proj_vision(vision_state) 
+            state = self.manifold_mapper(vision_state)
+            # lorentz_latents = self.perceiver_proj_vision(vision_state) 
             
         else:
             text = Text() 
@@ -197,10 +197,10 @@ class LavisLorentzBLIPGraphModel(nn.Module):
 
             text_state = self.perceiver_hidden_layers(text_state[:,0,:])
             pooled_output = self.manifold_mapper(pooled_output, use_normalized=True)
-            text_state = self.manifold_mapper(text_state)
-            lorentz_latents = self.perceiver_proj_text(text_state) 
+            state = self.manifold_mapper(text_state)
+            # lorentz_latents = self.perceiver_proj_text(text_state) 
 
-        output = self.manifold.get_space(lorentz_latents) + self.manifold.get_space(pooled_output)
+        output = self.manifold.get_space(state) + self.manifold.get_space(pooled_output)
         output = self.manifold.add_time(output)
         return latents_output, output, pooled_output
     

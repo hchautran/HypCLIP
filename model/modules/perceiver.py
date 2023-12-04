@@ -191,7 +191,7 @@ class FuseQLayer(nn.Module):
             q_dim=latent_size,
             kv_dim=hidden_size,
             is_cross_attention=True,
-            use_query_residual=True,
+            use_query_residual=False,
             num_heads=config.num_cross_attention_heads,
             widening_factor=config.cross_attention_widening_factor,
         ) for hidden_size in d_texts])
@@ -200,7 +200,7 @@ class FuseQLayer(nn.Module):
             q_dim=latent_size,
             kv_dim=hidden_size,
             is_cross_attention=True,
-            use_query_residual=True,
+            use_query_residual=False,
             num_heads=config.num_cross_attention_heads,
             widening_factor=config.cross_attention_widening_factor,
         ) for hidden_size in d_visions])
@@ -215,7 +215,7 @@ class FuseQLayer(nn.Module):
                     q_dim=latent_size,
                     kv_dim=latent_size,
                     is_cross_attention=False,
-                    use_query_residual=True,
+                    use_query_residual=False,
                     num_heads=config.num_self_attention_heads,
                     widening_factor=config.self_attention_widening_factor,
                 )
@@ -300,7 +300,7 @@ class FuseQLayer(nn.Module):
     
     def compute_itm(self, cross_text_latents, cross_image_latents):
         state = torch.cat([cross_image_latents, cross_text_latents], dim=1)
-        for _, layer_module in enumerate(self.text_self_attends):
+        for _, layer_module in enumerate(self.vision_self_attends):
             output = layer_module(state)
             state = output[0] 
         return state
@@ -317,7 +317,7 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
             torch.empty(config.num_latents, config.d_latents)
         )
         self.text_question = nn.Parameter(
-            torch.empty(12, config.d_latents)
+            torch.empty(6, config.d_latents)
         )
         nn.init.uniform_(self.vision_question.data, -config.initializer_range, config.initializer_range)
         nn.init.uniform_(self.text_question.data, -config.initializer_range, config.initializer_range)

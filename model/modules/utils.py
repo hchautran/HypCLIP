@@ -216,16 +216,12 @@ def prepare_processors_and_models(model_ckts:List[str]):
     
     for i, model_ckt in enumerate(model_ckts):
         if 'lavis' in model_ckt:
-            if i == 0:
-                pass
-            model, vis_processor, txt_processor = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
+            model, vis_processor, txt_processor = load_model_and_preprocess("blip_retrieval", "coco", is_eval=True)
             tokenizers.append(model.tokenizer)
             vis_processors.append(vis_processor['eval'])
             txt_processors.append(txt_processor['eval'])
             models.append(model)
         else:
-            if i == 0:
-                pass
             tokenizers.append(AutoProcessor.from_pretrained(model_ckt))
             vis_processors.append(AutoProcessor.from_pretrained(model_ckt))
             txt_processors.append(None)
