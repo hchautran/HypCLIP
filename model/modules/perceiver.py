@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from .perceiver_layers import PerceiverLayer
-from transformers import PerceiverConfig
+from transformers import PerceiverConfig, PerceiverPreTrainedModel
 from transformers.modeling_utils import ModuleUtilsMixin
 from typing import List
 
@@ -215,7 +215,7 @@ class FuseQLayer(nn.Module):
                     q_dim=latent_size,
                     kv_dim=latent_size,
                     is_cross_attention=False,
-                    use_query_residual=False,
+                    use_query_residual=True,
                     num_heads=config.num_self_attention_heads,
                     widening_factor=config.self_attention_widening_factor,
                 )
@@ -306,23 +306,19 @@ class FuseQLayer(nn.Module):
         return state
 
 
-class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
+class FuseMultiModalModel(PerceiverPreTrainedModel, ModuleUtilsMixin):
     def __init__(self, config:PerceiverConfig, d_visions, d_texts, num_blocks, mapper=None ) -> None:
-        super().__init__()
+        super().__init__(config=config)
         self.config = config
         self.num_blocks = num_blocks 
         self.num_latents = config.num_latents
         self.num_cross_heads = config.num_cross_attention_heads
-        self.vision_question = nn.Parameter(
+        self.latents = nn.Parameter(
             torch.empty(config.num_latents, config.d_latents)
         )
-        self.text_question = nn.Parameter(
-            torch.empty(6, config.d_latents)
-        )
-        nn.init.uniform_(self.vision_question.data, -config.initializer_range, config.initializer_range)
-        nn.init.uniform_(self.text_question.data, -config.initializer_range, config.initializer_range)
         self.multimodal_layer = FuseQLayer(config=config, d_texts=d_texts, d_visions=d_visions, latent_size=config.d_latents)
         self.mapper = mapper
+        self._init_weights(self)
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
@@ -334,8 +330,8 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
     
     def forward(self, vision_inputs:torch.Tensor, text_inputs:torch.Tensor, attention_masks=None):
         bs = vision_inputs.shape[0]
-        vision_question = self.vision_question.expand(bs, -1, -1)
-        text_question = self.text_question.expand(bs, -1, -1)
+        vision_question = self.latents.expand(bs, -1, -1)
+        text_question = self.latents.expand(bs, -1, -1)
         if attention_masks is not None:
             attention_masks = [self.get_extended_attention_mask(attention_mask=attention_masks[i], input_shape=text_inputs[i].shape) for i in range(len(attention_masks))]
 
@@ -353,7 +349,7 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
 
     def get_vision_features(self, vision_inputs:torch.Tensor):
         bs = vision_inputs[0].shape[0]
-        vision_question = self.vision_question.expand(bs, -1, -1)
+        vision_question = self.latents.expand(bs, -1, -1)
 
         for i in range(self.num_blocks):
             itc_vision, cross_vision = self.multimodal_layer.get_vision_features(vision_inputs, vision_question) 
@@ -363,7 +359,7 @@ class FuseMultiModalModel(nn.Module,  ModuleUtilsMixin):
 
     def get_text_features(self, text_inputs:torch.Tensor, attention_masks:torch.Tensor=None): 
         bs = text_inputs[0].shape[0]
-        text_question = self.text_question.expand(bs, -1, -1)
+        text_question = self.latents.expand(bs, -1, -1)
         attention_masks = [self.get_extended_attention_mask(attention_mask=attention_masks[i], input_shape=text_inputs[i].shape) for i in range(len(attention_masks))]
 
         for i in range(self.num_blocks):

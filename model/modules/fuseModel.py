@@ -14,6 +14,7 @@ from hyptorch.poincare.layers import UnidirectionalPoincareMLR
 from .seq_linear import LorentzSeqLinear, SeqLinear, HypSeqLinear
 from transformers import PerceiverConfig
 from typing import List, Union
+from transformers import PerceiverPreTrainedModel 
 
 class Text(object):
     pass
@@ -133,16 +134,16 @@ class FuseEncoder(nn.Module):
             num_blocks=config.num_blocks
         ) 
         if isinstance(self.manifold, CustomLorentz):
-            self.vision_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[config.d_latents*4+1, ft_out + 1], act_func='gelu', dropout=0.3)
+            self.vision_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[ft_out + 1], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[ft_out + 1], act_func='gelu', dropout=0.3)
             self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
         elif isinstance(self.manifold, PoincareBall):
-            self.vision_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[config.d_latents*4, ft_out], act_func='gelu', dropout=0.3)
+            self.vision_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
             self.itm_head = UnidirectionalPoincareMLR(ball=manifold, feat_dim=config.d_latents, num_outcome=2)
         else: 
-            self.vision_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[config.d_latents*4, config.d_latents*4,ft_out], act_func='gelu', dropout=0.3)
+            self.vision_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
+            self.text_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
             self.itm_head = nn.Linear(config.d_latents, 2)
     
 
@@ -195,21 +196,17 @@ class FuseEncoder(nn.Module):
 
             latents_output, cross_latents = self.perceiver_head.get_text_features(last_hidden_states, attention_masks=attention_masks)
             if self.mapper is not None:
-                root = self.mapper(root, use_normalized=False)
+                root = self.mapper(root, use_normalized=True)
                 latents_output = self.mapper(latents_output[:,0,:])
             else:
                 latents_output = latents_output[:,0,:]
             latents_output = self.text_perceiver_proj(latents_output)
 
         if isinstance(self.manifold, CustomLorentz):
-            # output = self.manifold.pt_addition(root, latents_output) 
             output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
             output = self.manifold.add_time(output)
-            # output = latents_output 
         elif isinstance(self.manifold, PoincareBall):
             output = self.manifold.mobius_add(root, latents_output)
-            # output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
-            # output = self.manifold.add_time(output)
         else:
             output = latents_output + output
 
