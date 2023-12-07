@@ -191,7 +191,7 @@ class FuseQLayer(nn.Module):
             q_dim=latent_size,
             kv_dim=hidden_size,
             is_cross_attention=True,
-            use_query_residual=False,
+            use_query_residual=True,
             num_heads=config.num_cross_attention_heads,
             widening_factor=config.cross_attention_widening_factor,
         ) for hidden_size in d_texts])
@@ -200,7 +200,7 @@ class FuseQLayer(nn.Module):
             q_dim=latent_size,
             kv_dim=hidden_size,
             is_cross_attention=True,
-            use_query_residual=False,
+            use_query_residual=True,
             num_heads=config.num_cross_attention_heads,
             widening_factor=config.cross_attention_widening_factor,
         ) for hidden_size in d_visions])
@@ -299,11 +299,12 @@ class FuseQLayer(nn.Module):
     
     
     def compute_itm(self, cross_text_latents, cross_image_latents):
-        state = torch.cat([cross_image_latents, cross_text_latents], dim=1)
-        for _, layer_module in enumerate(self.vision_self_attends):
-            output = layer_module(state)
-            state = output[0] 
-        return state
+        itm_text= torch.cat([cross_text_latents, cross_image_latents], dim=1)
+        itm_vision = torch.cat([cross_image_latents, cross_text_latents], dim=1)
+        for i in range(len(self.text_self_attends)):
+            itm_text= self.text_self_attends[i](itm_text)[0]
+            itm_vision = self.vision_self_attends[i](itm_vision)[0]
+        return torch.cat([itm_text, itm_vision], dim=1)
 
 
 class FuseMultiModalModel(PerceiverPreTrainedModel, ModuleUtilsMixin):

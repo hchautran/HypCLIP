@@ -88,7 +88,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             config,           
             d_visions=d_visions, 
             d_texts=d_texts, 
-            ft_out=256, 
+            ft_out=config.ft_out, 
             vision_bodies=vis_encoders, 
             text_bodies=text_encoders,
             vision_head=vision_head,
@@ -102,7 +102,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         self.alpha = config.alpha
         self.max_txt_len = config.max_txt_len
-        self._init_queue(config, 256)
+        self._init_queue(config, config.ft_out)
     
     def _init_queue(self, config, ft_out):
         self.model_m= deepcopy(self.model) 
@@ -378,6 +378,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         )
 
         in_batch_target = torch.arange(bsize).to(self.device)
+
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
@@ -387,6 +388,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             "logits/mean": sims.mean().item(),
             "logits/max": sims.max().item(),
             "logits/acc": (sims.argmax(-1) == in_batch_target).float().mean().item(),
+            "logits/temp": self.logit_scale.item(),
             "logits/itm_acc": itm_acc.item(),
             "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
         }

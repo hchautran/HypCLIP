@@ -140,8 +140,8 @@ def get_lora_lavis_blip(config, model):
 def get_lora_blip(config, model):
 
     target_modules = [ 
-        'text_proj', 
-        'vision_proj',
+        'text_projection', 
+        'visual_projection',
     ]
     for i in range(config.vision_trainable_blocks): 
         index = 11 - i
@@ -197,8 +197,8 @@ def get_lora_clip(config, model):
     peft_config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION, 
         inference_mode=False, 
-        r=64, 
-        lora_alpha=64, 
+        r=32, 
+        lora_alpha=32, 
         lora_dropout=0.2, 
         target_modules=target_modules
     )
@@ -216,7 +216,11 @@ def prepare_processors_and_models(model_ckts:List[str]):
     
     for i, model_ckt in enumerate(model_ckts):
         if 'lavis' in model_ckt:
-            model, vis_processor, txt_processor = load_model_and_preprocess("blip_retrieval", "coco", is_eval=True)
+            model, vis_processor, txt_processor = load_model_and_preprocess(
+                "blip_retrieval", 
+                "coco" if 'coco' in model_ckt else 'flickr', 
+                is_eval=True
+            )
             tokenizers.append(model.tokenizer)
             vis_processors.append(vis_processor['eval'])
             txt_processors.append(txt_processor['eval'])
@@ -237,8 +241,8 @@ def prepare_encoder(config, models):
     vision_head = None
     for i, model in enumerate(models):
         if isinstance(model, CLIPModel): 
+            model = get_lora_clip(config, model)
             if i == 0:
-                model = get_lora_clip(config, model)
                 text_head = model.text_projection
                 vision_head = model.visual_projection
                 
@@ -247,8 +251,8 @@ def prepare_encoder(config, models):
             d_visions.append(model.config.vision_config.hidden_size)
             d_texts.append(model.config.text_config.hidden_size)
         elif isinstance(model, BlipModel): 
+            model = get_lora_blip(config, model)
             if i == 0:
-                model = get_lora_blip(config, model)
                 text_head = model.text_projection
                 vision_head = model.visual_projection
             vis_encoders.append(BLIPEncoder(model.vision_model)) 
@@ -256,8 +260,8 @@ def prepare_encoder(config, models):
             d_visions.append(model.config.vision_config.hidden_size)
             d_texts.append(model.config.text_config.hidden_size)
         else:
+            model = get_lora_lavis_blip(config, model)
             if i == 0:
-                model = get_lora_lavis_blip(config, model)
                 text_head = model.text_proj
                 vision_head = model.vision_proj
             vis_encoders.append(LavisEncoder(model.visual_encoder)) 

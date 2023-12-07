@@ -3,13 +3,14 @@ import torch
 import torch.nn as nn
 from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
+import torch.nn.functional as F
 import torch
 import torch.nn as nn
 from typing import Optional
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.geoopt import PoincareBall 
 from .perceiver import FuseMultiModalModel 
-from hyptorch.lorentz.layers import LorentzMLR 
+from hyptorch.lorentz.layers import LorentzMLR, LorentzLinear 
 from hyptorch.poincare.layers import UnidirectionalPoincareMLR 
 from .seq_linear import LorentzSeqLinear, SeqLinear, HypSeqLinear
 from transformers import PerceiverConfig
@@ -122,8 +123,8 @@ class FuseEncoder(nn.Module):
             num_latents=config.num_latents, 
             num_self_attends_per_block=config.num_self_attends_per_block,
             num_cross_attention_heads=config.num_cross_attention_heads,
-            self_attention_widening_factor=2,
-            cross_attention_widening_factor=2,
+            self_attention_widening_factor=4,
+            cross_attention_widening_factor=4,
             num_self_attention_heads=config.num_self_attention_heads,
             attention_probs_dropout_prob=config.attention_probs_dropout_prob
         )
@@ -133,18 +134,28 @@ class FuseEncoder(nn.Module):
             d_texts=d_texts,
             num_blocks=config.num_blocks
         ) 
+        text_sizes= config.d_latents 
+        vision_sizes=  config.d_latents
+        for i in range(len(d_visions)): 
+            text_sizes += d_texts[i]
+            vision_sizes += d_visions[i]
+
+        self.vision_perceiver_proj= nn.Linear(vision_sizes, ft_out, bias=False)
+        self.text_perceiver_proj= nn.Linear(text_sizes , ft_out, bias=False)
+
         if isinstance(self.manifold, CustomLorentz):
-            self.vision_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[ft_out + 1], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= LorentzSeqLinear(manifold, ft_in=config.d_latents +1 , layer_dims=[ft_out + 1], act_func='gelu', dropout=0.3)
+            self.itm_head = nn.Sequential(
+                LorentzSeqLinear(manifold, config.d_latents, layer_dims=[513, 513]),
+                LorentzMLR(manifold, 513, 2)
+            )
             self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
         elif isinstance(self.manifold, PoincareBall):
-            self.vision_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= HypSeqLinear(manifold, ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
-            self.itm_head = UnidirectionalPoincareMLR(ball=manifold, feat_dim=config.d_latents, num_outcome=2)
+            self.itm_head = nn.Sequential(
+                LorentzSeqLinear(manifold, config.d_latents, layer_dims=[512, 512]),
+                UnidirectionalPoincareMLR(ball=manifold, feat_dim=config.d_latents, num_outcome=2)
+            )
         else: 
-            self.vision_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
-            self.text_perceiver_proj= SeqLinear(ft_in=config.d_latents, layer_dims=[ft_out], act_func='gelu', dropout=0.3)
-            self.itm_head = nn.Linear(config.d_latents, 2)
+            self.itm_head = SeqLinear(config.d_latents, [512, 512, 2], dropout=0.2, act_func='gelu')
     
 
     def forward(
@@ -154,64 +165,43 @@ class FuseEncoder(nn.Module):
             attention_masks: List[torch.Tensor] = None,
     ) -> torch.FloatTensor:
         last_hidden_states = []
+        pooled_outputs = []
         if pixel_values is not None:
             for i in range(len(pixel_values)):
-                # print(pixel_values[i].shape)
-                if i == 0: 
-                    # with torch.no_grad():
-                    last_hidden_state, pooled_output = self.vision_bodies[i](
-                        pixel_values=pixel_values[i]
-                    )
-                    root = self.vision_head(pooled_output)
-                else:
-                    with torch.no_grad():
-                        last_hidden_state, _ = self.vision_bodies[i](
-                            pixel_values=pixel_values[i]
-                        )
+                last_hidden_state, pooled_output = self.vision_bodies[i](
+                    pixel_values=pixel_values[i]
+                )
                 last_hidden_states.append(last_hidden_state)
+                pooled_outputs.append(pooled_output)
 
             latents_output, cross_latents = self.perceiver_head.get_vision_features(last_hidden_states)
-            if self.mapper is not None:
-                root = self.mapper(root, use_normalized=True)
-                latents_output = self.mapper(latents_output[:,0,:])
-            else:
-                latents_output = latents_output[:,0,:]
-            latents_output = self.vision_perceiver_proj(latents_output)
+            pooled_outputs.append(torch.mean(latents_output, dim=1))
+            output = torch.cat(pooled_outputs, dim=-1) 
+            output = F.dropout(output , p=0.3, training=self.training)
+
+            # output = torch.mean(latents_output, dim=1)
+            output = self.vision_perceiver_proj(output)
         else:
             for i in range(len(input_ids)):
-                if i == 0:
-                    # with torch.no_grad():
-                    last_hidden_state, pooled_output = self.text_bodies[i](
-                        input_ids=input_ids[i], 
-                        attention_mask=attention_masks[i]
-                    )
-                    root = self.text_head(pooled_output)
-                else:
-                    with torch.no_grad():
-                        last_hidden_state, _ = self.text_bodies[i](
-                            input_ids=input_ids[i], 
-                            attention_mask=attention_masks[i]
-                        )
+                last_hidden_state, pooled_output = self.text_bodies[i](
+                    input_ids=input_ids[i], 
+                    attention_mask=attention_masks[i]
+                )
                 last_hidden_states.append(last_hidden_state)
+                pooled_outputs.append(pooled_output)
 
             latents_output, cross_latents = self.perceiver_head.get_text_features(last_hidden_states, attention_masks=attention_masks)
-            if self.mapper is not None:
-                root = self.mapper(root, use_normalized=True)
-                latents_output = self.mapper(latents_output[:,0,:])
-            else:
-                latents_output = latents_output[:,0,:]
-            latents_output = self.text_perceiver_proj(latents_output)
+            pooled_outputs.append(torch.mean(latents_output,dim=1))
+            output = torch.cat(pooled_outputs, dim=-1) 
+            output = F.dropout(output, p=0.3, training=self.training)
 
-        if isinstance(self.manifold, CustomLorentz):
-            output = self.manifold.get_space(latents_output) + self.manifold.get_space(root)
-            output = self.manifold.add_time(output)
-        elif isinstance(self.manifold, PoincareBall):
-            output = self.manifold.mobius_add(root, latents_output)
-        else:
-            output = latents_output + output
+            # output = torch.mean(latents_output, dim=1)
+            output = self.text_perceiver_proj(output)
+
+        if self.mapper is not None:
+            output = self.mapper(output)
 
         return cross_latents, output    
-
 
     def compute_itm(self, vision_latents:torch.Tensor, text_latents:torch.Tensor): 
         itm = self.perceiver_head.compute_itm(
@@ -219,11 +209,8 @@ class FuseEncoder(nn.Module):
             text_latents=text_latents, 
         ) 
 
-        # itm_vision = self.manifold_mapper(itm_vision)
         if self.mapper is not None:
             itm = self.mapper(itm)
-        # hidden_states = torch.cat([itm_vision, itm_text], dim=1)
-        # itm = self.perceiver_proj(itm) 
         itm_score = self.itm_head(itm).mean(dim=1)
         return itm_score 
 
