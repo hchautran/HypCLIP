@@ -15,15 +15,15 @@ from hyptorch.poincare.layers import UnidirectionalPoincareMLR
 from .seq_linear import LorentzSeqLinear, SeqLinear, HypSeqLinear
 from transformers import PerceiverConfig
 from typing import List, Union
-from transformers import PerceiverPreTrainedModel 
 
 class Text(object):
     pass
 
 class BLIPEncoder(nn.Module): 
-    def __init__(self, body) -> None:
+    def __init__(self, body, head) -> None:
         super().__init__()
         self.body = body
+        self.head = head
         
     def forward(
         self,
@@ -48,12 +48,14 @@ class BLIPEncoder(nn.Module):
 
         last_hidden_state = outputs[0]
         pooled_output = last_hidden_state[:,0,:]
-        return last_hidden_state, pooled_output 
+        final_feat = self.head(pooled_output) 
+        return last_hidden_state, pooled_output, final_feat 
 
 class CLIPEncoder(nn.Module): 
-    def __init__(self, body) -> None:
+    def __init__(self, body, head) -> None:
         super().__init__()
         self.body = body
+        self.head = head
         
     def forward(
         self,
@@ -78,12 +80,14 @@ class CLIPEncoder(nn.Module):
 
         pooled_output = outputs[1]
         last_hidden_state = outputs[0]
-        return last_hidden_state, pooled_output 
+        final_feat = self.head(pooled_output)
+        return last_hidden_state, pooled_output, final_feat 
 
 class LavisEncoder(nn.Module): 
-    def __init__(self, body) -> None:
+    def __init__(self, body, head) -> None:
         super().__init__()
-        self.body= body 
+        self.body = body 
+        self.head = head
 
     def forward(
             self,
@@ -104,8 +108,10 @@ class LavisEncoder(nn.Module):
             outputs = self.body.forward_text(text)
             last_hidden_state = outputs.last_hidden_state
             pooled_output = last_hidden_state[:, 0, :]
+        
+        final_feat = self.head(pooled_output)
 
-        return last_hidden_state, pooled_output
+        return last_hidden_state, pooled_output, final_feat
 
 
 class FuseEncoder(nn.Module): 
@@ -145,17 +151,19 @@ class FuseEncoder(nn.Module):
 
         if isinstance(self.manifold, CustomLorentz):
             self.itm_head = nn.Sequential(
-                LorentzSeqLinear(manifold, config.d_latents, layer_dims=[513, 513]),
-                LorentzMLR(manifold, 513, 2)
+                # LorentzSeqLinear(manifold, config.d_latents, layer_dims=[513, 513]),
+                LorentzMLR(manifold, config.d_latents + 1, 2)
             )
-            self.itm_head = LorentzMLR(manifold, config.d_latents + 1, 2)
         elif isinstance(self.manifold, PoincareBall):
             self.itm_head = nn.Sequential(
-                LorentzSeqLinear(manifold, config.d_latents, layer_dims=[512, 512]),
+                # LorentzSeqLinear(manifold, config.d_latents, layer_dims=[512, 512]),
                 UnidirectionalPoincareMLR(ball=manifold, feat_dim=config.d_latents, num_outcome=2)
             )
         else: 
-            self.itm_head = SeqLinear(config.d_latents, [512, 512, 2], dropout=0.2, act_func='gelu')
+            self.itm_head = nn.Sequential(
+                # SeqLinear(config.d_latents, [config.d_latents*2, config.d_latents*2, config.d_latents], dropout=0.1, act_func='gelu'),
+                nn.Linear(config.d_latents, 2) 
+            )
     
 
     def forward(
@@ -166,42 +174,63 @@ class FuseEncoder(nn.Module):
     ) -> torch.FloatTensor:
         last_hidden_states = []
         pooled_outputs = []
+        ori_feat = None
         if pixel_values is not None:
             for i in range(len(pixel_values)):
-                last_hidden_state, pooled_output = self.vision_bodies[i](
-                    pixel_values=pixel_values[i]
-                )
-                last_hidden_states.append(last_hidden_state)
-                pooled_outputs.append(pooled_output)
+                if i==0:
+                    with torch.no_grad():
+                        last_hidden_state, pooled_output, ori_embed = self.vision_bodies[i](
+                            pixel_values=pixel_values[i]
+                        )
+                        last_hidden_states.append(last_hidden_state)
+                        pooled_outputs.append(pooled_output)
+                        ori_feat = ori_embed 
+                else:
+                    last_hidden_state, pooled_output, ori_embed = self.vision_bodies[i](
+                        pixel_values=pixel_values[i]
+                    )
+                    last_hidden_states.append(last_hidden_state)
+                    pooled_outputs.append(pooled_output)
 
             latents_output, cross_latents = self.perceiver_head.get_vision_features(last_hidden_states)
             pooled_outputs.append(torch.mean(latents_output, dim=1))
             output = torch.cat(pooled_outputs, dim=-1) 
-            output = F.dropout(output , p=0.3, training=self.training)
 
             # output = torch.mean(latents_output, dim=1)
             output = self.vision_perceiver_proj(output)
         else:
             for i in range(len(input_ids)):
-                last_hidden_state, pooled_output = self.text_bodies[i](
-                    input_ids=input_ids[i], 
-                    attention_mask=attention_masks[i]
-                )
-                last_hidden_states.append(last_hidden_state)
-                pooled_outputs.append(pooled_output)
+                if i == 0:
+                    with torch.no_grad():
+                        last_hidden_state, pooled_output, ori_embed = self.text_bodies[i](
+                            input_ids=input_ids[i], 
+                            attention_mask=attention_masks[i]
+                        )
+                        last_hidden_states.append(last_hidden_state)
+                        pooled_outputs.append(pooled_output)
+                        ori_feat = ori_embed 
+                else:
+                    last_hidden_state, pooled_output, ori_embed = self.text_bodies[i](
+                        input_ids=input_ids[i], 
+                        attention_mask=attention_masks[i]
+                    )
+                    last_hidden_states.append(last_hidden_state)
+                    pooled_outputs.append(pooled_output)
 
             latents_output, cross_latents = self.perceiver_head.get_text_features(last_hidden_states, attention_masks=attention_masks)
             pooled_outputs.append(torch.mean(latents_output,dim=1))
             output = torch.cat(pooled_outputs, dim=-1) 
-            output = F.dropout(output, p=0.3, training=self.training)
 
             # output = torch.mean(latents_output, dim=1)
             output = self.text_perceiver_proj(output)
 
         if self.mapper is not None:
-            output = self.mapper(output)
+            # output = output + ori_feat 
+            # output = output.add_time(output)
+            ori_feat = self.mapper(ori_feat, use_normalized=True)
+            output = self.mapper(output, use_normalized=(pixel_value)
 
-        return cross_latents, output    
+        return cross_latents, output, ori_feat
 
     def compute_itm(self, vision_latents:torch.Tensor, text_latents:torch.Tensor): 
         itm = self.perceiver_head.compute_itm(

@@ -1,323 +1,387 @@
+from copy import deepcopy
+
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
+from lavis.common.registry import registry
+from lavis.models.albef_models import compute_sim_matrix
+from lavis.models.base_model import (
+    MomentumDistilationMixin,
+    SharedQueueMixin,
+)
+from lavis.models.blip_models.blip import BlipBase
+from torch import nn
+
+from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
+from hyptorch.geoopt import Euclidean, PoincareBall 
 from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
-from .modules.hyp_discriminator import HypDiscriminator 
-from hyptorch.lorentz.manifold import CustomLorentz as Lorentz 
-from hyptorch.geoopt.manifolds.lorentz import math as lmath 
-
-from hyptorch.geoopt.manifolds.stereographic import PoincareBall 
-from hyptorch.geoopt import Euclidean 
-# from model.manifolds.lorentz import Lorentz 
-from typing import  Optional, Tuple, Union
-from transformers.models.clip.modeling_clip import CLIPOutput
-import torch.nn.functional as F
-import time
-
+from .modules.utils import (
+    prepare_encoder,
+    ManifoldMapper
+) 
+from .modules.fuseModel import FuseEncoder
 
 EUCLID = 'euclidean'
 POINCARE = 'poincare'
 LORENTZ = 'lorentz'
+class Text(object):
+    pass
 
 
-class BaseModel(nn.Module):
-    def __init__(self, config) -> None:
+class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
+
+    def __init__(
+        self,
+        config,
+        models,
+        teacher_model,
+    ):
+        """ """
         super().__init__()
         self.config = config
-        self.model_ckt = config.model_ckt
-        self.ft_out = config.ft_out
+        self.models=models 
+        self.num_models = len(models)
         self.clip_r = config.clip_radius
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.momentum = config.momentum
         self.queue_size = config.queue_size
-        self.use_lorentz_centroid = config.use_lorentz_centroid
-
-        manifold = config.manifold
-    
-        assert manifold in [EUCLID, POINCARE, LORENTZ]
-
-        self.logit_scale = nn.Parameter(torch.tensor(1 / config.temp).log())
-        self.weight_i2t = self.config.weight_i2t 
-        self.curv = torch.as_tensor(config.curv if manifold != EUCLID else 0)
+        self.weight_i2t = config.weight_i2t
+        self.weight_retrieval = nn.Parameter(torch.tensor([0.5]), requires_grad=True)
+        assert config.manifold in [EUCLID, POINCARE, LORENTZ]
+        self.mapper = None           
+        self.curv = torch.as_tensor(config.curv if config.manifold != EUCLID else 0)
+        class_weight = torch.tensor([0.5, 1.0])
+        self.itm_criterion = nn.CrossEntropyLoss(weight=class_weight, reduction='mean')
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
-        
-    
-        if manifold == EUCLID:
+
+
+        if config.manifold == EUCLID:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=False)
             self.clip_r = None
             self.manifold = Euclidean()
-            self.itm_head = DisModel(dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[256, 1])
-        elif manifold == POINCARE:
+        elif config.manifold == POINCARE:
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = PoincareBall(c=self.curv, learnable=config.curv_learnable)
-            self.itm_head = HypDiscriminator(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[512, 1])
+            self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
         else: 
             self.curv = torch.nn.Parameter(self.curv, requires_grad=config.curv_learnable)
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
-            self.itm_head = LorentzDisModel(self.manifold, dim=(256 if 'blip' in self.config.model_ckt else 512), layer_dims=[512])
-        self.manifold_name =  manifold    
-        self.vision_model = None 
-        self.text_model = None 
-        self.text_teacher = None
-        self.vision_teacher = None
+            self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
+        self.teacher_model = None 
+        self.studen_model = None 
+
+        self.momentum = config.momentum
+        self.logit_scale = nn.Parameter(torch.tensor(config.temp))
+
+        self.alpha = config.alpha
+        self.max_txt_len = config.max_txt_len
+    
+    def _init_queue(self, config, ft_out):
+          # create the queue
+        if config.manifold == EUCLID:
+            self.register_buffer("student_image_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("student_text_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("teacher_image_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("teacher_text_queue", torch.randn(self.queue_size, ft_out).T)
+            self.image_queue = F.normalize(self.image_queue.T, dim=-1).T
+            self.text_queue = F.normalize(self.text_queue.T, dim=-1).T
+            self.image_ori_queue = F.normalize(self.image_ori_queue.T, dim=-1).T
+            self.text_ori_queue = F.normalize(self.text_ori_queue.T, dim=-1).T
+        elif config.manifold == POINCARE:
+            self.register_buffer("student_image_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("student_text_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("teacher_image_queue", torch.randn(self.queue_size, ft_out).T)
+            self.register_buffer("teacher_text_queue", torch.randn(self.queue_size, ft_out).T)
+            self.image_queue = F.normalize(self.image_queue.T, dim=-1).T
+            self.text_queue = F.normalize(self.text_queue.T, dim=-1).T
+            self.image_ori_queue = F.normalize(self.image_ori_queue.T, dim=-1).T
+            self.text_ori_queue = F.normalize(self.text_ori_queue.T, dim=-1).T
+            self.image_queue = self.manifold.expmap0(self.image_queue.T, dim=-1).T
+            self.text_queue = self.manifold.expmap0(self.text_queue.T, dim=-1).T
+            self.image_ori_queue = self.manifold.expmap0(self.image_ori_queue.T, dim=-1).T
+            self.text_ori_queue = self.manifold.expmap0(self.text_ori_queue.T, dim=-1).T
+        else:
+            self.register_buffer("student_image_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
+            self.register_buffer("student_text_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
+            self.register_buffer("teacher_image_queue", self.manifold.random(self.queue_size, ft_out+1).T)
+            self.register_buffer("teacher_ttext_queue", self.manifold.random(self.queue_size, ft_out+1).T)
+
+        self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
+        self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+
+
+    def _rampup_factor(self, epoch, iters, num_iters_per_epoch):
+        return min(1, (epoch * num_iters_per_epoch + iters) / (2 * num_iters_per_epoch))
+    
+    
     def num_parameters(self, only_trainable=True):
         num_params = 0
         if only_trainable:
-            num_params += sum(p.numel() for p in self.vision_model.parameters() if p.requires_grad)
+            num_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
         else:
-            num_params += sum(p.numel() for p in self.text_model.parameters())
+            num_params = sum(p.numel() for p in self.parameters())
         return num_params
-
-    def eval(self):
-        self.vision_teacher.eval()
-        self.text_teacher.eval()
-        self.vision_model.eval()
-        self.text_model.eval()
-        
-
-    def train(self):
-        self.vision_teacher.eval()
-        self.text_teacher.eval()
-        self.vision_model.train()
-        self.text_model.train()
-        
-    def dist_func(self, x, y, device='gpu'):
-        if self.manifold_name == EUCLID:
+    
+            
+    def get_euclid_dist(self, x:torch.Tensor, y:torch.tensor):
+        if self.config.manifold == LORENTZ:
+            x = self.manifold.logmap0(x)
+            y = self.manifold.logmap0(y)
+        x = F.normalize(x, p=2, dim=-1)
+        y = F.normalize(y, p=2, dim=-1)
+        return torch.matmul(x, y.T) 
+            
+    def dist_func(self, x:torch.Tensor, y:torch.Tensor): 
+        if self.config.manifold == EUCLID:
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
+            eu_dis = torch.matmul(x, y.T) 
             return  eu_dis 
-        elif self.manifold_name == POINCARE: 
-            hyp_dist = -self.manifold.dist_batch(x, y, device=device)
+        elif self.config.manifold == POINCARE: 
+            hyp_dist = -self.manifold.dist_batch(x, y, device=f'{"gpu" if self.training else "cpu"}')
             return hyp_dist
         else: 
             hyp_dist = -self.manifold.dist_batch(x, y)
-            x = F.normalize(self.manifold.logmap0(x),p=2, dim=-1) 
-            y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
             return hyp_dist
     
-    def etailment_loss(self, text_feats:torch.Tensor, image_feats:torch.Tensor):
-        entailment_loss = torch.tensor(0.0) 
-        if isinstance(self.manifold, Lorentz):
-            angle = self.manifold.oxy_angle(text_feats, image_feats)
-            aperture = self.manifold.half_aperture(text_feats)
-            entailment_loss = torch.clamp(angle - aperture, min=0).mean()
-        
-        return entailment_loss
-        
+    def postprocess_embeds(self, embed):
+        if self.mapper is not None:
+            self.manifold.assert_check_point_on_manifold(embed)
+            return embed 
+        else:
+            return F.normalize(embed, p=2, dim=-1) 
 
 
-
-    def itm_loss(self, imgs, cap, sims_i2t):
+    def itm_loss(self, idx, text_hidden_states, image_hidden_states, sim_t2i, sim_i2t):
+        bs = text_hidden_states.shape[0]
+        with torch.no_grad():
+            mask = torch.eq(idx, idx.t())
             
-        bs = imgs.shape[0]
-        weights_i2t = F.softmax(sims_i2t, dim=1)
-        weights_t2i = F.softmax(sims_i2t.T, dim=1)
-        mask = (torch.eye(bs) > 0).to(self.device)
+            weights_t2i = F.softmax(sim_t2i/self.logit_scale, dim=1) + 1e-4
+            weights_i2t = F.softmax(sim_i2t/self.logit_scale, dim=1) + 1e-4
+            weights_i2t.masked_fill_(mask, 0)
+            weights_t2i.masked_fill_(mask, 0) 
 
-        weights_i2t.masked_fill_(mask, 0)
-        weights_t2i.masked_fill_(mask, 0) 
         # select a negative image for each text
-        img_enc_neg = []    
+        image_embeds_neg = []
         for b in range(bs):
             neg_idx = torch.multinomial(weights_t2i[b], 1).item()
-            img_enc_neg.append(imgs[neg_idx])
-        img_enc_neg = torch.stack(img_enc_neg,dim=0) 
+            image_embeds_neg.append(image_hidden_states[neg_idx])
 
         # select a negative text for each image
-        cap_enc_neg = []
+        text_ids_neg = []
         for b in range(bs):
             neg_idx = torch.multinomial(weights_i2t[b], 1).item()
-            cap_enc_neg.append(cap[neg_idx])
-        cap_enc_neg = torch.stack(cap_enc_neg,dim=0)   
+            text_ids_neg.append(text_hidden_states[neg_idx])
 
-        cap_enc_all = torch.cat([cap, cap, cap_enc_neg],dim=0)     
-        img_enc_all = torch.cat([imgs, img_enc_neg, imgs],dim=0)
+        text_ids_neg = torch.stack(text_ids_neg, dim=0)
+        image_embeds_neg = torch.stack(image_embeds_neg, dim=0)
+
+        text_hidden_states = torch.cat(
+            [text_hidden_states, text_hidden_states, text_ids_neg], dim=0
+        )  # pos, pos, neg
+
+        image_hidden_states = torch.cat(
+            [image_hidden_states, image_embeds_neg, image_hidden_states], dim=0
+        )  # pos, neg, pos
+
+
+        itm_score = self.model.compute_itm(
+            text_latents=text_hidden_states, 
+            vision_latents=image_hidden_states, 
+        ) 
+
         itm_labels = torch.cat(
-            [
-                torch.ones(bs,dtype=torch.float),
-                torch.zeros(2*bs,dtype=torch.float)
-            ],
-        dim=0).view(-1,1).to(imgs.device)
+            [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
+            dim=0,
+        ).to(self.device)
+        itm_acc = (itm_score.argmax(-1) == itm_labels).float().sum()/itm_labels.shape[0]
 
-        disc = self.itm_head(img_enc_all, cap_enc_all)
-        class_weights = torch.tensor([[2.0]]).to(self.device)
-        loss_itm = F.binary_cross_entropy_with_logits(disc, itm_labels, pos_weight=class_weights)
-        itm_acc = ((disc >0.5).float() == itm_labels).float().sum()/itm_labels.shape[0]
-        return loss_itm, itm_acc
+        loss_itm = self.itm_criterion(itm_score, itm_labels) 
+        return loss_itm,  itm_acc
 
-
-
-
-    def teacher_dist_func(self, x:torch.Tensor, y:torch.Tensor):
-        x = F.normalize(x, p=2, dim=-1)
-        y = F.normalize(y, p=2, dim=-1)
-        return torch.matmul(x, y.T) 
-    
-    def euclid_student_dist_func(self, x:torch.Tensor, y:torch.Tensor):
-        if self.config.manifold == POINCARE:
-            x = self.manifold.logmap0(x)
-            y = self.manifold.logmap0(y)
-        elif self.config.manifold == LORENTZ:
-            x = self.manifold.get_space(x)
-            y = self.manifold.get_space(y)
-        x = F.normalize(x, p=2, dim=-1)
-        y = F.normalize(y, p=2, dim=-1)
-        return torch.matmul(x, y.T) 
-            
-    def margin_loss(self, student_embed, teacher_embed):
-        x = F.normalize(student_embed,p=2, dim=-1) 
-        y = F.normalize(teacher_embed,p=2, dim=-1) 
-        sims_s2t = x@y.T
-
-        bsize = sims_s2t.shape[0] 
-        ones = torch.ones(bsize, bsize).to(self.device)
-        pos_mask = torch.eye(bsize).to(self.device) 
-        neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
-        sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
-        neg_margin = self.config.euclid_neg_margin * neg_mask 
-        pos_margin = self.config.euclid_pos_margin * pos_mask 
-        sims_s2t = sims_s2t - neg_margin 
-        sims_s2t = (sims_s2t - pos_margin) * sign 
-
-        sims = torch.cat([torch.clamp(sims_s2t, min=0.0)], dim=-1) 
-        loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
-        return loss
-        
-    def itc_loss(self, image_embeds , text_embeds, image_embeds_t=None, text_embeds_t=None):
-        # print(text_embeds_t.shape)
-        # print(image_embeds_t.shape)
-
-        bsize = text_embeds.shape[0]
-        eye_mask = torch.eye(bsize).to(self.device) * 1e9
-        self.logit_scale.data = torch.clamp(self.logit_scale.data, max=4.6052)
-        _scale = self.logit_scale.exp()
-        target = torch.arange(bsize).to(self.device)
-        sims_i2t = self.dist_func(image_embeds, text_embeds) 
-        sims_t2i = sims_i2t.T
-        sims_i2i = self.dist_func(image_embeds, image_embeds) 
-        sims_t2t = self.dist_func(text_embeds, text_embeds) 
-        soft_itc_loss = torch.tensor(0.0)
-
-        if image_embeds_t is not None and text_embeds_t is not None:
-            teacher_sims_i2t = self.teacher_dist_func(image_embeds_t, text_embeds_t) 
-            teacher_sims_t2i = teacher_sims_i2t.T
-            student_sims_i2t = self.dist_func(image_embeds, text_embeds) 
-            studen_sims_t2i = teacher_sims_i2t.T
-                
-
-
-            soft_targets_i2t = nn.functional.softmax(teacher_sims_i2t*_scale, dim=-1)
-            soft_targets_t2i = nn.functional.softmax(teacher_sims_t2i*_scale, dim=-1)
-            soft_prob_i2t = nn.functional.log_softmax(student_sims_i2t*_scale, dim=-1)
-            soft_prob_t2i = nn.functional.log_softmax(studen_sims_t2i*_scale, dim=-1)
-            soft_loss_i2t = -torch.sum(
-                soft_targets_i2t * soft_prob_i2t, dim=-1
-            ).mean()
-            soft_loss_t2i = -torch.sum(
-                soft_targets_t2i * soft_prob_t2i, dim=-1
-            ).mean()      
-            soft_itc_loss = self.weight_i2t * soft_loss_i2t + (1 - self.weight_i2t) * soft_loss_t2i 
-            if self.config.manifold == LORENTZ:
-                image_student_embed = self.manifold.get_space(image_embeds)
-                text_student_embed = self.manifold.get_space(text_embeds)
-            margin_loss_i2i = self.margin_loss(student_embed=image_student_embed, teacher_embed=image_embeds_t)
-            margin_loss_t2t = self.margin_loss(student_embed=text_student_embed, teacher_embed=text_embeds_t)
-            # margin_loss_t2i = self.margin_loss(student_embed=text_student_embed, teacher_embed=image_student_embed)
-            # margin_loss_i2t = self.margin_loss(student_embed=image_student_embed, teacher_embed=text_student_embed)
-            margin_loss = (margin_loss_i2i + margin_loss_t2t )/2
-
-        logits_i2t = torch.cat([sims_i2t, sims_i2i-eye_mask], dim=1) * _scale
-        logits_t2i = torch.cat([sims_t2i, sims_t2t-eye_mask], dim=1) * _scale
-        
-        
-        # if self.config.use_margin_loss:
-            # margin_loss = 0.5 * (self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask) + self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask))
-        
-        itc_loss =  self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
-        
-        loss = (1 - self.config.soft_target_loss) * itc_loss + self.config.soft_target_loss * soft_itc_loss  + margin_loss
-        
-        stats = {
-            "logits/weight_t2i": 1.0 - self.weight_i2t,
-            "logits/margin_loss": margin_loss.item(),
-            "logits/itc_loss": itc_loss.item(),
-            "logits/soft_itc_loss": soft_itc_loss.item(),
-            "logits/min": sims_i2t.min().item(),
-            "logits/mean": sims_i2t.mean().item(),
-            "logits/max": sims_i2t.max().item(),
-            "logits/acc": (sims_i2t.argmax(-1) == target).float().mean().item(),
-            "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
-        }
-        return loss, stats, sims_i2t
 
     def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        teacher_input_ids: Optional[torch.LongTensor] = None,
-        teacher_pixel_values: Optional[torch.FloatTensor] = None,
-        teacher_attention_mask: Optional[torch.Tensor] = None,
-    ) -> Union[Tuple, CLIPOutput]:
-        with torch.no_grad():
-            teacher_vision_outputs = self.vision_teacher(
-                teacher_pixel_values
-            )
-            teacher_text_outputs = self.text_teacher(
-                input_ids=teacher_input_ids,
-                attention_mask=teacher_attention_mask,
-            )
-            image_embeds_t = teacher_vision_outputs[1]
-            text_embeds_t = teacher_text_outputs[1]
+        self, 
+        data,
+        epoch: int,
+        iters: int,
+        num_iters_per_epoch:int,
+    ):
 
+        idx = data['img_id'] 
+        input_ids = []
+        attention_masks = []
+        pixel_values = []
+        for i in range(self.num_models):
+            input_ids.append(data[f'input_ids_{i}'])
+            pixel_values.append(data[f'pixel_values_{i}'])
+            attention_masks.append(data[f'attention_mask_{i}'])
 
-        vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
+        alpha = self.alpha * self._rampup_factor(
+            epoch=epoch,
+            iters=iters,
+            num_iters_per_epoch=num_iters_per_epoch,
         )
 
-        text_outputs = self.text_model(
+        text_output  = self.model(
             input_ids=input_ids,
-            attention_mask=attention_mask,
+            attention_masks=attention_masks
+        )
+        image_output = self.model(
+            pixel_values=pixel_values
+        )
+        text_embeds = text_output[1] 
+        image_embeds = image_output[1] 
+        text_embeds_ori = text_output[2] 
+        image_embeds_ori = image_output[2] 
+        text_hidden_states = text_output[0]
+        vision_hidden_states = image_output[0]
+
+        text_feat = self.postprocess_embeds(text_embeds)
+        image_feat = self.postprocess_embeds(image_embeds)
+        image_feat_ori = self.postprocess_embeds(image_embeds_ori)
+        text_feat_ori = self.postprocess_embeds(text_embeds_ori)
+
+        self.manifold.assert_check_point_on_manifold(text_feat)
+        self.manifold.assert_check_point_on_manifold(image_feat)
+        self.manifold.assert_check_point_on_manifold(text_feat_ori)
+        self.manifold.assert_check_point_on_manifold(image_feat_ori)
+        bsize = text_feat.shape[0]
+
+        # Image-text Contrastive Learning
+        idx = idx.view(-1, 1)
+        idx_all = torch.cat([idx.t(), self.idx_queue.clone().detach()], dim=1)
+        pos_idx = torch.eq(idx, idx_all).float()
+        sim_targets = pos_idx / pos_idx.sum(1, keepdim=True)
+
+        with torch.no_grad():
+            self.logit_scale.clamp_(0.001, 0.5)
+            image_output_m = self.model_m(
+                pixel_values=pixel_values 
+            )
+
+            text_output_m = self.model_m(
+                input_ids=input_ids,
+                attention_masks=attention_masks,
+            )
+
+            image_feat_m = self.postprocess_embeds(image_output_m[1])
+            text_feat_m = self.postprocess_embeds(text_output_m[1])
+
+            image_feat_world= torch.cat([image_feat_m.t(), self.image_queue.clone().detach()], dim=1)
+            text_feat_world= torch.cat([text_feat_m.t(), self.text_queue.clone().detach()], dim=1)
+            image_feat_ori_world= torch.cat([image_feat_ori.t(), self.image_ori_queue.clone().detach()], dim=1)
+            text_feat_ori_world = torch.cat([text_feat_ori.t(), self.text_ori_queue.clone().detach()], dim=1)
+
+            sim_i2t_ori = self.get_euclid_dist(image_feat_ori, text_feat_ori_world.T) 
+            sim_t2i_ori = self.get_euclid_dist(text_feat_ori, image_feat_ori_world.T)
+            ori_i2t_target = F.softmax(sim_i2t_ori / self.logit_scale, dim=-1)
+            ori_t2i_target = F.softmax(sim_t2i_ori / self.logit_scale, dim=-1)
+
+
+            self.manifold.assert_check_point_on_manifold(text_feat_world.T)
+            self.manifold.assert_check_point_on_manifold(image_feat_world.T)
+
+        eu_sim_i2t= self.get_euclid_dist(image_feat, text_feat_world.T) 
+        eu_sim_t2i= self.get_euclid_dist(text_feat, image_feat_world.T)
+        sim_i2t = self.dist_func(image_feat, text_feat_world.T) 
+        sim_t2i = self.dist_func(text_feat, image_feat_world.T)
+
+        fused_loss_i2t = -torch.sum(
+            F.log_softmax(eu_sim_i2t / self.logit_scale, dim=1) * ori_i2t_target, dim=-1
+        ).mean()
+        fused_loss_t2i = -torch.sum(
+            F.log_softmax(eu_sim_t2i / self.logit_scale, dim=1) * ori_t2i_target, dim=-1
+        ).mean()      
+        loss_i2t = -torch.sum(
+            F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_targets, dim=-1
+        ).mean()
+        loss_t2i = -torch.sum(
+            F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1
+        ).mean()      
+    
+        fused_loss_itc = self.config.weight_i2t * fused_loss_i2t + (1-self.config.weight_i2t) * fused_loss_t2i
+        loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
+      
+        sims = self.dist_func(image_feat, text_feat)
+        loss_itm, itm_acc = self.itm_loss(
+            idx=idx,
+            text_hidden_states=text_hidden_states, 
+            image_hidden_states=vision_hidden_states, 
+            sim_i2t=sims, 
+            sim_t2i=sims.T
         )
 
-        image_embeds = vision_outputs[1]
-        text_embeds = text_outputs[1]
+        in_batch_target = torch.arange(bsize).to(self.device)
 
-        self.manifold.assert_check_point_on_manifold(image_embeds)
-        self.manifold.assert_check_point_on_manifold(text_embeds)
+        stats = {
+            "logits/weight_t2i": 1.0 - self.weight_i2t,
+            "logits/itc_loss": loss_itc.item(),
+            "logits/itm_loss": loss_itm.item(),
+            "logits/min": sims.min().item(),
+            "logits/mean": sims.mean().item(),
+            "logits/max": sims.max().item(),
+            "logits/alpha": alpha,
+            "logits/acc": (sims.argmax(-1) == in_batch_target).float().mean().item(),
+            "logits/temp": self.logit_scale.item(),
+            "logits/itm_acc": itm_acc.item(),
+            "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
+        }
 
-        itc_loss, stats, sims_i2t = self.itc_loss(
-            image_embeds=image_embeds, 
-            text_embeds=text_embeds, 
-            image_embeds_t=image_embeds_t, 
-            text_embeds_t=text_embeds_t
-        )
+        self._dequeue_and_enqueue(image_feat_m, text_feat_m, image_feat_ori, text_feat_ori, idx)
+        loss =  (1 - alpha) * fused_loss_itc + alpha*loss_itc + loss_itm 
+        return  loss, stats
 
-        itm_loss, itm_acc = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
-        stats["logits/itm_loss"] = itm_loss.item() 
-        stats["logits/itm_acc"] = itm_acc.item() 
-        loss = itm_loss + itc_loss 
-        return loss, stats
+    def reset_queue_ptr(self):
+        self.queue_ptr = torch.zeros(1, dtype=torch.long)
+    
+    def _dequeue_and_enqueue(self, image_feat, text_feat, image_ori, text_ori, idxs=None):
+        # gather keys before updating queue
+
+        batch_size = image_feat.shape[0]
+
+        ptr = int(self.queue_ptr)
+        assert self.queue_size % batch_size == 0  # for simplicity
+
+        # replace the keys at ptr (dequeue and enqueue)
+        self.student_image_queue[:, ptr : ptr + batch_size] = image_feat.T
+        self.student_text_queue[:, ptr : ptr + batch_size] = text_feat.T
+        self.teacher_image_queue[:, ptr : ptr + batch_size] = image_ori.T
+        self.teacher_text_queue[:, ptr : ptr + batch_size] = text_ori.T
+
+        if idxs is not None:
+            idxs = idxs
+            self.idx_queue[:, ptr : ptr + batch_size] = idxs.T
+
+        ptr = (ptr + batch_size) % self.queue_size  # move pointer
+        self.queue_ptr[0] = ptr
+
 
     def get_text_features(
         self,
-        input_ids: torch.Tensor, 
-        attention_mask: torch.Tensor,
+        data
     ):
-        text_outputs = self.text_model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+        input_ids = []
+        attention_masks = []
+        for i in range(self.num_models):
+            input_ids.append(data[f'input_ids_{i}'].squeeze())
+            attention_masks.append(data[f'attention_mask_{i}'].squeeze())
+
+        text_output = self.model(
+           input_ids=input_ids, 
+           attention_masks=attention_masks, 
         )
-        return text_outputs[1]
+        text_feat = self.postprocess_embeds(text_output[1])
+        text_ori= self.postprocess_embeds(text_output[2])
+        return text_feat, text_output[0], text_ori
 
-    def get_vision_features(self, pixel_values:torch.Tensor):
-        vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
-        )
-        return vision_outputs[1] 
-
-
+    def get_vision_features(self, data):
+        pixel_values = []
+        for i in range(self.num_models):
+            pixel_values.append(data[f'pixel_values_{i}'].squeeze(0))
+        image_output = self.model(pixel_values=pixel_values)
+        image_feat = self.postprocess_embeds(image_output[1])
+        image_ori = self.postprocess_embeds(image_output[2])
+        return image_feat, image_output[0], image_ori
+    

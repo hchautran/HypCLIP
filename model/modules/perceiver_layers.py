@@ -42,12 +42,8 @@ class PerceiverSelfAttention(nn.Module):
     ):
         super().__init__()
         self.num_heads = num_heads
-        # Q and K must have the same number of channels.
-        # Default to preserving Q's input's shape.
         if qk_channels is None:
             qk_channels = q_dim
-        # V's num_channels determines the shape of the output of QKV-attention.
-        # Default to the same number of channels used in the key-query operation.
         if v_channels is None:
             v_channels = qk_channels
         if qk_channels % num_heads != 0:
@@ -86,7 +82,7 @@ class PerceiverSelfAttention(nn.Module):
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
         hidden_states = self.layernorm1(hidden_states)
-        inputs = self.layernorm2(inputs)
+        # inputs = self.layernorm2(inputs)
 
         # Project queries, keys and values to a common feature dimension. If this is instantiated as a cross-attention module,
         # the keys and values come from the inputs; the attention mask needs to be such that the inputs's non-relevant tokens are not attended to.
@@ -337,8 +333,8 @@ class PerceiverLayer(nn.Module):
         return outputs
 
     def feed_forward_chunk(self, attention_output):
-        layer_output = self.layernorm(attention_output)
-        layer_output = self.mlp(layer_output)
+        # layer_output = self.layernorm(attention_output)
+        layer_output = self.mlp(attention_output)
         return layer_output
 
 

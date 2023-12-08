@@ -246,8 +246,8 @@ def prepare_encoder(config, models):
                 text_head = model.text_projection
                 vision_head = model.visual_projection
                 
-            vis_encoders.append(CLIPEncoder(model.vision_model)) 
-            text_encoders.append(CLIPEncoder(model.text_model)) 
+            vis_encoders.append(CLIPEncoder(model.vision_model, model.visual_projection)) 
+            text_encoders.append(CLIPEncoder(model.text_model, model.text_projection)) 
             d_visions.append(model.config.vision_config.hidden_size)
             d_texts.append(model.config.text_config.hidden_size)
         elif isinstance(model, BlipModel): 
@@ -255,8 +255,8 @@ def prepare_encoder(config, models):
             if i == 0:
                 text_head = model.text_projection
                 vision_head = model.visual_projection
-            vis_encoders.append(BLIPEncoder(model.vision_model)) 
-            text_encoders.append(BLIPEncoder(model.text_model)) 
+            vis_encoders.append(BLIPEncoder(model.vision_model, model.visual_projection)) 
+            text_encoders.append(BLIPEncoder(model.text_model, model.text_projection)) 
             d_visions.append(model.config.vision_config.hidden_size)
             d_texts.append(model.config.text_config.hidden_size)
         else:
@@ -264,8 +264,8 @@ def prepare_encoder(config, models):
             if i == 0:
                 text_head = model.text_proj
                 vision_head = model.vision_proj
-            vis_encoders.append(LavisEncoder(model.visual_encoder)) 
-            text_encoders.append(LavisEncoder(model.text_encoder)) 
+            vis_encoders.append(LavisEncoder(model.visual_encoder, model.vision_proj)) 
+            text_encoders.append(LavisEncoder(model.text_encoder, model.text_proj)) 
             d_visions.append(768)
             d_texts.append(768)
     return vis_encoders, text_encoders, text_head, vision_head, d_visions, d_texts 

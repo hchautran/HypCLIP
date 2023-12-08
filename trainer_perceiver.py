@@ -53,7 +53,7 @@ class MyTrainer:
         )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=6, min_lr=1e-8
+            self.optimizer, 'max', factor=0.5, patience=2, min_lr=1e-5
         )
         
         (
@@ -135,7 +135,7 @@ class MyTrainer:
                     
         print("Finished Training")
 
-    def rerank(self, sims_matrix, vit_feats, text_feats, num_images, num_texts, k=20):
+    def rerank(self, sims_matrix, vit_feats, text_feats, num_images, num_texts, k=15):
         score_matrix_i2t = torch.full(
             (num_images, num_texts), -100.0
         ).cpu()
@@ -152,10 +152,10 @@ class MyTrainer:
                 image_inputs = vit_feats[i].repeat(k, 1, 1).to(self.model.device)
                 score = self.model.model.compute_itm(
                     vision_latents=image_inputs,
-                    text_latents=text_feats[topk_idx]
+                    text_latents=text_feats[topk_idx].to(self.model.device)
                 ).float()
                 score = score[:, 1]
-                score_matrix_i2t[i, topk_idx] = topk_sim.cpu() + score.cpu()
+                score_matrix_i2t[i, topk_idx] = topk_sim.cpu() + F.softmax(score.cpu(),dim=0)
                 progress.update(1)
 
             sims_matrix = sims_matrix.t()
@@ -167,10 +167,10 @@ class MyTrainer:
                 image_inputs = vit_feats[topk_idx].to(self.model.device)
                 score = self.model.model.compute_itm(
                     vision_latents=image_inputs,
-                    text_latents=text_feats[i].repeat(k, 1, 1)
+                    text_latents=text_feats[i].repeat(k, 1, 1).to(self.model.device)
                 ).float()
                 score = score[:, 1]
-                score_matrix_t2i[i, topk_idx] = topk_sim.cpu() + score.cpu() 
+                score_matrix_t2i[i, topk_idx] = topk_sim.cpu() + F.softmax(score.cpu(),dim=0)
                 progress.update(1)
 
         return score_matrix_i2t, score_matrix_t2i
@@ -190,23 +190,29 @@ class MyTrainer:
         all_vision_embeds = []
         all_vision_hidden_states = []
         all_text_hidden_states = []
+        all_vision_oris = []
+        all_text_oris = []
 
         loader = self.accelerator.prepare(DataLoader(dataset, batch_size=1, shuffle=False))
         with torch.no_grad():
             for data in tqdm(loader):
-                text_embeds, text_hidden_states = self.model.get_text_features(
+                text_embeds, text_hidden_states, text_oris = self.model.get_text_features(
                     data=data
                 )
-                vision_embeds, vision_hidden_states = self.model.get_vision_features(
+                vision_embeds, vision_hidden_states, vision_oris = self.model.get_vision_features(
                     data=data
                 )
                 all_text_embeds.append(text_embeds)
                 all_vision_embeds.append(vision_embeds)
-                all_vision_hidden_states.append(vision_hidden_states)
-                all_text_hidden_states.append(text_hidden_states)
+                all_text_oris.append(text_oris)
+                all_vision_oris.append(vision_oris)
+                all_vision_hidden_states.append(vision_hidden_states.cpu())
+                all_text_hidden_states.append(text_hidden_states.cpu())
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
+            all_text_oris = torch.concat(all_text_oris, 0)
+            all_vision_oris = torch.concat(all_vision_oris, 0)
             all_vision_hidden_states= torch.concat(all_vision_hidden_states, 0)
             all_text_hidden_states= torch.concat(all_text_hidden_states, 0)
 
@@ -215,18 +221,28 @@ class MyTrainer:
                 all_vision_embeds
             )
             metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
+            ori_sims_t2i = self.model.dist_func(
+                all_text_oris, 
+                all_vision_oris
+            )
+           
+            sims_t2i = F.softmax(sims_t2i/self.model.logit_scale, dim=-1) + ori_sims_t2i
+            sims_i2t = F.softmax(sims_t2i.T/self.model.logit_scale, dim=-1) + ori_sims_t2i.T
+            metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_i2t.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
             print(metrics)
+  
             metrics["epoch"] = self.current_epoch
-
             score_matrix_i2t, score_matrix_t2i = self.rerank(
-                sims_matrix=sims_t2i.T, 
+                sims_matrix=sims_t2i.T.cpu(), 
                 vit_feats=all_vision_hidden_states, 
                 text_feats=all_text_hidden_states, 
                 num_images=n_images,
                 num_texts=n_texts
             )
 
-            itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
+
+            itm_metrics = report_metrics(scores_t2i=score_matrix_t2i.cpu().detach(), scores_i2t=score_matrix_i2t.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm' )
+            print(itm_metrics)
             metrics.update(itm_metrics)
           
 

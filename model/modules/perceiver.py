@@ -204,12 +204,11 @@ class FuseQLayer(nn.Module):
             num_heads=config.num_cross_attention_heads,
             widening_factor=config.cross_attention_widening_factor,
         ) for hidden_size in d_visions])
-        text_self_attends = []
-        vision_self_attends = []
+        self_attends = []
         num_self_attends_per_block = num_self_attend if num_self_attend is not None else config.num_self_attends_per_block
 
         for _ in range(num_self_attends_per_block):
-            text_self_attends.append(
+            self_attends.append(
                 PerceiverLayer(
                     config,
                     q_dim=latent_size,
@@ -220,19 +219,8 @@ class FuseQLayer(nn.Module):
                     widening_factor=config.self_attention_widening_factor,
                 )
             )
-            vision_self_attends.append(
-                PerceiverLayer(
-                    config,
-                    q_dim=latent_size,
-                    kv_dim=latent_size,
-                    is_cross_attention=False,
-                    use_query_residual=True,
-                    num_heads=config.num_self_attention_heads,
-                    widening_factor=config.self_attention_widening_factor,
-                )
-            )
-        self.text_self_attends=nn.ModuleList(text_self_attends)
-        self.vision_self_attends=nn.ModuleList(vision_self_attends)
+         
+        self.self_attends=nn.ModuleList(self_attends)
 
     def num_parameters(self, only_trainable=True):
         num_params = 0
@@ -275,9 +263,9 @@ class FuseQLayer(nn.Module):
             cross_outputs.append(cross_output[0])
         cross_output = torch.cat(cross_outputs, dim=1) 
         state = cross_output
-        for _, layer_module in enumerate(self.vision_self_attends):
-            self_output = layer_module(state)
-            state = self_output[0] 
+        # for _, layer_module in enumerate(self.vision_self_attends):
+            # self_output = layer_module(state)
+            # state = self_output[0] 
         return state, cross_output
     
     
@@ -292,19 +280,17 @@ class FuseQLayer(nn.Module):
             cross_outputs.append(cross_output[0])
         cross_output = torch.cat(cross_outputs, dim=1) 
         state = cross_output
-        for _, layer_module in enumerate(self.text_self_attends):
-            self_output = layer_module(state)
-            state = self_output[0] 
+        # for _, layer_module in enumerate(self.text_self_attends):
+            # self_output = layer_module(state)
+            # state = self_output[0] 
         return state, cross_output
     
     
     def compute_itm(self, cross_text_latents, cross_image_latents):
         itm_text= torch.cat([cross_text_latents, cross_image_latents], dim=1)
-        itm_vision = torch.cat([cross_image_latents, cross_text_latents], dim=1)
-        for i in range(len(self.text_self_attends)):
-            itm_text= self.text_self_attends[i](itm_text)[0]
-            itm_vision = self.vision_self_attends[i](itm_vision)[0]
-        return torch.cat([itm_text, itm_vision], dim=1)
+        for i in range(len(self.self_attends)):
+            itm_state = self.self_attends[i](itm_text)[0]
+        return itm_state 
 
 
 class FuseMultiModalModel(PerceiverPreTrainedModel, ModuleUtilsMixin):
