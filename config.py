@@ -60,6 +60,7 @@ CLIP_LARGE_PATCH_14 = "openai/clip-vit-large-patch14"
 BLIP_BASE = "Salesforce/blip-image-captioning-base"
 BLIP_BASE_FLICKR = "Salesforce/blip-itm-base-flickr"
 BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
+BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-coco"
 LAVIS_BLIP_BASE_FLICKR = "lavis-blip-itm-base-flickr"
 LAVIS_BLIP_BASE_COCO= "lavis-blip-itm-base-coco"
 FLICKR = "nlphuji/flickr30k"
@@ -126,7 +127,7 @@ config_args = {
         ),
         "max_txt_len": (35, "max_txt_len"),
         "negative_all_rank": (False, "negative_all_rank"),
-        "alpha": (0.8, "alpha"),
+        "alpha": (0.5, "alpha"),
         "queue_size": (64000, "queue size"),
         "batch_size": (40, "batch size"),
         "eval_freq": (1200, "how often to compute val metrics (in epochs)"),
@@ -142,6 +143,7 @@ config_args = {
         "normalize_image_embed": (False,""),
         "shared_proj_layers": (False, "number of project layers"),
         "use_itm_head": (True, "use itm head"),
+        "use_fused_features": (False, "use fused features"),
         "use_root": (False, "use graph root"),
         "graph_hidden_channels": (512, "graph size"),
     },
@@ -163,7 +165,6 @@ config_args = {
         "ft_out": (512, "final project dimension"),
         "curv_learnable": (False, "is curvature learnable"),
         "freeze_embedding": (True, "freeze embedding layers"),
-        "use_lorentz_centroid": (False, "use lorentz centroid pooler"),
         "fourier": (False, "fourier"),
     },
     "data_config": {
@@ -171,14 +172,16 @@ config_args = {
         "cache_dir": (CACHE_DIR, "cache_dir"),
     },
     "perceiver": {
-        "num_latents": (16, "which dataset to use"),
+        "num_latents": (12, "which dataset to use"),
         "d_latents": (1024, "d latent"),
         "num_blocks": (2, "d out"),
-        "num_self_attends_per_block": (1, "cache_dir"),
+        "num_self_attends_per_block": (2, "cache_dir"),
         "num_cross_attention_heads": (4, "cache_dir"),
         "num_self_attention_heads": (4, "cache_dir"),
         "cross_attention_widening_factor": (4, "cache_dir"),
         "attention_probs_dropout_prob": (0.2, "cache_dir"),
+        "num_hidden_states": (2, "num_hidden_state"),
+        "use_first_layers": (True, "num_hidden_state")
     }
 }
 

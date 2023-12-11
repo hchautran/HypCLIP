@@ -20,6 +20,7 @@ from .modules.utils import (
     ManifoldMapper
 ) 
 from .modules.fuseModel import FuseEncoder
+from lavis import BlipRetrieval
 
 EUCLID = 'euclidean'
 POINCARE = 'poincare'
@@ -60,7 +61,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.clip_r = config.clip_radius
         self.queue_size = config.queue_size
         self.weight_i2t = config.weight_i2t
-        self.weight_retrieval = nn.Parameter(torch.tensor([0.5]), requires_grad=True)
+        self.num_hidden_states = config.num_hidden_states 
+        self.weight_retrieval_i2t = nn.Parameter(torch.tensor([0.4]))
+        self.weight_retrieval_t2i = nn.Parameter(torch.tensor([0.4]))
         assert config.manifold in [EUCLID, POINCARE, LORENTZ]
         self.mapper = None           
         self.curv = torch.as_tensor(config.curv if config.manifold != EUCLID else 0)
@@ -94,6 +97,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             text_bodies=text_encoders,
             vision_head=vision_head,
             text_head=text_head,
+            use_fused_features=config.use_fused_features,
             mapper=(self.mapper if config.manifold != EUCLID else None),
             manifold=(self.manifold if config.manifold != EUCLID else None), 
         )
@@ -115,30 +119,30 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         if config.manifold == EUCLID:
             self.register_buffer("image_queue", torch.randn(self.queue_size, ft_out).T)
             self.register_buffer("text_queue", torch.randn(self.queue_size, ft_out).T)
-            self.register_buffer("image_ori_queue", torch.randn(self.queue_size, 256).T)
-            self.register_buffer("text_ori_queue", torch.randn(self.queue_size, 256).T)
+            # self.register_buffer("image_ori_queue", torch.randn(self.queue_size, 256).T)
+            # self.register_buffer("text_ori_queue", torch.randn(self.queue_size, 256).T)
             self.image_queue = F.normalize(self.image_queue.T, dim=-1).T
             self.text_queue = F.normalize(self.text_queue.T, dim=-1).T
-            self.image_ori_queue = F.normalize(self.image_ori_queue.T, dim=-1).T
-            self.text_ori_queue = F.normalize(self.text_ori_queue.T, dim=-1).T
+            # self.image_ori_queue = F.normalize(self.image_ori_queue.T, dim=-1).T
+            # self.text_ori_queue = F.normalize(self.text_ori_queue.T, dim=-1).T
         elif config.manifold == POINCARE:
             self.register_buffer("image_queue", torch.randn(self.queue_size, ft_out).T)
             self.register_buffer("text_queue", torch.randn(self.queue_size, ft_out).T)
-            self.register_buffer("image_ori_queue", torch.randn(self.queue_size, 256).T)
-            self.register_buffer("text_ori_queue", torch.randn(self.queue_size, 256).T)
+            # self.register_buffer("image_ori_queue", torch.randn(self.queue_size, 256).T)
+            # self.register_buffer("text_ori_queue", torch.randn(self.queue_size, 256).T)
             self.image_queue = F.normalize(self.image_queue.T, dim=-1).T
             self.text_queue = F.normalize(self.text_queue.T, dim=-1).T
-            self.image_ori_queue = F.normalize(self.image_ori_queue.T, dim=-1).T
-            self.text_ori_queue = F.normalize(self.text_ori_queue.T, dim=-1).T
+            # self.image_ori_queue = F.normalize(self.image_ori_queue.T, dim=-1).T
+            # self.text_ori_queue = F.normalize(self.text_ori_queue.T, dim=-1).T
             self.image_queue = self.manifold.expmap0(self.image_queue.T, dim=-1).T
             self.text_queue = self.manifold.expmap0(self.text_queue.T, dim=-1).T
-            self.image_ori_queue = self.manifold.expmap0(self.image_ori_queue.T, dim=-1).T
-            self.text_ori_queue = self.manifold.expmap0(self.text_ori_queue.T, dim=-1).T
+            # self.image_ori_queue = self.manifold.expmap0(self.image_ori_queue.T, dim=-1).T
+            # self.text_ori_queue = self.manifold.expmap0(self.text_ori_queue.T, dim=-1).T
         else:
             self.register_buffer("image_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
             self.register_buffer("text_queue", self.manifold.random(self.queue_size, ft_out + 1).T)
-            self.register_buffer("image_ori_queue", self.manifold.random(self.queue_size, 257).T)
-            self.register_buffer("text_ori_queue", self.manifold.random(self.queue_size, 257).T)
+            # # self.register_buffer("image_ori_queue", self.manifold.random(self.queue_size, 257).T)
+            # self.register_buffer("text_ori_queue", self.manifold.random(self.queue_size, 257).T)
 
         self.register_buffer("idx_queue", torch.full((1, self.queue_size), -100))
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
@@ -297,10 +301,12 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         text_output  = self.model(
             input_ids=input_ids,
-            attention_masks=attention_masks
+            attention_masks=attention_masks,
+            num_hidden_states=self.num_hidden_states
         )
         image_output = self.model(
-            pixel_values=pixel_values
+            pixel_values=pixel_values,
+            num_hidden_states=self.num_hidden_states
         )
         text_embeds = text_output[1] 
         image_embeds = image_output[1] 
@@ -328,14 +334,18 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         with torch.no_grad():
             self.logit_scale.clamp_(0.001, 0.5)
+            self.weight_retrieval_t2i.clamp_(0.1, 0.5)
+            self.weight_retrieval_i2t.clamp_(0.1, 0.5)
             self._momentum_update()
             image_output_m = self.model_m(
-                pixel_values=pixel_values 
+                pixel_values=pixel_values, 
+                num_hidden_states=self.num_hidden_states
             )
 
             text_output_m = self.model_m(
                 input_ids=input_ids,
                 attention_masks=attention_masks,
+                num_hidden_states=self.num_hidden_states
             )
 
             image_feat_m = self.postprocess_embeds(image_output_m[1])
@@ -343,57 +353,59 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
             image_feat_world= torch.cat([image_feat_m.t(), self.image_queue.clone().detach()], dim=1)
             text_feat_world= torch.cat([text_feat_m.t(), self.text_queue.clone().detach()], dim=1)
-            image_feat_ori_world= torch.cat([image_feat_ori.t(), self.image_ori_queue.clone().detach()], dim=1)
-            text_feat_ori_world = torch.cat([text_feat_ori.t(), self.text_ori_queue.clone().detach()], dim=1)
-
-            sim_i2t_ori = self.dist_func(image_feat_ori, text_feat_ori_world.T) 
-            sim_t2i_ori = self.dist_func(text_feat_ori, image_feat_ori_world.T)
-            ori_i2t_target = F.softmax(sim_i2t_ori / self.logit_scale, dim=-1)
-            ori_t2i_target = F.softmax(sim_t2i_ori / self.logit_scale, dim=-1)
-
-
+            margin_loss  = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_world.T, image_world=image_feat_world.T)
+            # image_feat_ori_world= torch.cat([image_feat_ori.t(), self.image_ori_queue.clone().detach()], dim=1)
+            # text_feat_ori_world = torch.cat([text_feat_ori.t(), self.text_ori_queue.clone().detach()], dim=1)
             self.manifold.assert_check_point_on_manifold(text_feat_world.T)
             self.manifold.assert_check_point_on_manifold(image_feat_world.T)
+
+            # sim_i2t_ori = self.dist_func(image_feat_ori, text_feat_ori_world.T) 
+            # sim_t2i_ori = self.dist_func(text_feat_ori, image_feat_ori_world.T)
+            # sim_i2t_m = self.dist_func(image_feat_m, image_feat_world.T) 
+            # sim_t2i_m = self.dist_func(text_feat_m, image_feat_world.T)
+            # sim_i2t_targets = alpha * (
+            #     F.softmax((sim_i2t_ori + self.weight_retrieval_i2t*sim_i2t_m)/ self.logit_scale, dim=-1)
+            # ) + (1 - alpha) * sim_targets
+            # sim_t2i_targets = alpha * (
+            #     F.softmax((sim_t2i_ori + self.weight_retrieval_t2i*sim_t2i_m)/ self.logit_scale, dim=-1)
+            # ) + (1 - alpha) * sim_targets
+           
+
+
 
         sim_i2t= self.dist_func(image_feat, text_feat_world.T) 
         sim_t2i= self.dist_func(text_feat, image_feat_world.T)
 
-        fused_loss_i2t = -torch.sum(
-            F.log_softmax(sim_i2t / self.logit_scale, dim=1) * ori_i2t_target, dim=-1
-        ).mean()
-        fused_loss_t2i = -torch.sum(
-            F.log_softmax(sim_t2i / self.logit_scale, dim=1) * ori_t2i_target, dim=-1
-        ).mean()      
-        loss_i2t = -torch.sum(
-            F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_targets, dim=-1
-        ).mean()
-        loss_t2i = -torch.sum(
-            F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1
-        ).mean()      
-        margin_loss  = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_world.T, image_world=image_feat_world.T)
+        # kd_loss_i2t = -torch.sum(F.log_softmax(sim_i2t / self.logit_scale, dim=1) * ori_i2t_target, dim=-1).mean()
+        # kd_loss_t2i = -torch.sum(F.log_softmax(sim_t2i / self.logit_scale, dim=1) * ori_t2i_target, dim=-1).mean()      
+        loss_i2t = -torch.sum(F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_targets, dim=-1).mean()
+        loss_t2i = -torch.sum(F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1).mean()      
     
-        fused_loss_itc = self.config.weight_i2t * fused_loss_i2t + (1-self.config.weight_i2t) * fused_loss_t2i
+        # kd_loss_itc = self.config.weight_i2t * kd_loss_i2t + (1-self.config.weight_i2t) * kd_loss_t2i
         loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
+        # fused_loss_itc = self.config.weight_i2t * loss_fused_i2t + (1-self.config.weight_i2t) * loss_fused_t2i
       
         sims = self.dist_func(image_feat, text_feat)
-        loss_itm, itm_acc = self.itm_loss(
-            idx=idx,
-            text_hidden_states=text_hidden_states, 
-            image_hidden_states=vision_hidden_states, 
-            sim_i2t=sims, 
-            sim_t2i=sims.T
-        )
-        loss =  (1-alpha)*fused_loss_itc+ loss_itc + loss_itm + margin_loss
+        if self.config.use_fused_features:
+            loss_itm, itm_acc = self.itm_loss(
+                idx=idx,
+                text_hidden_states=text_hidden_states, 
+                image_hidden_states=vision_hidden_states, 
+                sim_i2t=sims, 
+                sim_t2i=sims.T
+            )
+        else:
+            loss_itm, itm_acc = torch.tensor(0.0), torch.tensor(0.0)
+        loss =  loss_itc +loss_itm + margin_loss
+        # loss =  loss_itc + loss_itm 
 
         stats = {
-            "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
-            "logits/margin_loss": margin_loss.item(),
             "logits/itm_loss": loss_itm.item(),
+            "logits/margin_loss": margin_loss.item(),
             "logits/min": sims.min().item(),
             "logits/mean": sims.mean().item(),
             "logits/max": sims.max().item(),
-            "logits/alpha": alpha,
             "logits/acc": (sims.argmax(-1) == torch.arange(bsize).to(self.device)).float().mean().item(),
             "logits/temp": self.logit_scale.item(),
             "logits/itm_acc": itm_acc.item(),
@@ -419,8 +431,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         # replace the keys at ptr (dequeue and enqueue)
         self.image_queue[:, ptr : ptr + batch_size] = image_feats.T
         self.text_queue[:, ptr : ptr + batch_size] = text_feats.T
-        self.image_ori_queue[:, ptr : ptr + batch_size] = image_ori.T
-        self.text_ori_queue[:, ptr : ptr + batch_size] = text_ori.T
+        # self.image_ori_queue[:, ptr : ptr + batch_size] = image_ori.T
+        # self.text_ori_queue[:, ptr : ptr + batch_size] = text_ori.T
 
         if idxs is not None:
             idxs = idxs
@@ -441,8 +453,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             attention_masks.append(data[f'attention_mask_{i}'].squeeze())
 
         text_output = self.model(
-           input_ids=input_ids, 
-           attention_masks=attention_masks, 
+            input_ids=input_ids, 
+            attention_masks=attention_masks, 
+            num_hidden_states=self.num_hidden_states
         )
         text_feat = self.postprocess_embeds(text_output[1])
         text_ori= self.postprocess_embeds(text_output[2])
@@ -452,7 +465,10 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         pixel_values = []
         for i in range(self.num_models):
             pixel_values.append(data[f'pixel_values_{i}'].squeeze(0))
-        image_output = self.model(pixel_values=pixel_values)
+        image_output = self.model(
+            pixel_values=pixel_values,
+            num_hidden_states=self.num_hidden_states
+        )
         image_feat = self.postprocess_embeds(image_output[1])
         image_ori = self.postprocess_embeds(image_output[2])
         return image_feat, image_output[0], image_ori

@@ -135,7 +135,7 @@ class MyTrainer:
                     
         print("Finished Training")
 
-    def rerank(self, sims_matrix, vit_feats, text_feats, num_images, num_texts, k=15):
+    def rerank(self, sims_matrix, vit_feats, text_feats, num_images, num_texts, k=20):
         score_matrix_i2t = torch.full(
             (num_images, num_texts), -100.0
         ).cpu()
@@ -154,8 +154,8 @@ class MyTrainer:
                     vision_latents=image_inputs,
                     text_latents=text_feats[topk_idx].to(self.model.device)
                 ).float()
-                score = score[:, 1]
-                score_matrix_i2t[i, topk_idx] = topk_sim.cpu() + F.softmax(score.cpu(),dim=0)
+                score = F.softmax(F.softmax(score,dim=-1)[:, 1], dim=-1)
+                score_matrix_i2t[i, topk_idx] = topk_sim.cpu() + score.cpu()
                 progress.update(1)
 
             sims_matrix = sims_matrix.t()
@@ -169,8 +169,8 @@ class MyTrainer:
                     vision_latents=image_inputs,
                     text_latents=text_feats[i].repeat(k, 1, 1).to(self.model.device)
                 ).float()
-                score = score[:, 1]
-                score_matrix_t2i[i, topk_idx] = topk_sim.cpu() + F.softmax(score.cpu(),dim=0)
+                score = F.softmax(F.softmax(score,dim=-1)[:, 1], dim=-1)
+                score_matrix_t2i[i, topk_idx] = topk_sim.cpu() + score.cpu() 
                 progress.update(1)
 
         return score_matrix_i2t, score_matrix_t2i
@@ -226,8 +226,8 @@ class MyTrainer:
                 all_vision_oris
             )
            
-            sims_t2i = F.softmax(sims_t2i/self.model.logit_scale, dim=-1) + ori_sims_t2i
-            sims_i2t = F.softmax(sims_t2i.T/self.model.logit_scale, dim=-1) + ori_sims_t2i.T
+            sims_t2i = sims_t2i * self.model.weight_retrieval_t2i + ori_sims_t2i
+            sims_i2t = sims_t2i.T * self.model.weight_retrieval_i2t + ori_sims_t2i.T
             metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_i2t.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
             print(metrics)
   
@@ -239,8 +239,6 @@ class MyTrainer:
                 num_images=n_images,
                 num_texts=n_texts
             )
-
-
             itm_metrics = report_metrics(scores_t2i=score_matrix_t2i.cpu().detach(), scores_i2t=score_matrix_i2t.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm' )
             print(itm_metrics)
             metrics.update(itm_metrics)

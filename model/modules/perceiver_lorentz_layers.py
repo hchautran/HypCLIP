@@ -23,8 +23,6 @@ import torch.utils.checkpoint
 from torch import nn
 from transformers.activations import ACT2FN
 from transformers.pytorch_utils import apply_chunking_to_forward, find_pruneable_heads_and_indices, meshgrid, prune_linear_layer
-import bitsandbytes.nn as bnn
-from torch.cuda.amp import autocast
 
 
 
@@ -57,9 +55,6 @@ class PerceiverSelfAttention(nn.Module):
         self.qk_channels_per_head = self.qk_channels // num_heads
         self.v_channels_per_head = self.v_channels // num_heads
 
-        # Layer normalization
-        self.layernorm1 = nn.LayerNorm(q_dim)
-        self.layernorm2 = nn.LayerNorm(kv_dim) if is_cross_attention else nn.Identity()
 
         # Projection matrices
         self.query = nn.Linear(q_dim, qk_channels)
@@ -82,11 +77,6 @@ class PerceiverSelfAttention(nn.Module):
         inputs_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
-        hidden_states = self.layernorm1(hidden_states)
-        inputs = self.layernorm2(inputs)
-
-        # Project queries, keys and values to a common feature dimension. If this is instantiated as a cross-attention module,
-        # the keys and values come from the inputs; the attention mask needs to be such that the inputs's non-relevant tokens are not attended to.
         is_cross_attention = inputs is not None
         queries = self.query(hidden_states)
 
@@ -98,13 +88,10 @@ class PerceiverSelfAttention(nn.Module):
             keys = self.key(hidden_states)
             values = self.value(hidden_states)
 
-        # Reshape channels for multi-head attention.
-        # We reshape from (batch_size, time, channels) to (batch_size, num_heads, time, channels per head)
         queries = self.transpose_for_scores(queries, self.qk_channels_per_head)
         keys = self.transpose_for_scores(keys, self.qk_channels_per_head)
         values = self.transpose_for_scores(values, self.v_channels_per_head)
 
-        # Take the dot product between the queries and keys to get the raw attention scores.
         attention_scores = torch.matmul(queries, keys.transpose(-1, -2))
 
         batch_size, num_heads, seq_len, q_head_dim = queries.shape
@@ -114,17 +101,12 @@ class PerceiverSelfAttention(nn.Module):
         attention_scores = attention_scores / math.sqrt(q_head_dim)
 
         if attention_mask is not None:
-            # Apply the attention mask (precomputed for all layers in PerceiverModel forward() function)
             attention_scores = attention_scores + attention_mask
 
-        # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
 
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
 
-        # Mask heads if we want to
         if head_mask is not None:
             attention_probs = attention_probs * head_mask
 
@@ -162,7 +144,7 @@ class PerceiverAttention(nn.Module):
         q_dim=None,
         kv_dim=None,
         use_query_residual=True,
-        use_fourier=False
+        use_fourier=False,
     ):
         super().__init__()
         # MultiHead attention
@@ -201,8 +183,10 @@ class PerceiverAttention(nn.Module):
             self.output = PerceiverSelfOutput(config, input_channels=self.self.v_channels, output_channels=output_channels)
             self.use_query_residual = use_query_residual
             self.pruned_heads = set()
-        else:
-            self.attn_drop  = nn.Dropout(0.1)
+        else: 
+            self.attn_drop = torch.nn.Dropout(0.1, inplace=False)
+
+            # Properties specific to this attention mechanism
             self.supports_attention_mask = False
             self.requires_input_projection = False
 
@@ -233,39 +217,30 @@ class PerceiverAttention(nn.Module):
         inputs_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
-        if self.self is not None:
-            self_outputs = self.self(
-                hidden_states,
-                attention_mask,
-                head_mask,
-                inputs,
-                inputs_mask,
-                output_attentions,
-            )
+        
+        self_outputs = self.self(
+            hidden_states,
+            attention_mask,
+            head_mask,
+            inputs,
+            inputs_mask,
+            output_attentions,
+        )
 
-            # Output projection
-            attention_output = self.output(self_outputs[0])
+        # Output projection
+        attention_output = self.output(self_outputs[0])
 
-            # Optionally include a residual to the original queries.
-            # Consider omitting the residual if the semantics of query and output
-            # are different, e.g. if queries are positions and outputs are pixels.
-            if self.use_query_residual:
-                attention_output = attention_output + hidden_states
+        if self.use_query_residual:
+            attention_output = attention_output + hidden_states
 
-            outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
-        else:
-            with autocast(enabled=False): 
-                output = torch.fft.fft2(hidden_states).real
-
-            output = self.attn_drop(output)
-
+        outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
         return outputs
 
 
 class PerceiverMLP(nn.Module):
     """A Transformer-style dense module to follow attention."""
 
-    def __init__(self, config, input_size, widening_factor, dropout=0.1):
+    def __init__(self, config, input_size, widening_factor, dropout=0.2):
         super().__init__()
         self.dropout1 = nn.Dropout(dropout)
         self.dense1 = nn.Linear(input_size, widening_factor * input_size)
@@ -297,7 +272,7 @@ class PerceiverLayer(nn.Module):
         q_dim=None,
         kv_dim=None,
         widening_factor=4,
-        dropout=0.1,
+        dropout=0.2,
         use_query_residual=True,
     ):
         super().__init__()
@@ -313,8 +288,8 @@ class PerceiverLayer(nn.Module):
             kv_dim=kv_dim,
             use_query_residual=use_query_residual,
         )
-        self.layernorm = nn.LayerNorm(q_dim)
         self.mlp = PerceiverMLP(config, input_size=q_dim, widening_factor=widening_factor, dropout=dropout)
+        self.layernorm = nn.LayerNorm(q_dim) if not is_cross_attention else nn.Identity()
 
     def forward(
         self,
@@ -340,7 +315,7 @@ class PerceiverLayer(nn.Module):
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
         )
-        layer_output = layer_output + hidden_states# residual connection
+        layer_output = layer_output + hidden_states  # residual connection
 
         outputs = (layer_output,) + outputs
 
@@ -348,7 +323,7 @@ class PerceiverLayer(nn.Module):
 
     def feed_forward_chunk(self, attention_output):
         layer_output = self.layernorm(attention_output)
-        layer_output = self.mlp(attention_output)
+        layer_output = self.mlp(layer_output)
         return layer_output
 
 

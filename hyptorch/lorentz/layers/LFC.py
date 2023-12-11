@@ -91,7 +91,7 @@ class LorentzLinear(nn.Module):
             manifold: CustomLorentz,
             in_features,
             out_features,
-            bias=False,
+            bias=True,
             init_scale=None,
             learn_scale=False,
             normalize=False,
