@@ -143,6 +143,11 @@ class MyTrainer:
         score_matrix_t2i = torch.full(
             (num_texts, num_images), -100.0
         ).cpu()
+        # print(sims_matrix)
+        # print('=' * 50)
+        sims_matrix -= sims_matrix.min()
+        sims_matrix /= sims_matrix.max()
+        # print(sims_matrix)
 
         with torch.no_grad():
             progress = tqdm(range(len(sims_matrix)))
@@ -169,7 +174,8 @@ class MyTrainer:
                     vision_latents=image_inputs,
                     text_latents=text_feats[i].repeat(k, 1, 1).to(self.model.device)
                 ).float()
-                score = F.softmax(F.softmax(score,dim=-1)[:, 1], dim=-1)
+                score = F.softmax(F.softmax(score,dim=-1)[:, 1], dim=-1) 
+                # print(score)
                 score_matrix_t2i[i, topk_idx] = topk_sim.cpu() + score.cpu() 
                 progress.update(1)
 
@@ -220,14 +226,18 @@ class MyTrainer:
                 all_text_embeds, 
                 all_vision_embeds
             )
-            metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
+            # metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
             ori_sims_t2i = self.model.dist_func(
                 all_text_oris, 
                 all_vision_oris
             )
+            # ori_sims_t2i -= ori_sims_t2i.min()
+            # ori_sims_t2i /= ori_sims_t2i.max()
+            # sims_t2i -= sims_t2i.min()
+            # sims_t2i /= sims_t2i.max()
            
-            sims_t2i = sims_t2i * self.model.weight_retrieval_t2i + ori_sims_t2i
-            sims_i2t = sims_t2i.T * self.model.weight_retrieval_i2t + ori_sims_t2i.T
+            sims_t2i = sims_t2i * 0.4 + ori_sims_t2i
+            sims_i2t = sims_t2i.T * 0.4 + ori_sims_t2i.T
             metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_i2t.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
             print(metrics)
   

@@ -60,14 +60,14 @@ if __name__ == '__main__':
 
 
     tokenizers, vis_processors, txt_processors, models = prepare_processors_and_models(model_ckts)
-    config.epochs = 2 
-    config.enable_log = False 
+    config.epochs = 5 
+    config.enable_log = True 
     config.use_margin_loss = False 
     config.curv = 2.0 
     for use_margin_loss  in [False, True]:
         config.use_margin_loss = use_margin_loss 
         for use_fused_feature in [True, False]:
             config.use_fused_features = use_fused_feature 
-            for manifold in [LORENTZ, EUCLID]:
+            for manifold in [EUCLID, LORENTZ]:
                 config.manifold = manifold 
                 run(config, vis_processors=vis_processors, tokenizers=tokenizers, txt_processors=txt_processors, dataset=dataset, models=models)

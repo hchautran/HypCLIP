@@ -185,11 +185,16 @@ class FuseEncoder(nn.Module):
             self.text_fuse_proj= nn.Linear(text_sizes , ft_out, bias=False)
 
 
-     
-        self.itm_head = nn.Sequential(
-            SeqLinear(config.d_latents, [config.d_latents*2, config.d_latents*2, config.d_latents], dropout=0.1, act_func='gelu'),
-            nn.Linear(config.d_latents, 2) 
-        )
+        if self.mapper is not None:
+            self.itm_head = nn.Sequential(
+                LorentzLinear(manifold, ft_out + 1, [config.d_latents*2 + 1, config.d_latents*2 + 1, config.d_latents+1], dropout=0.1, act_func='gelu'),
+                LorentzMLR(manifold ,config.d_latents + 1, 2) 
+            )
+        else:
+            self.itm_head = nn.Sequential(
+                SeqLinear(ft_out, [config.d_latents*2, config.d_latents*2, config.d_latents], dropout=0.1, act_func='gelu'),
+                nn.Linear(config.d_latents, 2) 
+            )
     
 
     def forward(
@@ -226,11 +231,13 @@ class FuseEncoder(nn.Module):
                 output = torch.cat(pooled_outputs, dim=-1)
                 output = self.vision_fuse_proj(output)
                 latents_output, cross_latents = self.perceiver_head.get_vision_features(vision_inputs=last_hidden_states, vision_oris=output)
-                output = torch.mean(latents_output,dim=1) + output
+                output = latents_output[:,0,:]
+                
             else: 
                 output = torch.cat(pooled_outputs, dim=-1)
                 output = self.vision_fuse_proj(output)
                 cross_latents = output.unsqueeze(1) 
+              
         else:
             for i in range(len(input_ids)):
                 if i == 0:
@@ -263,8 +270,6 @@ class FuseEncoder(nn.Module):
             cross_latents = output.unsqueeze(1) 
 
         if self.mapper is not None:
-            # output = output + ori_feat 
-            # output = output.add_time(output)
             ori_feat = self.mapper(ori_feat, use_normalized=True)
             output = self.mapper(output, use_normalized=False)
 
@@ -277,6 +282,8 @@ class FuseEncoder(nn.Module):
                 text_latents=text_latents, 
                 vision_latents=vision_latents, 
             ) 
+            if self.mapper is not None:
+                itm = self.mapper(itm)
 
             itm_score = self.itm_head(itm[:,0,:])
         return itm_score 
