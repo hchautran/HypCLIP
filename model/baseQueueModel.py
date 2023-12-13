@@ -76,7 +76,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self.manifold = Lorentz(k=self.curv, learnable=config.curv_learnable, atol=config.atol, rtol=config.rtol)
             self.mapper = ManifoldMapper(self.manifold, curv=self.curv, clip_r=self.clip_r)
 
-        self.model_m= None 
+        self.model_m = None 
         self.model = None 
 
         self.momentum = config.momentum
