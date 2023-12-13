@@ -285,6 +285,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         # get momentum features
         with torch.no_grad():
             self._momentum_update()
+            # self.model_m.eval()
             image_embeds_m = self.model_m(
                 pixel_values=pixel_values 
             )
@@ -326,9 +327,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
       
 
         # if epoch >= 0:
-        margin_loss  = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
+        # margin_loss  = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
         # else:
-            # margin_loss  = torch.tensor(0.0) 
+        margin_loss  = torch.tensor(0.0) 
 
         loss_i2t = -torch.sum(
             F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
@@ -342,31 +343,32 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
       
 
         sims = self.dist_func(image_feat, text_feat)
-        loss_itm, itm_acc = self.itm_loss(
-            idx=idx,
-            text_hidden_states=text_hidden_states, 
-            image_hidden_states=vision_hidden_states, 
-            sim_i2t=sims, 
-            sim_t2i=sims.T
-        )
+        # loss_itm, itm_acc = self.itm_loss(
+        #     idx=idx,
+        #     text_hidden_states=text_hidden_states, 
+        #     image_hidden_states=vision_hidden_states, 
+        #     sim_i2t=sims, 
+        #     sim_t2i=sims.T
+        # )
         
 
         in_batch_target = torch.arange(bsize).to(self.device)
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
-            "logits/itm_loss": loss_itm.item(),
+            # "logits/itm_loss": loss_itm.item(),
             "logits/margin_loss": margin_loss.item(),
             "logits/min": sims.min().item(),
             "logits/mean": sims.mean().item(),
             "logits/max": sims.max().item(),
             "logits/acc": (sims.argmax(-1) == in_batch_target).float().mean().item(),
-            "logits/itm_acc": itm_acc.item(),
+            # "logits/itm_acc": itm_acc.item(),
             "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
         }
 
         self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)
-        loss = loss_itc + loss_itm + margin_loss 
+        # loss = loss_itc + loss_itm + margin_loss 
+        loss = loss_itc + margin_loss 
         return  loss, stats
 
     def reset_queue_ptr(self):

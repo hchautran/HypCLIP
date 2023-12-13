@@ -179,55 +179,51 @@ class MyTrainer:
         return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()
             
 
-    def evaluate(self, mode="val"):
+    def evaluate(self, mode="val", apply_fourier=False):
         from torch.utils.data import DataLoader
         print("Evaluating current epoch", self.current_epoch)
+        
         self.model.eval()
 
         dataset = self.val_loader if mode == "val" else self.test_loader
         texts = dataset.text
         image = dataset.image
-        n_texts, n_images = len(texts), len(image)
 
         all_text_embeds = []
         all_vision_embeds = []
-        all_vision_hidden_states = []
-        all_text_hidden_states = []
+        all_vision_embeds_w_fourier = []
 
         loader = self.accelerator.prepare(DataLoader(dataset, batch_size=1, shuffle=False))
         with torch.no_grad():
             for data in tqdm(loader):
-                text_embeds, text_hidden_states = self.model.get_text_features(
+                text_embeds, _ = self.model.get_text_features(
                     input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
                 )
-                vision_embeds, vision_hidden_states = self.model.get_vision_features(
+                vision_embeds_w_fourier, _ = self.model.get_vision_features(
                     pixel_values=data["pixel_values"][0]
                 )
+                vision_embeds, _ = self.model.get_vision_features(
+                    pixel_values=data["pixel_values"][0],  apply_fourier=False
+                )
                 all_text_embeds.append(text_embeds)
+                all_vision_embeds_w_fourier.append(vision_embeds_w_fourier)
                 all_vision_embeds.append(vision_embeds)
-                all_vision_hidden_states.append(vision_hidden_states)
-                all_text_hidden_states.append(text_hidden_states)
+           
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
             all_vision_embeds = torch.concat(all_vision_embeds, 0)
-            all_vision_hidden_states= torch.concat(all_vision_hidden_states, 0)
-            all_text_hidden_states= torch.concat(all_text_hidden_states, 0)
+            all_vision_embeds_w_fourier = torch.concat(all_vision_embeds_w_fourier, 0)
+
 
             sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+            sims_t2i_w_fourer = self.model.dist_func(all_text_embeds, all_vision_embeds_w_fourier)
             metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
-            print(metrics)
+            fourier_metrics = report_metrics(scores_t2i=sims_t2i_w_fourer.cpu().detach(), scores_i2t=sims_t2i_w_fourer.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'fourier_{mode}')
+            metrics.update(fourier_metrics)
+            # print(metrics)
             metrics["epoch"] = self.current_epoch
 
-            score_matrix_i2t, score_matrix_t2i = self.rerank(
-                sims_matrix=sims_t2i.T, 
-                vit_feats=all_vision_hidden_states, 
-                text_feats=all_text_hidden_states, 
-                num_images=n_images,
-                num_texts=n_texts
-            )
-
-            itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
-            metrics.update(itm_metrics)
+  
           
 
         return metrics

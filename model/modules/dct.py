@@ -78,10 +78,11 @@ def idct(X, norm=None):
 def dc_transform(x, r=0.9):
     # cufft doesn't accept fp16
     # dct along T dimension
+    x = x.type(torch.float32)
     x_dct = dct(x.transpose(0,2), norm='ortho').transpose(0,2)
     T, B, C = x_dct.size()
 
     # feel free to play with any method here
     x_dct = x_dct[:math.ceil(T * r), :, :]
 
-    return idct(x_dct.transpose(0,2), norm='ortho').transpose(0,2)
+    return idct(x_dct.transpose(0,2), norm='ortho').transpose(0,2).type(torch.half)

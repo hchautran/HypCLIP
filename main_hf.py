@@ -3,9 +3,8 @@ from transformers import (
     CLIPProcessor,
 )
 from lavis.datasets.builders import load_dataset
-from model.hypCLIP import HypGraphCLIPWithQueue, HypCLIPWithQueue 
-from model.hypBLIP import HypBLIPWithQueue, HypGraphBLIPWithQueue
-from transformers import CLIPProcessor, BlipProcessor
+from model.dctModel import DCTBLIPWithQueue, BLIPWithQueue
+from transformers import CLIPProcessor, BlipProcessor, CLIPModel
 from trainer_queue import MyTrainer as LavisTrainer
 from accelerate import find_executable_batch_size
 from utils.data_utils import get_loaders 
@@ -14,9 +13,9 @@ from utils.data_utils import get_loaders
 if __name__ == "__main__":
     from config import parser
     from config import EUCLID, LORENTZ
-    from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, COCO_PATH, FLICKR_PATH 
+    from config import COCO_PATH, FLICKR_PATH, BLIP_BASE_FLICKR 
     config = parser.parse_args()
-    for model_ckt in [CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32]:
+    for model_ckt in [BLIP_BASE_FLICKR]:
         config.model_ckt = model_ckt
         if "blip" in config.model_ckt:
             print("Getting BLIP processor...")
@@ -46,10 +45,9 @@ if __name__ == "__main__":
                 tokenizer=processor,
             )
 
-            if config.use_graph:
-                model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIPWithQueue(config)
-            else:
-                model = HypCLIPWithQueue(config) if "clip" in config.model_ckt else HypBLIPWithQueue(config)
+                # model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIPWithQueue(config)
+            model = DCTBLIPWithQueue(config) 
+            # model = BLIPWithQueue(config) 
             trainer = LavisTrainer(
                 model=model,
                 config=config,
@@ -57,18 +55,17 @@ if __name__ == "__main__":
                 val_loader=val_loader,
                 test_loader=test_loader,
             )
-            # print(trainer.evaluate('test'))
+            print(trainer.evaluate('test'))
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 3 
+        config.epochs = 20 
         config.enable_log = True 
-        config.manifold = LORENTZ 
-        config.use_entailment_loss = False 
-        for curv in [1.0, 2.0, 10.0]:
-            config.curv = curv
-            for margin_loss in [False]:
-                config.margin_loss = margin_loss 
-                for use_graph in [True, False]:
-                    config.use_graph=use_graph
-                    inner_training_loop(config.batch_size)
+        config.manifold = EUCLID 
+        # for curv in [1.0, 2.0, 10.0]:
+        #     config.curv = curv
+        #     for margin_loss in [False]:
+        #         config.margin_loss = margin_loss 
+        #         for use_graph in [True, False]:
+        #             config.use_graph=use_graph
+        inner_training_loop(config.batch_size)
