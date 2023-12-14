@@ -24,7 +24,7 @@ if __name__ == "__main__":
     def inner_training_loop(batch_size):
         config.batch_size = batch_size
         train_loader, val_loader, test_loader = get_loaders(
-            config, 
+            config.batch_size, 
             dataset,
             vis_processor=vis_processors['eval'],
             txt_processor=txt_processors['eval'],
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         trainer.train()
 
     # config.epochs = 10 
-    config.enable_log = True 
+    config.enable_log = False 
     # config.manifold = LORENTZ 
     inner_training_loop(config.batch_size)
     # for curv in [2.0, 5.0, 10.0, 1.0]:

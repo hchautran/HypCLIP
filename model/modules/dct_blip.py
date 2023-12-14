@@ -98,12 +98,7 @@ class DCTBlip(nn.Module):
             cls = state[:, 0, :].unsqueeze(1)
             state = dc_transform(state[:,1:,:].permute(1,0,2), r=(self.r_list[i] if (self.training or apply_fourier) else 1.0)).permute(1,0,2)
             state = torch.cat([cls, state], dim=1)
-            # print(self.r_list[i])
-            # print(state.shape)
-                 
-            
             hidden_states.append(state)
-        # print('---'*50)
 
         last_hidden_state = self.vision_model.post_layernorm(state)
         pooled_output = last_hidden_state[:, 0, :]
@@ -124,7 +119,7 @@ class DCTBlip(nn.Module):
 class DCTLAVISBlip(nn.Module):
     config_class = BlipConfig
 
-    def __init__(self, model:BlipRetrieval):
+    def __init__(self, model:BlipRetrieval, r_list=None):
         super().__init__()
 
         self.vision_model = model.visual_encoder
@@ -134,10 +129,12 @@ class DCTLAVISBlip(nn.Module):
         self.vision_proj = model.vision_proj 
 
         self.text_proj = model.text_proj 
-        self.r_list = nn.ParameterList([
-            0.9, 0.9, 0.9, 0.9, 0.9, 0.9,
-            0.9, 0.9, 0.9, 0.9, 1.0, 1.0,
-        ])
+        if r_list is None:
+            self.r_list = [ 
+                1.0, 0.5, 1.0, 1.0, 1.0, 1.0,
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            ]
+        else: self.r_list = r_list
 
 
     def forward(
@@ -155,17 +152,13 @@ class DCTLAVISBlip(nn.Module):
 
        
     def get_vision_features(self, pixel_values, apply_fourier=True):
-        # outputs = self.vision_model.forward_features(
-        #     pixel_values,
-        # )
-        # last_hidden_state = outputs
-        # pooled_output = last_hidden_state[:, 0, :]
         B = pixel_values.shape[0]
         x = self.vision_model.patch_embed(pixel_values)
+        hidden_states = []
 
         cls_tokens = self.vision_model.cls_token.expand(
             B, -1, -1
-        )  # stole cls_tokens impl from Phil Wang, thanks
+        ) 
         x = torch.cat((cls_tokens, x), dim=1)
 
         x = x + self.vision_model.pos_embed[:, : x.size(1), :]
@@ -176,22 +169,24 @@ class DCTLAVISBlip(nn.Module):
             cls = x[:, 0, :].unsqueeze(1)
             state = dc_transform(x[:,1:,:].permute(1,0,2), r=(self.r_list[i] if (self.training or apply_fourier) else 1.0)).permute(1,0,2)
             x = torch.cat([cls, state], dim=1)
+            hidden_states.append(x)
         x = self.vision_model.norm(x)
 
         vision_embed = self.vision_proj(x[:,0,:])
-        return x, vision_embed
+        return x, vision_embed, hidden_states
 
     def get_text_features(self, input_ids, attention_mask):
-        class Text(object):
-            pass
-        text = Text() 
-        text.input_ids=input_ids
-        text.attention_mask=attention_mask
-        question_embeds = self.text_encoder.forward_text(text)
-        last_hidden_state = question_embeds[0] 
-        text_embed = self.text_proj(last_hidden_state[:,0,:])
+        with torch.no_grad():
+            class Text(object):
+                pass
+            text = Text() 
+            text.input_ids=input_ids
+            text.attention_mask=attention_mask
+            question_embeds = self.text_encoder.forward_text(text)
+            last_hidden_state = question_embeds[0] 
+            text_embed = self.text_proj(last_hidden_state[:,0,:])
 
-        return  last_hidden_state, text_embed
+            return  last_hidden_state, text_embed
 
 
 class DCTClip(nn.Module):

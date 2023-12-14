@@ -229,10 +229,10 @@ def get_dataloader(dataset,  vis_processor, tokenizer, txt_processor=None, mode=
         return cur_dataset
 
 
-def get_loaders(config, dataset, vis_processor, tokenizer, txt_processor=None):
+def get_loaders(batch_size, dataset, vis_processor, tokenizer, txt_processor=None):
     train_loader  = get_dataloader(
         dataset=dataset,
-        batch_size=config.batch_size,
+        batch_size=batch_size,
         vis_processor=vis_processor,
         txt_processor=txt_processor,
         tokenizer=tokenizer,
