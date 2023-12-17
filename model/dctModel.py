@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel 
-from .modules.dct_blip import BLIPEncoder, DCTLAVISBlip, DCTHFClip, FreqPredictor 
+from .modules.dct_models import DCTLAVISBlip, DCTHFClip
 from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
 from .modules.utils import freeze_blip
@@ -126,38 +126,22 @@ def get_lora_lavis_blip(config, model):
     model.print_trainable_parameters()
     return model
 
-class BLIPWithQueue(BaseModelWithQueue):
-    def __init__(self, config) -> None:
-        super(BLIPWithQueue, self).__init__(config)
-
-        model = AutoModel.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
-        # model = get_lora_blip(config, model=model) 
-        self.model = BLIPEncoder(
-           text_body=model.text_model, 
-           vision_body=model.vision_model, 
-           text_head=model.text_projection,
-           vision_head=model.visual_projection, 
-        )
-        
-        self._init_queue(config, model.config.image_text_hidden_size)
-
-
 class DCTHFWithQueue(BaseModelWithQueue):
     def __init__(self, config) -> None:
         super(DCTHFWithQueue, self).__init__(config)
         model = AutoModel.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
         if 'clip' in config.model_ckt:
             model = get_lora_clip(config, model=model) 
-            self.model = DCTHFClip(model)
+            self.model = DCTHFClip(model, compress_method=config.compress_method)
         else:
             model = get_lora_blip(config, model=model) 
-            self.model = DCTHFClip(model)
+            self.model = DCTHFClip(model, compress_method=config.compress_method)
 
         
         self._init_queue(config, model.config.projection_dim)
     
-    def get_vision_features(self, pixel_values: torch.Tensor, apply_fourier=True):
-        image_output = self.model.get_vision_features(pixel_values=pixel_values, apply_fourier=apply_fourier)
+    def get_vision_features(self, pixel_values: torch.Tensor, use_compressed_hidden_state=True):
+        image_output = self.model.get_vision_features(pixel_values=pixel_values, use_compressed_hidden_state=use_compressed_hidden_state)
         image_feat = self.postprocess_embeds(image_output[1])
         return image_feat, image_output[0]
     
@@ -165,16 +149,11 @@ class DCTLAVISLIPWithQueue(BaseModelWithQueue):
     def __init__(self, config, model) -> None:
         super(DCTLAVISLIPWithQueue, self).__init__(config)
         model = get_lora_lavis_blip(config, model=model) 
-        self.model = DCTLAVISBlip(model)
-        ori_len = 576
-        final_len = 576
-        for r in self.model.r_list:
-            final_len = math.ceil(final_len * r)
-        self.freq_predictor = FreqPredictor(final_len, 512, ori_len)
+        self.model = DCTLAVISBlip(model, compress_method=config.compress_method)
         
         self._init_queue(config, 256)
     
-    def get_vision_features(self, pixel_values: torch.Tensor, apply_fourier=True):
-        image_output = self.model.get_vision_features(pixel_values=pixel_values, apply_fourier=apply_fourier)
+    def get_vision_features(self, pixel_values: torch.Tensor, use_compressed_hidden_state=True):
+        image_output = self.model.get_vision_features(pixel_values=pixel_values, use_compressed_hidden_state=use_compressed_hidden_state)
         image_feat = self.postprocess_embeds(image_output[1])
         return image_feat, image_output[0]

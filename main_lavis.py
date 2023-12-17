@@ -39,19 +39,19 @@ if __name__ == "__main__":
             val_loader=val_loader,
             test_loader=test_loader,
         )
-        # print(trainer.evaluate('test'))
+        print(trainer.evaluate('test'))
         # print(trainer.evaluate('val'))
         trainer.train()
 
 
-    config.epochs = 10 
+    config.epochs = 2 
     config.enable_log = True 
-    config.use_margin_loss = True 
+    config.use_margin_loss = False 
 
     for use_signal_loss in [False]:
-        config.use_signal_loss = use_signal_loss 
-        # config.manifold = LORENTZ 
-        inner_training_loop(config.batch_size)
+        for compress_method in ['std','direct', 'dct', 'wv']:
+            config.compress_method = compress_method
+            inner_training_loop(config.batch_size)
     # for curv in [2.0, 5.0, 10.0, 1.0]:
     #     config.curv = curv
     #     for use_margin_loss in [True]:

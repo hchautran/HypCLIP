@@ -241,7 +241,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         # print('filtered model')
         image_output = self.model(
             pixel_values=pixel_values,
-            apply_fourier=True
+            use_compressed_hidden_state=True
         )
         text_embeds = text_output[1] 
         image_embeds = image_output[1] 
@@ -265,13 +265,13 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # get momentum features
         with torch.no_grad():
-            # self._momentum_update()
+            self._momentum_update()
             # self.model_m.eval()
             # print('origin model')
             image_embeds_m = self.model_m(
                 pixel_values=pixel_values, 
                 # apply_fourier=(self.config.use_last_signal)
-                apply_fourier=False
+                use_compressed_hidden_state=False
             )
 
             text_embeds_m = self.model_m(
@@ -290,6 +290,15 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             text_feat_m_all = torch.cat(
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
+            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
+            sim_i2t_targets = alpha * (
+                F.softmax(sim_i2t_m/ self.logit_scale, dim=-1)
+            ) + (1 - alpha) * sim_targets
+            sim_t2i_targets = alpha * (
+                F.softmax(sim_t2i_m/ self.logit_scale, dim=-1)
+            ) + (1 - alpha) * sim_targets
+
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
@@ -318,11 +327,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             F.log_softmax(sim_t2t / self.logit_scale, dim=1) * sim_targets, dim=-1
         ).mean()      
     
-
-    
        
         loss_itc = self.config.weight_i2t * (loss_i2t + loss_i2i) + (1-self.config.weight_i2t) * (loss_t2i+loss_t2t)
-        signal_loss = self.signal_loss(signals, original_signals) 
       
 
         sims = self.dist_func(image_feat, text_feat)
@@ -333,7 +339,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
-            "logits/signal_loss": signal_loss.item(),
             "logits/margin_loss": margin_loss.item(),
             "logits/min": sims.min().item(),
             "logits/mean": sims.mean().item(),
@@ -346,7 +351,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)
         # loss = loss_itc + loss_itm + margin_loss 
         # loss = loss_itc + (self.alpha-alpha)*signal_loss 
-        loss = loss_itc + signal_loss 
+        loss = loss_itc + margin_loss
         # loss = loss_itc 
         return  loss, stats
 

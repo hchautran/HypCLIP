@@ -168,6 +168,7 @@ config_args = {
         "fourier": (False, "fourier"),
         "use_last_signal": (False, "fourier"),
         "use_signal_loss": (True, "fourier"),
+        "compress_method": ('direct', "compress method")
     },
     "data_config": {
         "dataset": (FLICKR, "which dataset to use"),

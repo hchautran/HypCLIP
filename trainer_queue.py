@@ -65,7 +65,7 @@ class MyTrainer:
         ) = self.accelerator.prepare(
             self.optimizer, train_loader, val_loader, test_loader, self.scheduler
         )
-        self.name = f'{names[config.model_ckt]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.use_graph}'
+        self.name = f'{names[config.model_ckt]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.compress_method}'
         print("RUNNING:", self.name)
 
         if self.enable_log:
@@ -200,10 +200,10 @@ class MyTrainer:
                     input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
                 )
                 vision_embeds_w_fourier, _ = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0], apply_fourier=True
+                    pixel_values=data["pixel_values"][0], use_compressed_hidden_state=True
                 )
                 vision_embeds, _ = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0],  apply_fourier=False
+                    pixel_values=data["pixel_values"][0],  use_compressed_hidden_state=False
                 )
                 all_text_embeds.append(text_embeds)
                 all_vision_embeds_w_fourier.append(vision_embeds_w_fourier)

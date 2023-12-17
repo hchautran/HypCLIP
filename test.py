@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
     tokenizers, vis_processors, txt_processors, models = prepare_processors_and_models(model_ckts)
     config.epochs = 10 
-    config.enable_log = False 
+    config.enable_log = True 
     config.use_margin_loss = False 
     config.curv = 2.0 
     for use_margin_loss  in [False, True]:
