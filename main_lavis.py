@@ -44,13 +44,14 @@ if __name__ == "__main__":
         trainer.train()
 
 
-    config.epochs = 2 
-    config.enable_log = True 
+    config.epochs = 5 
+    config.enable_log = False 
     config.use_margin_loss = False 
 
-    for use_signal_loss in [False]:
-        for compress_method in ['std','direct', 'dct', 'wv']:
-            config.compress_method = compress_method
+    for compress_method in ['std','direct', 'dct']:
+        config.compress_method = compress_method
+        for distil in [True, False]:
+            config.distil = distil 
             inner_training_loop(config.batch_size)
     # for curv in [2.0, 5.0, 10.0, 1.0]:
     #     config.curv = curv

@@ -206,16 +206,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
 
 
-    def signal_loss(self, filtered_signal, original_signal):
-        # print(filtered_signal.shape)
-        # print(original_signal.shape)
-        if self.config.use_signal_loss :
-            pred, target = self.preprocess_signal(filtered_signal[-1], original_signal[-1])
-            loss = self.fourier_criterion(pred , target) 
-            return loss 
-        return torch.tensor(0.0)
-            
-
     def forward(
         self, 
         input_ids: torch.LongTensor,
@@ -245,9 +235,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         )
         text_embeds = text_output[1] 
         image_embeds = image_output[1] 
-        text_hidden_states = text_output[0]
-        vision_hidden_states = image_output[0]
-        signals = image_output[3] 
+   
 
         text_feat = self.postprocess_embeds(text_embeds)
         image_feat = self.postprocess_embeds(image_embeds)
@@ -265,20 +253,17 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # get momentum features
         with torch.no_grad():
-            self._momentum_update()
-            # self.model_m.eval()
-            # print('origin model')
+            if not self.config.distil:
+                self._momentum_update()
             image_embeds_m = self.model_m(
                 pixel_values=pixel_values, 
-                # apply_fourier=(self.config.use_last_signal)
-                use_compressed_hidden_state=False
+                use_compressed_hidden_state=not self.config.distil
             )
 
             text_embeds_m = self.model_m(
                 input_ids=input_ids,
                 attention_mask=attention_mask
             )
-            original_signals = image_embeds_m[3]
 
             image_feat_m = self.postprocess_embeds(image_embeds_m[1])
             text_feat_m = self.postprocess_embeds(text_embeds_m[1])
@@ -290,14 +275,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             text_feat_m_all = torch.cat(
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
-            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
-            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
-            sim_i2t_targets = alpha * (
-                F.softmax(sim_i2t_m/ self.logit_scale, dim=-1)
-            ) + (1 - alpha) * sim_targets
-            sim_t2i_targets = alpha * (
-                F.softmax(sim_t2i_m/ self.logit_scale, dim=-1)
-            ) + (1 - alpha) * sim_targets
+
 
 
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
@@ -305,8 +283,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 
         sim_t2i = self.dist_func(text_feat, image_feat_m_all.T)
-        sim_i2i = self.dist_func(image_feat, image_feat_m_all.T) 
-        sim_t2t = self.dist_func(text_feat, text_feat_m_all.T)
       
 
         # if epoch >= 0:
@@ -320,15 +296,18 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         loss_t2i = -torch.sum(
             F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1
         ).mean()      
-        loss_i2i = -torch.sum(
-            F.log_softmax(sim_i2i / self.logit_scale, dim=1) * sim_targets, dim=-1
-        ).mean()
-        loss_t2t = -torch.sum(
-            F.log_softmax(sim_t2t / self.logit_scale, dim=1) * sim_targets, dim=-1
-        ).mean()      
-    
-       
-        loss_itc = self.config.weight_i2t * (loss_i2t + loss_i2i) + (1-self.config.weight_i2t) * (loss_t2i+loss_t2t)
+        if self.config.distil:
+            sim_i2i = self.dist_func(image_feat, image_feat_m_all.T) 
+            sim_t2t = self.dist_func(text_feat, text_feat_m_all.T)
+            loss_i2i = -torch.sum(
+                F.log_softmax(sim_i2i / self.logit_scale, dim=1) * sim_targets, dim=-1
+            ).mean()
+            loss_t2t = -torch.sum(
+                F.log_softmax(sim_t2t / self.logit_scale, dim=1) * sim_targets, dim=-1
+            ).mean()      
+            loss_itc = self.config.weight_i2t * (loss_i2t + loss_i2i) + (1-self.config.weight_i2t) * (loss_t2i+loss_t2t)
+        else:
+            loss_itc = self.config.weight_i2t * (loss_i2t) + (1-self.config.weight_i2t) * (loss_t2i)
       
 
         sims = self.dist_func(image_feat, text_feat)
@@ -349,10 +328,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         }
 
         self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)
-        # loss = loss_itc + loss_itm + margin_loss 
-        # loss = loss_itc + (self.alpha-alpha)*signal_loss 
         loss = loss_itc + margin_loss
-        # loss = loss_itc 
         return  loss, stats
 
     def reset_queue_ptr(self):

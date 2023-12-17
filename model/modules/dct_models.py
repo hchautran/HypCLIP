@@ -92,7 +92,7 @@ class CompressedModel(nn.Module):
         coeffs = pywt.wavedec(x.cpu().detach(), wavelet, level=level, axis=1)
         # k = math.ceil(0.90 * x.shape[1])
         coeffs_mean = torch.abs(torch.from_numpy(coeffs[0])).mean(0).mean(1)
-        threshold = coeffs_mean.mean
+        threshold = coeffs_mean.mean()
         indices = torch.where(coeffs_mean > threshold)
         k_end = indices[0][-1].item() if indices[0].numel() > 0 else -1
         k_start = indices[0][0].item() if indices[0].numel() > 0 else -1
@@ -111,6 +111,7 @@ class CompressedModel(nn.Module):
     def std_based_compress(self, x, use_reconstucted_state = False):
         threshold = torch.abs(torch.quantile(x.mean(0).std(1), 0.90, dim=-1, keepdim=True) )
         mask = torch.nonzero(torch.abs(x.mean(0).std(1)) > threshold).squeeze()
+        if mask.ndimension() == 0: return x, x
         spans  = self.find_spans(mask)
 
         if use_reconstucted_state:
@@ -153,6 +154,7 @@ class DCTHFBlip(CompressedModel):
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
+        self.compress_layers = [6, 7]
      
 
     
@@ -162,7 +164,7 @@ class DCTHFBlip(CompressedModel):
         energy = []
 
         for i, layer in enumerate(self.vision_model.encoder.layers):
-            if i > len(self.vision_model.encoder.layers)/2 :
+            if i in self.compress_layers:    
                 cls = hidden_states[:, 0, :].unsqueeze(1)
                 state, cur_energy = self.compress_hidden_state(
                     hidden_states[:, 1:, :], 
@@ -172,6 +174,7 @@ class DCTHFBlip(CompressedModel):
                 if return_all_fourier_signals or i == len(self.vision_model.encoder.layers)-1:
                     energy.append(cur_energy)
                     all_hidden_states.append(hidden_states)
+                # print(hidden_states.shape)
 
             hidden_states = layer(
                 hidden_states,
@@ -207,6 +210,7 @@ class DCTLAVISBlip(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
+        self.compress_layers = [6]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_fourier_signals=False):
@@ -221,13 +225,14 @@ class DCTLAVISBlip(CompressedModel):
         x = x + self.vision_model.pos_embed[:, : x.size(1), :]
         x = self.vision_model.pos_drop(x)
         for i, blk in enumerate(self.vision_model.blocks):
-            if i == len(self.vision_model.blocks)/2 :
+            if i in self.compress_layers: 
                 cls = x[:, 0, :].unsqueeze(1)
                 state, cur_energy = self.compress_hidden_state(
                     x[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state
                 )
                 x = torch.cat([cls, state], dim=1)
+
                 # print(x.shape)
                 if return_all_fourier_signals or i == len(self.vision_model.blocks)-1:
                     energy.append(cur_energy)
@@ -262,6 +267,7 @@ class DCTHFClip(CompressedModel):
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
+        self.compress_layers = [12]
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_fourier_signals=False):
         energy = []
@@ -269,7 +275,7 @@ class DCTHFClip(CompressedModel):
         hidden_states = self.vision_model.embeddings(pixel_values)
         hidden_states = self.vision_model.pre_layrnorm(hidden_states)
         for i, layer in enumerate(self.vision_model.encoder.layers):
-            if i > len(self.vision_model.encoder.layers)/2 :
+            if i in self.compress_layers:
                 cls = hidden_states[:, 0, :].unsqueeze(1)
                 state, cur_energy = self.compress_hidden_state(
                     hidden_states[:, 1:, :], 
@@ -279,6 +285,7 @@ class DCTHFClip(CompressedModel):
                 if return_all_fourier_signals or i == len(self.vision_model.encoder.layers)-1:
                     energy.append(cur_energy)
                     all_hidden_states.append(hidden_states)
+
             hidden_states = layer(
                 hidden_states,
                 None,

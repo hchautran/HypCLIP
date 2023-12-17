@@ -15,7 +15,7 @@ if __name__ == "__main__":
     from config import EUCLID, LORENTZ
     from config import COCO_PATH, FLICKR_PATH, CLIP_LARGE_PATCH_14, CLIP_BASE_PATCH_16  
     config = parser.parse_args()
-    for model_ckt in [CLIP_BASE_PATCH_16]:
+    for model_ckt in [CLIP_LARGE_PATCH_14]:
         config.model_ckt = model_ckt
         if "blip" in config.model_ckt:
             print("Getting BLIP processor...")
@@ -55,19 +55,18 @@ if __name__ == "__main__":
                 val_loader=val_loader,
                 test_loader=test_loader,
             )
-            # print(trainer.evaluate('test'))
+            print(trainer.evaluate('test'))
             # print(trainer.evaluate('val'))
             trainer.train()
 
-        config.epochs = 5 
-        config.enable_log = True 
-        config.use_margin_loss = True
-        config.manifold = EUCLID 
-        for use_signal_loss in [False, True]:
-            config.use_signal_loss=use_signal_loss
-            for use_last_signal in [True, False]:
-                config.use_last_signal=use_last_signal
-                inner_training_loop(config.batch_size)
+    config.epochs = 2 
+    config.enable_log = False 
+    config.use_margin_loss = False 
+
+    for use_signal_loss in [False]:
+        for compress_method in ['std','direct', 'dct']:
+            config.compress_method = compress_method
+            inner_training_loop(config.batch_size)
         # for curv in [1.0, 2.0, 10.0]:
         #     config.curv = curv
         #     for margin_loss in [False]:
