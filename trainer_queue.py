@@ -200,7 +200,7 @@ class MyTrainer:
                     input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
                 )
                 vision_embeds_w_fourier, _ = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0]
+                    pixel_values=data["pixel_values"][0], apply_fourier=True
                 )
                 vision_embeds, _ = self.model.get_vision_features(
                     pixel_values=data["pixel_values"][0],  apply_fourier=False

@@ -16,7 +16,7 @@ from hyptorch.geoopt import Euclidean
 from .modules.discriminator import Discriminator as DisModel
 from .modules.hyp_discriminator import LorentzDiscriminator as LorentzDisModel
 from .modules.utils import ManifoldMapper
-
+import numpy as np
 EUCLID = 'euclidean'
 POINCARE = 'poincare'
 LORENTZ = 'lorentz'
@@ -59,6 +59,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         self.curv = torch.as_tensor(config.curv if config.manifold != EUCLID else 0)
         class_weight = torch.tensor([1.0, 1.0])
         self.itm_criterion = nn.CrossEntropyLoss(weight=class_weight, reduction='mean')
+        self.fourier_criterion = nn.MSELoss()
         if not torch.is_floating_point(self.curv):
             self.curv = self.curv.to(torch.get_default_dtype())
 
@@ -109,7 +110,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
 
     def _rampup_factor(self, epoch, iters, num_iters_per_epoch):
-        return min(1, (epoch * num_iters_per_epoch + iters) / (2 * num_iters_per_epoch))
+        return min(1, (epoch * num_iters_per_epoch + iters) / (num_iters_per_epoch))
     
     
     def num_parameters(self, only_trainable=True):
@@ -189,54 +190,31 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         return self.eu_margin_loss(pos_idx, sim_i2i, sim_t2t) 
 
 
-    def itm_loss(self, idx, text_hidden_states, image_hidden_states, sim_t2i, sim_i2t):
-        bs = text_hidden_states.shape[0]
-        with torch.no_grad():
-            mask = torch.eq(idx, idx.t())
+    def preprocess_signal(self, pred_signal, original_signal):
+        pred = pred_signal
+        target = original_signal
+        # min_value = torch.min(pred_signal)
+        # max_value = torch.max(pred_signal)
+        # pred = (pred_signal - min_value) * 50/ (max_value - min_value)
+        # min_value = torch.min(original_signal)
+        # max_value = torch.max(original_signal)
+
+        # target = (original_signal - min_value) * 50 / (max_value - min_value)
+        target = target[:, :pred_signal.shape[1],:]
+
+        return pred, target
+
+
+
+    def signal_loss(self, filtered_signal, original_signal):
+        # print(filtered_signal.shape)
+        # print(original_signal.shape)
+        if self.config.use_signal_loss :
+            pred, target = self.preprocess_signal(filtered_signal[-1], original_signal[-1])
+            loss = self.fourier_criterion(pred , target) 
+            return loss 
+        return torch.tensor(0.0)
             
-            weights_t2i = F.softmax(sim_t2i/self.logit_scale, dim=1) + 1e-4
-            weights_i2t = F.softmax(sim_i2t/self.logit_scale, dim=1) + 1e-4
-            weights_i2t.masked_fill_(mask, 0)
-            weights_t2i.masked_fill_(mask, 0) 
-
-        # select a negative image for each text
-        image_embeds_neg = []
-        for b in range(bs):
-            neg_idx = torch.multinomial(weights_t2i[b], 1).item()
-            image_embeds_neg.append(image_hidden_states[neg_idx])
-
-        # select a negative text for each image
-        text_ids_neg = []
-        for b in range(bs):
-            neg_idx = torch.multinomial(weights_i2t[b], 1).item()
-            text_ids_neg.append(text_hidden_states[neg_idx])
-
-        text_ids_neg = torch.stack(text_ids_neg, dim=0)
-        image_embeds_neg = torch.stack(image_embeds_neg, dim=0)
-
-        text_hidden_states = torch.cat(
-            [text_hidden_states, text_hidden_states, text_ids_neg], dim=0
-        )  # pos, pos, neg
-
-        image_hidden_states = torch.cat(
-            [image_hidden_states, image_embeds_neg, image_hidden_states], dim=0
-        )  # pos, neg, pos
-
-
-        itm_score = self.model.compute_itm(
-            text_latents=text_hidden_states, 
-            vision_latents=image_hidden_states, 
-        ) 
-
-        itm_labels = torch.cat(
-            [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
-            dim=0,
-        ).to(self.device)
-        itm_acc = (itm_score.argmax(-1) == itm_labels).float().sum()/itm_labels.shape[0]
-
-        loss_itm = self.itm_criterion(itm_score, itm_labels) 
-        return loss_itm,  itm_acc
-        
 
     def forward(
         self, 
@@ -260,13 +238,16 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             input_ids=input_ids,
             attention_mask=attention_mask
         )
+        # print('filtered model')
         image_output = self.model(
-            pixel_values=pixel_values
+            pixel_values=pixel_values,
+            apply_fourier=True
         )
         text_embeds = text_output[1] 
         image_embeds = image_output[1] 
         text_hidden_states = text_output[0]
         vision_hidden_states = image_output[0]
+        signals = image_output[3] 
 
         text_feat = self.postprocess_embeds(text_embeds)
         image_feat = self.postprocess_embeds(image_embeds)
@@ -284,16 +265,20 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # get momentum features
         with torch.no_grad():
-            self._momentum_update()
+            # self._momentum_update()
             # self.model_m.eval()
+            # print('origin model')
             image_embeds_m = self.model_m(
-                pixel_values=pixel_values 
+                pixel_values=pixel_values, 
+                # apply_fourier=(self.config.use_last_signal)
+                apply_fourier=False
             )
 
             text_embeds_m = self.model_m(
                 input_ids=input_ids,
                 attention_mask=attention_mask
             )
+            original_signals = image_embeds_m[3]
 
             image_feat_m = self.postprocess_embeds(image_embeds_m[1])
             text_feat_m = self.postprocess_embeds(text_embeds_m[1])
@@ -306,57 +291,49 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
 
-            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
-            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
-         
-            sim_i2t_targets = alpha * (
-                F.softmax(sim_i2t_m / self.logit_scale, dim=-1)
-            ) + (1 - alpha) * sim_targets
-            sim_t2i_targets = alpha * (
-                F.softmax(sim_t2i_m / self.logit_scale, dim=-1)
-            ) + (1 - alpha) * sim_targets
-           
-
-
-
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
 
         sim_i2t = self.dist_func(image_feat, text_feat_m_all.T) 
         sim_t2i = self.dist_func(text_feat, image_feat_m_all.T)
+        sim_i2i = self.dist_func(image_feat, image_feat_m_all.T) 
+        sim_t2t = self.dist_func(text_feat, text_feat_m_all.T)
       
 
         # if epoch >= 0:
-        # margin_loss  = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
+        margin_loss  = self.margin_loss(pos_idx=pos_idx, text_feat=text_feat, image_feat=image_feat, text_world=text_feat_m_all.T, image_world=image_feat_m_all.T)
         # else:
-        margin_loss  = torch.tensor(0.0) 
+        # margin_loss  = torch.tensor(0.0) 
 
         loss_i2t = -torch.sum(
-            F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
+            F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_targets, dim=-1
         ).mean()
         loss_t2i = -torch.sum(
-            F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_t2i_targets, dim=-1
+            F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1
+        ).mean()      
+        loss_i2i = -torch.sum(
+            F.log_softmax(sim_i2i / self.logit_scale, dim=1) * sim_targets, dim=-1
+        ).mean()
+        loss_t2t = -torch.sum(
+            F.log_softmax(sim_t2t / self.logit_scale, dim=1) * sim_targets, dim=-1
         ).mean()      
     
+
+    
        
-        loss_itc = self.config.weight_i2t * loss_i2t + (1-self.config.weight_i2t) * loss_t2i
+        loss_itc = self.config.weight_i2t * (loss_i2t + loss_i2i) + (1-self.config.weight_i2t) * (loss_t2i+loss_t2t)
+        signal_loss = self.signal_loss(signals, original_signals) 
       
 
         sims = self.dist_func(image_feat, text_feat)
-        # loss_itm, itm_acc = self.itm_loss(
-        #     idx=idx,
-        #     text_hidden_states=text_hidden_states, 
-        #     image_hidden_states=vision_hidden_states, 
-        #     sim_i2t=sims, 
-        #     sim_t2i=sims.T
-        # )
+     
         
 
         in_batch_target = torch.arange(bsize).to(self.device)
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
             "logits/itc_loss": loss_itc.item(),
-            # "logits/itm_loss": loss_itm.item(),
+            "logits/signal_loss": signal_loss.item(),
             "logits/margin_loss": margin_loss.item(),
             "logits/min": sims.min().item(),
             "logits/mean": sims.mean().item(),
@@ -368,7 +345,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)
         # loss = loss_itc + loss_itm + margin_loss 
-        loss = loss_itc + margin_loss 
+        # loss = loss_itc + (self.alpha-alpha)*signal_loss 
+        loss = loss_itc + signal_loss 
+        # loss = loss_itc 
         return  loss, stats
 
     def reset_queue_ptr(self):

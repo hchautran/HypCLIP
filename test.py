@@ -36,7 +36,7 @@ def run(config, vis_processors, txt_processors, tokenizers, dataset, models):
         val_loader=val_loader,
         test_loader=test_loader,
     )
-    # print(trainer.evaluate('test'))
+    print(trainer.evaluate('test'))
     # print(trainer.evaluate('val'))
     trainer.train()
 
