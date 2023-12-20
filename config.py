@@ -172,7 +172,7 @@ config_args = {
         "distil": (True, "use distil")
     },
     "data_config": {
-        "dataset": (COCO, "which dataset to use"),
+        "dataset": (FLICKR, "which dataset to use"),
         "cache_dir": (CACHE_DIR, "cache_dir"),
     },
     "perceiver": {
