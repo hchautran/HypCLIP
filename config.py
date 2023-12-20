@@ -128,8 +128,8 @@ config_args = {
         "max_txt_len": (35, "max_txt_len"),
         "negative_all_rank": (False, "negative_all_rank"),
         "alpha": (0.4, "alpha"),
-        "queue_size": (80000, "queue size"),
-        "batch_size": (80, "batch size"),
+        "queue_size": (64000, "queue size"),
+        "batch_size": (40, "batch size"),
         "eval_freq": (1200, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (False, "enable log"),
@@ -159,7 +159,7 @@ config_args = {
         "temp": (0.07, "distance temperature"),
         "clip_radius": (1.25, "clipping radius"),
         "vision_trainable_blocks": (4, "number of trainable blocks in vision model"),
-        "text_trainable_blocks": (4, "number of trainable blocks in text model"),
+        "text_trainable_blocks": (1, "number of trainable blocks in text model"),
         "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),
         "num_text_hidden_states": (1, "number of trainable blocks in text model"),
         "ft_out": (768, "final project dimension"),
@@ -172,7 +172,7 @@ config_args = {
         "distil": (True, "use distil")
     },
     "data_config": {
-        "dataset": (FLICKR, "which dataset to use"),
+        "dataset": (COCO, "which dataset to use"),
         "cache_dir": (CACHE_DIR, "cache_dir"),
     },
     "perceiver": {

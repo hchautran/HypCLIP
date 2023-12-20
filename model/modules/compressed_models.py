@@ -9,7 +9,7 @@ from transformers import (
 )
 import math
 from transformers.models.blip.modeling_blip import BlipImageTextMatchingModelOutput
-from lavis import BlipRetrieval
+from lavis import BlipRetrieval, Blip2Qformer
 from transformers import CLIPVisionModel, AutoModel 
 from .dct import dct, idct
 import torch.fft as fft
@@ -21,38 +21,29 @@ class CompressedModel(nn.Module):
         super().__init__()
         self.compress_method = compress_method
     
-    def find_spans(self, array, threshold=10):
-        spans = []
-        final_spans = []
-        start = array[0]
-        current_span = [start]
 
-        for value in array[1:]:
-            if value - start <= threshold:
-                # Expand the current span
-                current_span.append(value)
+    def std_filter(self, x, percentile_threshold, window_size = 10, filter_strategy='std'):
+        window_size = window_size if not self.training else 8 
+        percentile_threshold = percentile_threshold if not self.training else 0.75 
+        std_array = x.mean(0).std(1)
+        threshold = torch.quantile(std_array, percentile_threshold, dim=-1, keepdim=True)
+        x_filtered = []
+        for i in range(0,std_array.shape[0], window_size):
+            if i + window_size <= std_array.shape[0]:
+                cur_array = std_array[i: i+ window_size]
+                if cur_array.max() > threshold:
+                    x_filtered.append(x[:,i:i+window_size,:])
+                elif filter_strategy == 'std':
+                    final_vector = x[:, i:i+window_size, :].permute(0, 2, 1) @ std_array[i:i+window_size].expand(x.shape[0],-1).unsqueeze_(2)
+                    x_filtered.append(final_vector.permute(0,2,1))
+             
+                elif filter_strategy == 'mean':
+                    final_vector = torch.mean(x[:, i:i+window_size, :], dim=1, keepdim=True)
+                    x_filtered.append(final_vector)
             else:
-                # Start a new span
-                spans.append((current_span[0], current_span[-1]))
-                current_span = [value]
-                start = value
-
-        # Add the last span
-        spans.append((current_span[0], current_span[-1]))
-        begin = spans[0][0]
-        end = spans[0][1]
-        for i in range(len(spans) -1):
-            if spans[i][0] - end <= threshold:
-                end = spans[i][1]
-            
-            else:
-                final_spans.append([begin-5, end+5])
-                begin = spans[i][1]
-                end = spans[i+1][0]
-                
-        final_spans.append([begin-5, end+5])
-        final_spans[0][0] = 0
-        return final_spans
+                x_filtered.append(x[:,i:,:])
+        return torch.cat(x_filtered, dim=1)
+        
 
     
     def forward(
@@ -68,88 +59,67 @@ class CompressedModel(nn.Module):
         else:
             return self.get_vision_features(pixel_values=pixel_values, use_compressed_hidden_state=use_compressed_hidden_state)
 
-    def dc_transform(self, x, use_reconstucted_state=False):
+    def dc_transform(self, x, use_reconstucted_state=False, r=None, threshold=None):
         # cufft doesn't accept fp16
         x = x.permute(1,0,2)
         x_dct = dct(x.transpose(0,2), norm='ortho').transpose(0,2)
-        T, B, C = x_dct.size()
-        x_dct_mean = torch.abs(x_dct.permute(1,0,2).mean(0).mean(1))
-        threshold = torch.abs(torch.quantile(x_dct_mean, 0.8, dim=-1, keepdim=True) )
-        indices = torch.where(x_dct_mean > threshold)
-        k = indices[0][-1].item() if indices[0].numel() > 0 else -1
-        # k = math.ceil(0.9 * T)
-        # feel free to play with any method here
+        if r is not None:
+            T, B, C = x_dct.size()
+            k = math.ceil(r * T)
+        else:
+            x_dct_mean = torch.abs(x_dct.permute(1,0,2).mean(0).mean(1))
+            threshold = torch.abs(torch.quantile(x_dct_mean, threshold, dim=-1, keepdim=True) )
+            indices = torch.where(x_dct_mean > threshold)
+            k = indices[0][-1].item() if indices[0].numel() > 0 else -1
+
         if use_reconstucted_state:
             x_dct = x_dct[:k, :, :]
             x = idct(x_dct.transpose(0,2), norm='ortho').transpose(0,2).type(torch.half)
    
         return x.permute(1,0,2), x_dct.permute(1,0,2)
 
-    
-    def wv_transform(self, x, use_reconstucted_state = False):
-        wavelet = 'db3'  # Daubechies wavelet with one vanishing moment
-        level = 0
-        coeffs = pywt.wavedec(x.cpu().detach(), wavelet, level=level, axis=1)
-        # k = math.ceil(0.90 * x.shape[1])
-        coeffs_mean = torch.abs(torch.from_numpy(coeffs[0])).mean(0).mean(1)
-        threshold = coeffs_mean.mean()
-        indices = torch.where(coeffs_mean > threshold)
-        k_end = indices[0][-1].item() if indices[0].numel() > 0 else -1
-        k_start = indices[0][0].item() if indices[0].numel() > 0 else -1
-        if use_reconstucted_state:
-            coeffs[0] = coeffs[0][:, k_start:k_end, :]
-            x = torch.from_numpy(pywt.waverec(coeffs, wavelet)).to(x.device)
-   
-        return x, torch.from_numpy(coeffs[0])
-    
+
     def direct(self, x, use_reconstucted_state = False):
         k = math.ceil(0.90 * x.shape[1])
         if use_reconstucted_state:
             x = x[:,:k,:]  
         return x, x
     
-    def std_based_compress(self, x, use_reconstucted_state = False):
-        threshold = torch.abs(torch.quantile(x.mean(0).std(1), 0.90, dim=-1, keepdim=True) )
-        mask = torch.nonzero(torch.abs(x.mean(0).std(1)) > threshold).squeeze()
-        if mask.ndimension() == 0: return x, x
-        spans  = self.find_spans(mask)
-
+    def std_based_compress(self, x, use_reconstucted_state, threshold=0.7, window_size=10, filter_strategy='std'):
         if use_reconstucted_state:
-            states = []
-            for span in spans:
-                states.append(x[:,span[0]:span[1],:])
-            x = torch.cat(states, dim=1)
-            
+            x = self.std_filter(x, threshold, window_size=window_size, filter_strategy=filter_strategy) 
         return x, x
 
    
 
-    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_fourier_signals=False):
+    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         raise NotImplementedError("This method is not implemented yet")
 
     def get_text_features(self, input_ids, attention_mask):
         raise NotImplementedError("This method is not implemented yet")
     
-    def compress_hidden_state(self, x, use_compressed_hidden_state=False):
-        if self.compress_method == 'wv':
-            x_reconstructed, energy = self.wv_transform(x ,use_compressed_hidden_state) 
-        elif self.compress_method == 'dct':
-            x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state) 
+    def compress_hidden_state(self, x, use_compressed_hidden_state, r=0.9, threshold=0.7, window_size=10):
+        if self.compress_method == 'dct':
+            x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state, r=r) 
+        elif self.compress_method == 'dct_w_t':
+            x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state, threshold=threshold) 
         elif self.compress_method == 'std':
-            x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state) 
-        else:
+            x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='std') 
+        elif self.compress_method == 'direct':
             x_reconstructed, energy = self.direct(x ,use_compressed_hidden_state) 
+        else: 
+            return x, x
+
         return  x_reconstructed, energy
     
     
 
-
     
-class DCTHFBlip(CompressedModel):
+class CompressedHFBLIP(CompressedModel):
     config_class = BlipConfig
 
     def __init__(self, model:AutoModel, compress_method='dct'):
-        super(DCTHFBlip, self).__init__(compress_method)
+        super(CompressedHFBLIP, self).__init__(compress_method)
         self.vision_model = model.vision_model
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
@@ -158,7 +128,7 @@ class DCTHFBlip(CompressedModel):
      
 
     
-    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_fourier_signals=False):
+    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         hidden_states = self.vision_model.embeddings(pixel_values)
         all_hidden_states = []
         energy = []
@@ -171,10 +141,9 @@ class DCTHFBlip(CompressedModel):
                     use_compressed_hidden_state=use_compressed_hidden_state
                 )
                 hidden_states = torch.cat([cls, state], dim=1)
-                if return_all_fourier_signals or i == len(self.vision_model.encoder.layers)-1:
+                if return_all_hidden_state or i == len(self.vision_model.encoder.layers)-1:
                     energy.append(cur_energy)
                     all_hidden_states.append(hidden_states)
-                # print(hidden_states.shape)
 
             hidden_states = layer(
                 hidden_states,
@@ -200,20 +169,19 @@ class DCTHFBlip(CompressedModel):
         return  last_hidden_state, text_embed
 
 
-
-class DCTLAVISBlip(CompressedModel):
+class CompressedLAVISBLIP(CompressedModel):
 
     def __init__(self, model:BlipRetrieval, compress_method='dct'):
-        super(DCTLAVISBlip, self).__init__(compress_method)
+        super(CompressedLAVISBLIP, self).__init__(compress_method)
 
         self.vision_model = model.visual_encoder
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [6]
+        self.compress_layers = [6,7,8]
 
    
-    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_fourier_signals=False):
+    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         B = pixel_values.shape[0]
         x = self.vision_model.patch_embed(pixel_values)
         hidden_states = []
@@ -224,6 +192,9 @@ class DCTLAVISBlip(CompressedModel):
         x = torch.cat((cls_tokens, x), dim=1)
         x = x + self.vision_model.pos_embed[:, : x.size(1), :]
         x = self.vision_model.pos_drop(x)
+        ori_size = x.shape[1]
+        real_mem = 0
+        total_mem = 0
         for i, blk in enumerate(self.vision_model.blocks):
             if i in self.compress_layers: 
                 cls = x[:, 0, :].unsqueeze(1)
@@ -233,16 +204,18 @@ class DCTLAVISBlip(CompressedModel):
                 )
                 x = torch.cat([cls, state], dim=1)
 
-                # print(x.shape)
-                if return_all_fourier_signals or i == len(self.vision_model.blocks)-1:
+                if return_all_hidden_state or i == len(self.vision_model.blocks)-1:
                     energy.append(cur_energy)
                     hidden_states.append(state)
+                real_mem += x.shape[1]
+                total_mem += ori_size 
 
             x = blk(x)
+        # print(x.shape[1]/ori_size)
         x = self.vision_model.norm(x)
 
         vision_embed = self.vision_proj(x[:,0,:])
-        return x, vision_embed, hidden_states, energy
+        return x, vision_embed, hidden_states, energy, real_mem/total_mem
 
     def get_text_features(self, input_ids, attention_mask):
         with torch.no_grad():
@@ -258,22 +231,25 @@ class DCTLAVISBlip(CompressedModel):
             return  last_hidden_state, text_embed
 
 
-class DCTHFClip(CompressedModel):
+class CompressedHFCLIP(CompressedModel):
 
     def __init__(self, model:AutoModel, compress_method='dct'):
-        super(DCTHFClip, self).__init__(compress_method)
+        super(CompressedHFCLIP, self).__init__(compress_method)
 
         self.vision_model = model.vision_model
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
-        self.compress_layers = [12]
+        self.compress_layers = [15, 16, 18 ,19, 20]
 
-    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_fourier_signals=False):
+    def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         energy = []
         all_hidden_states = []
         hidden_states = self.vision_model.embeddings(pixel_values)
         hidden_states = self.vision_model.pre_layrnorm(hidden_states)
+        real_mem = 0
+        total_mem = 0
+        ori_size = hidden_states.shape[1]
         for i, layer in enumerate(self.vision_model.encoder.layers):
             if i in self.compress_layers:
                 cls = hidden_states[:, 0, :].unsqueeze(1)
@@ -282,9 +258,12 @@ class DCTHFClip(CompressedModel):
                     use_compressed_hidden_state=use_compressed_hidden_state
                 )
                 hidden_states = torch.cat([cls, state], dim=1)
-                if return_all_fourier_signals or i == len(self.vision_model.encoder.layers)-1:
+                # print(hidden_states.shape)
+                if return_all_hidden_state or i == len(self.vision_model.encoder.layers)-1:
                     energy.append(cur_energy)
                     all_hidden_states.append(hidden_states)
+                real_mem += hidden_states.shape[1]
+                total_mem += ori_size 
 
             hidden_states = layer(
                 hidden_states,
@@ -298,7 +277,7 @@ class DCTHFClip(CompressedModel):
         vision_embed = self.vision_proj(pooled_output)
         
 
-        return hidden_states, vision_embed, all_hidden_states, energy
+        return hidden_states, vision_embed, all_hidden_states, energy, real_mem/total_mem
 
     def get_text_features(self, input_ids, attention_mask):
         text_outputs = self.text_model(
@@ -309,3 +288,65 @@ class DCTHFClip(CompressedModel):
         text_embed = self.text_proj(pooled_output)
 
         return  text_outputs[0], text_embed
+
+        
+class CompressedLAVISBLIP2(CompressedModel):
+
+    def __init__(self, model:Blip2Qformer, compress_method='dct'):
+        super(CompressedLAVISBLIP2, self).__init__(compress_method)
+
+        self.ln_vision = model.ln_vision
+        self.visual_encoder = model.visual_encoder
+        self.query_tokens = model.query_tokens
+        self.vision_proj = model.vision_proj
+        self.text_proj = model.text_proj
+        self.Qformer = model.Qformer
+        self.itm_head = model.itm_head
+        self.compress_layers = [6,7,8, 9, 10, 11]
+
+   
+    def get_vision_features(self, pixel_values:torch.Tensor, use_compressed_hidden_state=True, return_all_hidden_state=False):
+        all_hidden_states = []
+        with torch.no_grad():
+            x = self.visual_encoder.patch_embed(pixel_values)
+            batch_size, seq_len, _ = x.size()
+
+            cls_tokens = self.visual_encoder.cls_token.expand(batch_size, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+            x = torch.cat((cls_tokens, x), dim=1)
+            if self.visual_encoder.pos_embed is not None:
+                x = x + self.visual_encoder.pos_embed
+            x = self.visual_encoder.pos_drop(x)
+
+            rel_pos_bias = self.visual_encoder.rel_pos_bias() if self.visual_encoder.rel_pos_bias is not None else None
+            for i, blk in enumerate(self.visual_encoder.blocks):
+                x = blk(x, rel_pos_bias)
+                if return_all_hidden_state or i == len(self.visual_encoder.blocks) - 1:
+                    all_hidden_states.append(x)
+            # vit_embeds = self.visual_encoder(pixel_values)
+            vit_embeds = self.ln_vision(x)
+
+
+
+        image_atts = torch.ones(vit_embeds.size()[:-1], dtype=torch.long).to(
+            pixel_values.device
+        )
+        query_tokens = self.query_tokens.expand(vit_embeds.shape[0], -1, -1)
+        query_output = self.Qformer.bert(
+            query_embeds=query_tokens,
+            encoder_hidden_states=vit_embeds,
+            encoder_attention_mask=image_atts,
+            return_dict=True,
+        )
+        pooled_output = self.vision_proj(query_output.last_hidden_state)
+        return vit_embeds, pooled_output, all_hidden_states
+
+    def get_text_features(self, input_ids, attention_mask):
+        with torch.no_grad():
+            text_output = self.Qformer.bert(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                return_dict=True,
+            )
+
+        pooled_output = self.text_proj(text_output.last_hidden_state[:, 0, :])
+        return text_output.last_hidden_state, pooled_output

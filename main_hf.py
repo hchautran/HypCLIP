@@ -55,17 +55,18 @@ if __name__ == "__main__":
                 val_loader=val_loader,
                 test_loader=test_loader,
             )
-            print(trainer.evaluate('test'))
+            # print(trainer.evaluate('test'))
             # print(trainer.evaluate('val'))
             trainer.train()
 
     config.epochs = 2 
-    config.enable_log = False 
+    config.enable_log = True 
     config.use_margin_loss = False 
 
-    for use_signal_loss in [False]:
-        for compress_method in ['std','direct', 'dct']:
-            config.compress_method = compress_method
+    for compress_method in ['std','dct', 'None']:
+        config.compress_method = compress_method
+        for distil in [False]:
+            config.distil = distil 
             inner_training_loop(config.batch_size)
         # for curv in [1.0, 2.0, 10.0]:
         #     config.curv = curv

@@ -11,7 +11,7 @@ if __name__ == "__main__":
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
     config = parser.parse_args()
-    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
     # tokenizer = model.tokenizer
     if "flickr" in config.dataset:
         config.model_ckt = LAVIS_BLIP_BASE_FLICKR
@@ -41,17 +41,17 @@ if __name__ == "__main__":
         )
         print(trainer.evaluate('test'))
         # print(trainer.evaluate('val'))
-        trainer.train()
+        # trainer.train()
 
 
-    config.epochs = 5 
-    config.enable_log = False 
+    config.epochs = 2 
+    config.enable_log = True
     config.use_margin_loss = False 
 
-    for compress_method in ['std','direct', 'dct']:
-        config.compress_method = compress_method
-        for distil in [True, False]:
-            config.distil = distil 
+    for distil in [False, True]:
+        config.distil = distil 
+        for compress_method in ['std','dct']:
+            config.compress_method = compress_method
             inner_training_loop(config.batch_size)
     # for curv in [2.0, 5.0, 10.0, 1.0]:
     #     config.curv = curv

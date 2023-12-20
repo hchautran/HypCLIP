@@ -218,11 +218,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
     ):
         idx = image_id
 
-        alpha = self.alpha * self._rampup_factor(
-            epoch=epoch,
-            iters=iters,
-            num_iters_per_epoch=num_iters_per_epoch,
-        )
+        # alpha = self.alpha * self._rampup_factor(
+        #     epoch=epoch,
+        #     iters=iters,
+        #     num_iters_per_epoch=num_iters_per_epoch,
+        # )
         
         text_output = self.model(
             input_ids=input_ids,
@@ -253,11 +253,11 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # get momentum features
         with torch.no_grad():
-            if not self.config.distil:
-                self._momentum_update()
+          
+            self._momentum_update()
             image_embeds_m = self.model_m(
                 pixel_values=pixel_values, 
-                use_compressed_hidden_state=not self.config.distil
+                use_compressed_hidden_state=True,
             )
 
             text_embeds_m = self.model_m(
@@ -275,9 +275,6 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             text_feat_m_all = torch.cat(
                 [text_feat_m.t(), self.text_queue.clone().detach()], dim=1
             )
-
-
-
             self.manifold.assert_check_point_on_manifold(text_feat_m_all.T)
             self.manifold.assert_check_point_on_manifold(image_feat_m_all.T)
 
@@ -290,24 +287,32 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         # else:
         # margin_loss  = torch.tensor(0.0) 
 
-        loss_i2t = -torch.sum(
-            F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_targets, dim=-1
-        ).mean()
-        loss_t2i = -torch.sum(
-            F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1
-        ).mean()      
+   
         if self.config.distil:
-            sim_i2i = self.dist_func(image_feat, image_feat_m_all.T) 
-            sim_t2t = self.dist_func(text_feat, text_feat_m_all.T)
-            loss_i2i = -torch.sum(
-                F.log_softmax(sim_i2i / self.logit_scale, dim=1) * sim_targets, dim=-1
+            sim_i2t_m = self.dist_func(image_feat_m, text_feat_m_all.T) 
+            sim_t2i_m = self.dist_func(text_feat_m, image_feat_m_all.T)
+            sim_i2t_targets = self.alpha * (
+                F.softmax(sim_i2t_m/ self.logit_scale, dim=-1)
+            ) + (1 - self.alpha) * sim_targets
+            sim_t2i_targets = self.alpha * (
+                F.softmax(sim_t2i_m/ self.logit_scale, dim=-1)
+            ) + (1 - self.alpha) * sim_targets
+            loss_i2t = -torch.sum(
+                F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_i2t_targets, dim=-1
             ).mean()
-            loss_t2t = -torch.sum(
-                F.log_softmax(sim_t2t / self.logit_scale, dim=1) * sim_targets, dim=-1
+            loss_t2i = -torch.sum(
+                F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_t2i_targets, dim=-1
             ).mean()      
-            loss_itc = self.config.weight_i2t * (loss_i2t + loss_i2i) + (1-self.config.weight_i2t) * (loss_t2i+loss_t2t)
+
         else:
-            loss_itc = self.config.weight_i2t * (loss_i2t) + (1-self.config.weight_i2t) * (loss_t2i)
+            loss_i2t = -torch.sum(
+                F.log_softmax(sim_i2t / self.logit_scale, dim=1) * sim_targets, dim=-1
+            ).mean()
+            loss_t2i = -torch.sum(
+                F.log_softmax(sim_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1
+            ).mean()      
+
+        loss_itc = self.config.weight_i2t * (loss_i2t) + (1-self.config.weight_i2t) * (loss_t2i)
       
 
         sims = self.dist_func(image_feat, text_feat)
@@ -323,7 +328,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             "logits/mean": sims.mean().item(),
             "logits/max": sims.max().item(),
             "logits/acc": (sims.argmax(-1) == in_batch_target).float().mean().item(),
-            # "logits/itm_acc": itm_acc.item(),
+            "logits/saved_memory": image_output[4],
             "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
         }
 
