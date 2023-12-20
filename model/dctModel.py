@@ -49,7 +49,7 @@ def get_lora_clip(config, model):
     )
 
     model = get_peft_model(model, peft_config)
-    print('trainable params model:',model.print_trainable_parameters())
+    model.print_trainable_parameters()
     return model 
 
 
