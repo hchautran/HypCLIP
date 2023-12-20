@@ -30,21 +30,18 @@ class CompressedModel(nn.Module):
         x_filtered = []
         for i in range(0,std_array.shape[0], window_size):
             if i + window_size <= std_array.shape[0]:
-                cur_array = std_array[i: i+ window_size]
-                if cur_array.max() > threshold:
-                    x_filtered.append(x[:,i:i+window_size,:])
+                cur_window = x[:, i:i+window_size, :].clone()
+                cur_std_array = std_array[i: i+ window_size].clone()
+                if cur_std_array.max() > threshold:
+                    x_filtered.append(cur_window)
                 elif filter_strategy == 'std':
-                    final_vector = x[:, i:i+window_size, :].permute(0, 2, 1) @ std_array[i:i+window_size].expand(x.shape[0],-1).unsqueeze_(2)
-                    x_filtered.append(final_vector.permute(0,2,1))
-             
+                    x_filtered.append(cur_window.permute(0, 2, 1) @ cur_std_array.expand(x.shape[0],-1).unsqueeze_(2).permute(0,2,1))
                 elif filter_strategy == 'mean':
-                    final_vector = torch.mean(x[:, i:i+window_size, :], dim=1, keepdim=True)
-                    x_filtered.append(final_vector)
+                    x_filtered.append(torch.mean(cur_window, dim=1, keepdim=True))
             else:
                 x_filtered.append(x[:,i:,:])
         return torch.cat(x_filtered, dim=1)
         
-
     
     def forward(
         self,
