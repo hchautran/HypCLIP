@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel 
-from .modules.compressed_models import CompressedLAVISBLIP, CompressedHFCLIP
+from .modules.compressed_models import CompressedLAVISBLIP, CompressedHFCLIP, CompressedHFBLIP
 from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
 from .modules.utils import freeze_blip
@@ -22,22 +22,22 @@ def get_lora_clip(config, model):
     for i in range(config.text_trainable_blocks): 
         index = max_len - i
         target_modules.extend([
-            f'*{index}.self_attn.out_proj',
-            f'*{index}.self_attn.q_proj',
-            f'*{index}.self_attn.k_proj',
-            f'*{index}.self_attn.v_proj', 
-            f'*{index}.mlp.fc1', 
-            f'*{index}.mlp.fc2', 
+            f'text_model.encoder.layers.{index}.self_attn.out_proj',
+            f'text_model.encoder.layers.{index}.self_attn.q_proj',
+            f'text_model.encoder.layers.{index}.self_attn.k_proj',
+            f'text_model.encoder.layers.{index}.self_attn.v_proj', 
+            f'text_model.encoder.layers.{index}.mlp.fc1', 
+            f'text_model.encoder.layers.{index}.mlp.fc2', 
         ])
     for i in range(config.vision_trainable_blocks): 
         index = max_len - i
         target_modules.extend([
-            f'*{index}.self_attn.out_proj',
-            f'*{index}.self_attn.q_proj',
-            f'*{index}.self_attn.k_proj',
-            f'*{index}.self_attn.v_proj', 
-            f'*{index}.mlp.fc1', 
-            f'*{index}.mlp.fc2', 
+            f'vision_model.encoder.layers.{index}.self_attn.out_proj',
+            f'vision_model.encoder.layers.{index}.self_attn.q_proj',
+            f'vision_model.encoder.layers.{index}.self_attn.k_proj',
+            f'vision_model.encoder.layers.{index}.self_attn.v_proj', 
+            f'vision_model.encoder.layers.{index}.mlp.fc1', 
+            f'vision_model.encoder.layers.{index}.mlp.fc2', 
         ])
     peft_config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION, 
@@ -64,18 +64,18 @@ def get_lora_blip(config, model):
     for i in range(config.vision_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            f'*{index}.self_attn.qkv',
-            f'*{index}.self_attn.projection',
-            f'*{index}.mlp.fc1', 
-            f'*{index}.mlp.fc2', 
+            f'vision_model.encoder.layers.{index}.self_attn.qkv',
+            f'vision_model.encoder.layers.{index}.self_attn.projection',
+            f'vision_model.encoder.layers.{index}.mlp.fc1', 
+            f'vision_model.encoder.layers.{index}.mlp.fc2', 
         ])
     for i in range(config.text_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            f'*{index}.attention.output.dense', 
-            f'*{index}.attention.self.query', 
-            f'*{index}.attention.self.value',
-            f'*{index}.attention.self.key', 
+            f'text_model.encoder.layer.{index}.attention.output.dense', 
+            f'text_model.encoder.layer.{index}.attention.self.query', 
+            f'text_model.encoder.layer.{index}.attention.self.value',
+            f'text_model.encoder.layer.{index}.attention.self.key', 
         ])
     peft_config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION, 
@@ -101,18 +101,18 @@ def get_lora_lavis_blip(config, model):
     for i in range(config.vision_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            f'*{index}.attn.qkv',
-            f'*{index}.attn.proj',
-            f'*{index}.mlp.fc1', 
-            f'*{index}.mlp.fc2', 
+            f'vision_model.blocks.{index}.attn.qkv',
+            f'vision_model.blocks.{index}.attn.proj',
+            f'vision_model.blocks.{index}.mlp.fc1', 
+            f'vision_model.blocks.{index}.mlp.fc2', 
         ])
     for i in range(config.text_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            f'*{index}.attention.output.dense', 
-            f'*{index}.attention.self.query', 
-            f'*{index}.attention.self.value',
-            f'*{index}.attention.self.key', 
+            f'text_model.encoder.layer.{index}.attention.output.dense', 
+            f'text_model.encoder.layer.{index}.attention.self.query', 
+            f'text_model.encoder.layer.{index}.attention.self.value',
+            f'text_model.encoder.layer.{index}.attention.self.key', 
         ])
     peft_config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION, 
@@ -135,7 +135,7 @@ class DCTHFWithQueue(BaseModelWithQueue):
             self.model = CompressedHFCLIP(model, compress_method=config.compress_method)
         else:
             model = get_lora_blip(config, model=model) 
-            self.model = CompressedHFCLIP(model, compress_method=config.compress_method)
+            self.model = CompressedHFBLIP(model, compress_method=config.compress_method)
 
         
         self._init_queue(config, model.config.projection_dim)

@@ -35,7 +35,7 @@ class CompressedModel(nn.Module):
                 if cur_std_array.max() > threshold:
                     x_filtered.append(cur_window)
                 elif filter_strategy == 'std':
-                    x_filtered.append(cur_window.permute(0, 2, 1) @ cur_std_array.expand(x.shape[0],-1).unsqueeze_(2).permute(0,2,1))
+                    x_filtered.append((cur_window.permute(0, 2, 1) @ cur_std_array.expand(x.shape[0], -1).unsqueeze(2)).permute(0,2,1))
                 elif filter_strategy == 'mean':
                     x_filtered.append(torch.mean(cur_window, dim=1, keepdim=True))
             else:
@@ -102,8 +102,8 @@ class CompressedModel(nn.Module):
             x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state, threshold=threshold) 
         elif self.compress_method == 'std':
             x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='std') 
-        elif self.compress_method == 'direct':
-            x_reconstructed, energy = self.direct(x ,use_compressed_hidden_state) 
+        elif self.compress_method == 'mean':
+            x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='mean') 
         else: 
             return x, x
 
@@ -121,7 +121,7 @@ class CompressedHFBLIP(CompressedModel):
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
-        self.compress_layers = [6, 7]
+        self.compress_layers = [6, 7, 8]
      
 
     
@@ -129,6 +129,9 @@ class CompressedHFBLIP(CompressedModel):
         hidden_states = self.vision_model.embeddings(pixel_values)
         all_hidden_states = []
         energy = []
+        real_mem = 0
+        total_mem = 0
+        ori_size = hidden_states.shape[1]
 
         for i, layer in enumerate(self.vision_model.encoder.layers):
             if i in self.compress_layers:    
@@ -141,6 +144,8 @@ class CompressedHFBLIP(CompressedModel):
                 if return_all_hidden_state or i == len(self.vision_model.encoder.layers)-1:
                     energy.append(cur_energy)
                     all_hidden_states.append(hidden_states)
+                real_mem += hidden_states.shape[1]
+                total_mem += ori_size 
 
             hidden_states = layer(
                 hidden_states,
@@ -149,11 +154,11 @@ class CompressedHFBLIP(CompressedModel):
             )[0]
 
 
-        last_hidden_state = self.vision_model.post_layernorm(state)
+        last_hidden_state = self.vision_model.post_layernorm(hidden_states)
         pooled_output = last_hidden_state[:, 0, :]
         vision_embed = self.vision_proj(pooled_output)
        
-        return hidden_states, vision_embed, all_hidden_states, energy
+        return hidden_states, vision_embed, all_hidden_states, energy, real_mem/total_mem
 
     def get_text_features(self, input_ids, attention_mask):
         text_output = self.text_model(
@@ -161,7 +166,7 @@ class CompressedHFBLIP(CompressedModel):
             attention_mask=attention_mask,
         )
         last_hidden_state = text_output[0] 
-        text_embed = self.text_proj(last_hidden_state[:,0,:])
+        text_embed = self.text_proj(text_output[1])
 
         return  last_hidden_state, text_embed
 
@@ -175,7 +180,7 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [6,7,8]
+        self.compress_layers = [8,9,10]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -237,7 +242,7 @@ class CompressedHFCLIP(CompressedModel):
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
-        self.compress_layers = [15, 16, 18 ,19, 20]
+        self.compress_layers = [15, 16, 18 ,19, 20] if len(self.vision_model.encoder.layers) > 12 else [6, 7, 8]
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         energy = []

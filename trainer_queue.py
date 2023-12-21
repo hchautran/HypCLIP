@@ -5,7 +5,7 @@ from hyptorch.geoopt.optim import RiemannianAdam, RiemannianSGD
 from utils.retrivial_utils import report_metrics 
 from tqdm.auto import tqdm
 import torch
-from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
+from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, BLIP_BASE_COCO, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
 import time
 import torch.nn.functional as F
 from bitsandbytes.optim import Adam8bit
@@ -15,6 +15,7 @@ names = {
    CLIP_BASE_PATCH_16: 'clip_base_16',
    CLIP_LARGE_PATCH_14: 'clip_large_14', 
    BLIP_BASE_FLICKR: 'hf_blip_base', 
+   BLIP_BASE_COCO: 'hf_blip_base', 
    LAVIS_BLIP_BASE_FLICKR: 'lv_blip_base_FLICKR',
    LAVIS_BLIP_BASE_COCO: 'lv_blip_base_COCO' 
 }
@@ -53,7 +54,7 @@ class MyTrainer:
         )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=3, min_lr=1e-8
+            self.optimizer, 'max', factor=0.1, patience=3, min_lr=1e-5
         )
         
         (

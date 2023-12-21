@@ -13,7 +13,7 @@ from utils.data_utils import get_loaders
 if __name__ == "__main__":
     from config import parser
     from config import EUCLID, LORENTZ
-    from config import COCO_PATH, FLICKR_PATH, CLIP_LARGE_PATCH_14, CLIP_BASE_PATCH_16  
+    from config import COCO_PATH, FLICKR_PATH, CLIP_LARGE_PATCH_14, CLIP_BASE_PATCH_16, BLIP_BASE_FLICKR 
     config = parser.parse_args()
     for model_ckt in [CLIP_LARGE_PATCH_14]:
         config.model_ckt = model_ckt
@@ -59,16 +59,17 @@ if __name__ == "__main__":
             # print(trainer.evaluate('val'))
             trainer.train()
 
-    config.epochs = 2 
-    config.enable_log = True 
-    config.use_margin_loss = False 
+        config.epochs = 6 
+        config.enable_log = True 
+        config.use_margin_loss = False 
 
-    for compress_method in ['std','dct', 'None']:
-        config.compress_method = compress_method
-        for distil in [False]:
-            config.distil = distil 
-            inner_training_loop(config.batch_size)
-        # for curv in [1.0, 2.0, 10.0]:
+        # for compress_method in ['mean', 'std', 'dct','none']:
+        for compress_method in ['mean']:
+            config.compress_method = compress_method
+            for distil in [False]:
+                config.distil = distil 
+                inner_training_loop(config.batch_size)
+            # for curv in [1.0, 2.0, 10.0]:
         #     config.curv = curv
         #     for margin_loss in [False]:
         #         config.margin_loss = margin_loss 
