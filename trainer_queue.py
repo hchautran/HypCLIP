@@ -54,7 +54,7 @@ class MyTrainer:
         )
 
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 'max', factor=0.1, patience=3, min_lr=1e-5
+            self.optimizer, 'max', factor=0.1, patience=3, min_lr=1e-6
         )
         
         (
