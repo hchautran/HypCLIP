@@ -5,15 +5,11 @@ import torch.nn.functional as F
 from typing import Optional
 from transformers import (
     BlipConfig, 
-    BlipModel
 )
 import math
-from transformers.models.blip.modeling_blip import BlipImageTextMatchingModelOutput
 from lavis import BlipRetrieval, Blip2Qformer
-from transformers import CLIPVisionModel, AutoModel 
+from transformers import AutoModel 
 from .dct import dct, idct
-import torch.fft as fft
-import pywt
 
 
 class CompressedModel(nn.Module):
