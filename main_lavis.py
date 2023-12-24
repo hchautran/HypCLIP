@@ -11,7 +11,7 @@ if __name__ == "__main__":
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
     config = parser.parse_args()
-    model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
+    model, vis_processors, txt_processors = load_model_and_preprocess("blip_base", "pretrain", is_eval=False)
     # tokenizer = model.tokenizer
     if "flickr" in config.dataset:
         config.model_ckt = LAVIS_BLIP_BASE_FLICKR
