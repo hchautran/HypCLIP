@@ -19,8 +19,8 @@ class CompressedModel(nn.Module):
     
 
     def std_filter(self, x, percentile_threshold, window_size = 10, filter_strategy='std'):
-        window_size = window_size if not self.training else 8 
-        percentile_threshold = percentile_threshold if not self.training else 0.75 
+        window_size = window_size if not self.training else 10 
+        percentile_threshold = percentile_threshold if not self.training else 0.70 
         std_array = x.mean(0).std(1)
         threshold = torch.quantile(std_array, percentile_threshold, dim=-1, keepdim=True)
         x_filtered = []
