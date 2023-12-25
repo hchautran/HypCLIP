@@ -37,6 +37,7 @@ class CompressedModel(nn.Module):
             else:
                 x_filtered.append(x[:,i:,:])
         return torch.cat(x_filtered, dim=1)
+
         
     
     def forward(
@@ -176,7 +177,7 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [8,9,10]
+        self.compress_layers = [7, 8,9,10, 11]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
