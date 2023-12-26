@@ -10,10 +10,10 @@ if __name__ == "__main__":
     from config import POINCARE, EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO, COCO, FLICKR
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
+    config = parser.parse_args()
     for dataset in [COCO]:
         config.dataset = dataset
 
-        config = parser.parse_args()
         # tokenizer = model.tokenizer
         if "flickr" in config.dataset:
             config.model_ckt = LAVIS_BLIP_BASE_FLICKR
