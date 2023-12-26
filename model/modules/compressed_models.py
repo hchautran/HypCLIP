@@ -203,7 +203,7 @@ class CompressedLAVISBLIP(CompressedModel):
                 cls = x[:, 0, :].unsqueeze(1)
                 state, cur_energy = self.compress_hidden_state(
                     x[:, 1:, :], 
-                    use_compressed_hidden_state=use_compressed_hidden_state
+                    use_compressed_hidden_state=use_compressed_hidden_state,
                     threshold=(0.25 + (i/len(self.vision_model.encoder.layers)*0.5)), 
                     window_size=(16 - math.floor(i/len(self.vision_model.encoder.layers)*8)), 
                     r=0.9
