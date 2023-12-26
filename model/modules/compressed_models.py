@@ -180,8 +180,8 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [6,7,8,9,10,11]
-        # self.compress_layers = [i for i in range(len(self.vision_model.blocks))]
+        # self.compress_layers = [6,7,8,9,10,11]
+        self.compress_layers = [i for i in range(len(self.vision_model.blocks))]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
