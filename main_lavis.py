@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
 
         config.epochs = 5 
-        config.enable_log = True
+        config.enable_log = False
         config.use_margin_loss = False 
 
         for distil in [False]:
