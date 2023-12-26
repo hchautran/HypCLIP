@@ -19,8 +19,8 @@ class CompressedModel(nn.Module):
     
 
     def std_filter(self, x, percentile_threshold, window_size = 10, filter_strategy='std'):
-        window_size = window_size if not self.training else 10 
-        percentile_threshold = percentile_threshold if not self.training else 0.70 
+        window_size = 8 
+        percentile_threshold = 0.25 
         std_array = x.mean(0).std(1)
         threshold = torch.quantile(std_array, percentile_threshold, dim=-1, keepdim=True)
         x_filtered = []
@@ -177,7 +177,8 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [7, 8,9,10, 11]
+        # self.compress_layers = [7,8,9, 10,11]
+        self.compress_layers = [i for i in range(len(self.vision_model.blocks))]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
