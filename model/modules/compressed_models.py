@@ -38,7 +38,35 @@ class CompressedModel(nn.Module):
                 x_filtered.append(x[:,i:,:])
         return torch.cat(x_filtered, dim=1)
 
+    def std_filter_with_r(self, x, r=0.9, filter_strategy='std', window_size=8):        
+        B, T, D = x.shape
+        k = math.ceil(T- math.ceil(T*r)/window_size)
+
+        first_x = x[:,:(T%window_size),:]
+        remain_x = x[:,(T%window_size):,:]
+        remain_x = remain_x.view(B, int(remain_x.shape[1]/window_size), - 1, D)
+        std_array = remain_x.std(-1)
+        mean_std = std_array.mean(0).mean(-1) 
+        threshold = torch.quantile(mean_std, 0.70, dim=-1, keepdim=True)
+        min_indices = torch.sort(torch.topk(mean_std, k=k, dim=-1, largest=False)[1]).values
+        output = [first_x]
+        prev_i = -1
         
+        for i in min_indices:
+            output.append(remain_x[:, prev_i + 1:i, :, :]. view(B, -1, D))
+            prev_i = i
+            min_window = remain_x[:, i, :, :]
+            if std_array[:, i, :].mean(0).max() < threshold:
+                if filter_strategy == 'std':
+                    min_std_array = std_array[:, i, :]
+                    min_window = (min_window.permute(0, 2, 1) @ min_std_array.unsqueeze(2)).permute(0,2,1)
+                else:
+                    min_window = torch.mean(min_window, dim=1, keepdim=True)
+
+            output.append(min_window)
+
+        output.append(remain_x[:, prev_i+1:, :, :].view(B, -1, D))
+        return torch.cat(output, dim=1)
     
     def forward(
         self,
@@ -98,9 +126,11 @@ class CompressedModel(nn.Module):
         elif self.compress_method == 'dct_w_t':
             x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state, threshold=threshold) 
         elif self.compress_method == 'std':
-            x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='std') 
+            # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='std') 
+            x_reconstructed, energy = self.std_filter_with_r(x , r=r, window_size=window_size,filter_strategy='std') 
         elif self.compress_method == 'mean':
-            x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='mean') 
+            # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='mean') 
+            x_reconstructed, energy = self.std_filter_with_r(x , r=r, window_size=window_size,filter_strategy='mean') 
         else: 
             return x, x
 
@@ -205,7 +235,7 @@ class CompressedLAVISBLIP(CompressedModel):
                     x[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
                     threshold=(0.25 + (i/len(self.vision_model.encoder.layers)*0.5)), 
-                    window_size=(16 - math.floor(i/len(self.vision_model.encoder.layers)*8)), 
+                    window_size=8, 
                     r=0.9
                 )
                 x = torch.cat([cls, state], dim=1)
