@@ -19,8 +19,8 @@ class CompressedModel(nn.Module):
     
 
     def std_filter(self, x, percentile_threshold, window_size = 10, filter_strategy='std'):
-        window_size = 8 
-        percentile_threshold = 0.25 
+        window_size = percentile_threshold 
+        percentile_threshold = window_size
         std_array = x.mean(0).std(1)
         threshold = torch.quantile(std_array, percentile_threshold, dim=-1, keepdim=True)
         x_filtered = []
@@ -135,7 +135,10 @@ class CompressedHFBLIP(CompressedModel):
                 cls = hidden_states[:, 0, :].unsqueeze(1)
                 state, cur_energy = self.compress_hidden_state(
                     hidden_states[:, 1:, :], 
-                    use_compressed_hidden_state=use_compressed_hidden_state
+                    use_compressed_hidden_state=use_compressed_hidden_state,
+                    threshold=(0.25 + (i/len(self.vision_model.encoder.layers)*0.5)), 
+                    window_size=(16 - math.floor(i/len(self.vision_model.encoder.layers)*8)), 
+                    r=0.9
                 )
                 hidden_states = torch.cat([cls, state], dim=1)
                 if return_all_hidden_state or i == len(self.vision_model.encoder.layers)-1:
@@ -177,8 +180,8 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        # self.compress_layers = [7,8,9, 10,11]
-        self.compress_layers = [i for i in range(len(self.vision_model.blocks))]
+        self.compress_layers = [6,7,8,9,10,11]
+        # self.compress_layers = [i for i in range(len(self.vision_model.blocks))]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -201,6 +204,9 @@ class CompressedLAVISBLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     x[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state
+                    threshold=(0.25 + (i/len(self.vision_model.encoder.layers)*0.5)), 
+                    window_size=(16 - math.floor(i/len(self.vision_model.encoder.layers)*8)), 
+                    r=0.9
                 )
                 x = torch.cat([cls, state], dim=1)
 
