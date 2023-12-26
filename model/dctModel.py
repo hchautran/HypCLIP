@@ -101,18 +101,18 @@ def get_lora_lavis_blip(config, model):
     for i in range(config.vision_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            f'vision_model.blocks.{index}.attn.qkv',
-            f'vision_model.blocks.{index}.attn.proj',
-            f'vision_model.blocks.{index}.mlp.fc1', 
-            f'vision_model.blocks.{index}.mlp.fc2', 
+            f'vision_encoder.blocks.{index}.attn.qkv',
+            f'vision_encoder.blocks.{index}.attn.proj',
+            f'vision_encoder.blocks.{index}.mlp.fc1', 
+            f'vision_encoder.blocks.{index}.mlp.fc2', 
         ])
     for i in range(config.text_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            f'text_model.encoder.layer.{index}.attention.output.dense', 
-            f'text_model.encoder.layer.{index}.attention.self.query', 
-            f'text_model.encoder.layer.{index}.attention.self.value',
-            f'text_model.encoder.layer.{index}.attention.self.key', 
+            f'text_encoder.encoder.layer.{index}.attention.output.dense', 
+            f'text_encoder.encoder.layer.{index}.attention.self.query', 
+            f'text_encoder.encoder.layer.{index}.attention.self.value',
+            f'text_encoder.encoder.layer.{index}.attention.self.key', 
         ])
     peft_config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION, 
