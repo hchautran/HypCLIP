@@ -374,7 +374,8 @@ class CompressedLAVISBLIP2(CompressedModel):
             return_dict=True,
         )
         pooled_output = self.vision_proj(query_output.last_hidden_state)
-        return vit_embeds, pooled_output, all_hidden_states
+        # return vit_embeds, pooled_output, all_hidden_states
+        return vit_embeds, pooled_output, all_hidden_states, None, None 
 
     def get_text_features(self, input_ids, attention_mask):
         with torch.no_grad():

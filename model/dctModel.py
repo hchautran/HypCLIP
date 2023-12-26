@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel 
-from .modules.compressed_models import CompressedLAVISBLIP, CompressedHFCLIP, CompressedHFBLIP
+from .modules.compressed_models import CompressedLAVISBLIP, CompressedHFCLIP, CompressedHFBLIP, CompressedLAVISBLIP2
 from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
 from .modules.utils import freeze_blip
@@ -148,6 +148,19 @@ class DCTHFWithQueue(BaseModelWithQueue):
 class DCTLAVISLIPWithQueue(BaseModelWithQueue):
     def __init__(self, config, model) -> None:
         super(DCTLAVISLIPWithQueue, self).__init__(config)
+        model = get_lora_lavis_blip(config, model=model) 
+        self.model = CompressedLAVISBLIP(model, compress_method=config.compress_method)
+        
+        self._init_queue(config, 256)
+    
+    def get_vision_features(self, pixel_values: torch.Tensor, use_compressed_hidden_state=True):
+        image_output = self.model.get_vision_features(pixel_values=pixel_values, use_compressed_hidden_state=use_compressed_hidden_state)
+        image_feat = self.postprocess_embeds(image_output[1])
+        return image_feat, image_output[0], image_output[4]
+
+class CompressedLAVISBLIP2WithQueue(BaseModelWithQueue):
+    def __init__(self, config, model) -> None:
+        super(CompressedLAVISBLIP2WithQueue, self).__init__(config)
         model = get_lora_lavis_blip(config, model=model) 
         self.model = CompressedLAVISBLIP(model, compress_method=config.compress_method)
         

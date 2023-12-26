@@ -10,16 +10,15 @@ if __name__ == "__main__":
     from config import POINCARE, EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO, COCO, FLICKR
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
+    config = parser.parse_args()
     for dataset in [COCO]:
 
-        config = parser.parse_args()
+        model, vis_processors, txt_processors = load_model_and_preprocess("blip2", "coco", is_eval=False)
         # tokenizer = model.tokenizer
         if "flickr" in config.dataset:
             config.model_ckt = LAVIS_BLIP_BASE_FLICKR
-            model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
             dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
         else:
-            model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
             config.model_ckt = LAVIS_BLIP_BASE_COCO 
             dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
 
@@ -34,7 +33,7 @@ if __name__ == "__main__":
                 tokenizer=model.tokenizer,
             )
 
-            queue_model = DCTLAVISLIPWithQueue(config, model)
+            queue_model = Blip2Trainer(config, model)
             trainer = LavisTrainer(
                 model=queue_model,
                 config=config,
@@ -48,7 +47,7 @@ if __name__ == "__main__":
 
 
         config.epochs = 5 
-        config.enable_log = True
+        config.enable_log = False
         config.use_margin_loss = False 
 
         for distil in [False]:
