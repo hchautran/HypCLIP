@@ -338,7 +338,7 @@ class CompressedLAVISBLIP2(CompressedModel):
         self.text_proj = model.text_proj
         self.Qformer = model.Qformer
         self.itm_head = model.itm_head
-        self.compress_layers = [6,7,8, 9, 10, 11]
+        self.compress_layers = [20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38]
 
    
     def get_vision_features(self, pixel_values:torch.Tensor, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -375,7 +375,7 @@ class CompressedLAVISBLIP2(CompressedModel):
         )
         pooled_output = self.vision_proj(query_output.last_hidden_state)
         # return vit_embeds, pooled_output, all_hidden_states
-        return vit_embeds, pooled_output, all_hidden_states, None, None 
+        return vit_embeds, pooled_output, all_hidden_states, None, 1.0 
 
     def get_text_features(self, input_ids, attention_mask):
         with torch.no_grad():
