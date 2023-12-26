@@ -55,6 +55,6 @@ if __name__ == "__main__":
         for distil in [False]:
             config.distil = distil 
             # for compress_method in ['std', 'none']:
-            for compress_method in ['std', 'dct']:
+            for compress_method in ['dct', 'std']:
                 config.compress_method = compress_method
                 inner_training_loop(config.batch_size)
