@@ -11,6 +11,7 @@ if __name__ == "__main__":
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
     for dataset in [COCO]:
+        config.dataset = dataset
 
         config = parser.parse_args()
         # tokenizer = model.tokenizer
