@@ -161,7 +161,7 @@ class DCTLAVISLIPWithQueue(BaseModelWithQueue):
 class CompressedLAVISBLIP2WithQueue(BaseModelWithQueue):
     def __init__(self, config, model) -> None:
         super(CompressedLAVISBLIP2WithQueue, self).__init__(config)
-        # model = get_lora_lavis_blip(config, model=model) 
+        model = get_lora_lavis_blip(config, model=model) 
         self.model = CompressedLAVISBLIP2(model, compress_method=config.compress_method)
         
         self._init_queue(config, 256)

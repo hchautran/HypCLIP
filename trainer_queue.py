@@ -70,7 +70,7 @@ class MyTrainer:
         print("RUNNING:", self.name)
 
         if self.enable_log:
-            wandb.init(name=self.name, config=vars(self.config), reinit=True, project="Compress_model")
+            wandb.init(name=self.name, config=vars(self.config), reinit=True, project=config.dataset)
         print("trainable parameters:", self.model.num_parameters())
         self.log({"trainable parameters": self.model.num_parameters()})
 
@@ -131,7 +131,7 @@ class MyTrainer:
                         self.scheduler.step(test_metrics["compressed_test/r_all"])
                         if best_r_all < test_metrics["compressed_test/r_all"]:
                             best_r_all = test_metrics["compressed_test/r_all"]
-                            self.log({"r_all": test_metrics["test/r_all"]})
+                            # self.log({"r_all": test_metrics["test/r_all"]})
                             self.log({"compressed r all": test_metrics["compressed_test/r_all"]})
                             print("best compressed r all", best_r_all)
 
@@ -205,28 +205,28 @@ class MyTrainer:
                 vision_embeds_w_fourier, _, eval_memory = self.model.get_vision_features(
                     pixel_values=data["pixel_values"][0], use_compressed_hidden_state=True
                 )
-                vision_embeds, _, _ = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0],  use_compressed_hidden_state=False
-                )
+                # vision_embeds, _, _ = self.model.get_vision_features(
+                #     pixel_values=data["pixel_values"][0],  use_compressed_hidden_state=False
+                # )
                 all_text_embeds.append(text_embeds.cpu())
                 all_vision_embeds_w_fourier.append(vision_embeds_w_fourier.cpu())
-                all_vision_embeds.append(vision_embeds.cpu())
+                # all_vision_embeds.append(vision_embeds.cpu())
                 memory_used += eval_memory
            
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
-            all_vision_embeds = torch.concat(all_vision_embeds, 0)
+            # all_vision_embeds = torch.concat(all_vision_embeds, 0)
             all_vision_embeds_w_fourier = torch.concat(all_vision_embeds_w_fourier, 0)
 
 
-            sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+            # sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
             sims_t2i_w_fourer = self.model.dist_func(all_text_embeds, all_vision_embeds_w_fourier)
-            metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
-            fourier_metrics = report_metrics(scores_t2i=sims_t2i_w_fourer.cpu().detach(), scores_i2t=sims_t2i_w_fourer.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'compressed_{mode}')
-            metrics.update(fourier_metrics)
+            # metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
+            metrics = report_metrics(scores_t2i=sims_t2i_w_fourer.cpu().detach(), scores_i2t=sims_t2i_w_fourer.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'compressed_{mode}')
+            # metrics.update(fourier_metrics)
             # print(metrics)
             metrics["eval memory"] = memory_used/len(loader)
-            metrics["epoch"] = self.current_epoch
+            # metrics["epoch"] = self.current_epoch
 
   
           

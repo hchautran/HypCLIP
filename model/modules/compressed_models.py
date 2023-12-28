@@ -19,8 +19,8 @@ class CompressedModel(nn.Module):
     
 
     def std_filter(self, x, percentile_threshold, window_size = 10, filter_strategy='std'):
-        window_size = percentile_threshold 
-        percentile_threshold = window_size
+        window_size = window_size 
+        percentile_threshold = percentile_threshold
         std_array = x.mean(0).std(1)
         threshold = torch.quantile(std_array, percentile_threshold, dim=-1, keepdim=True)
         x_filtered = []
@@ -38,16 +38,17 @@ class CompressedModel(nn.Module):
                 x_filtered.append(x[:,i:,:])
         return torch.cat(x_filtered, dim=1)
 
-    def std_filter_with_r(self, x, r=0.9, filter_strategy='std', window_size=8):        
+    def std_filter_with_r(self, x, r=0.9, filter_strategy='std', window_size=8, threshold=0.7):        
         B, T, D = x.shape
-        k = math.ceil(T- math.ceil(T*r)/window_size)
+        k = math.floor((T- T*r)/window_size)
 
         first_x = x[:,:(T%window_size),:]
         remain_x = x[:,(T%window_size):,:]
         remain_x = remain_x.view(B, int(remain_x.shape[1]/window_size), - 1, D)
         std_array = remain_x.std(-1)
+        # max_std, _ = std_array.mean(0).max(-1) 
         mean_std = std_array.mean(0).mean(-1) 
-        threshold = torch.quantile(mean_std, 0.70, dim=-1, keepdim=True)
+        # threshold = torch.quantile(mean_std, 0.7, dim=-1, keepdim=True)
         min_indices = torch.sort(torch.topk(mean_std, k=k, dim=-1, largest=False)[1]).values
         output = [first_x]
         prev_i = -1
@@ -56,17 +57,19 @@ class CompressedModel(nn.Module):
             output.append(remain_x[:, prev_i + 1:i, :, :]. view(B, -1, D))
             prev_i = i
             min_window = remain_x[:, i, :, :]
-            if std_array[:, i, :].mean(0).max() < threshold:
-                if filter_strategy == 'std':
-                    min_std_array = std_array[:, i, :]
-                    min_window = (min_window.permute(0, 2, 1) @ min_std_array.unsqueeze(2)).permute(0,2,1)
-                else:
-                    min_window = torch.mean(min_window, dim=1, keepdim=True)
+            min_std_array = std_array[:, i, :]
+            # if min_std_array.mean(0).mean(-1) < threshold:
+            if filter_strategy == 'std':
+                min_std_array = min_std_array - min_std_array.min()
+                min_std_array = min_std_array/min_std_array.max()
+                min_window = (min_window.permute(0, 2, 1) @ min_std_array.unsqueeze(2)).permute(0,2,1)
+            else:
+                min_window = torch.mean(min_window, dim=1, keepdim=True)
 
             output.append(min_window)
 
         output.append(remain_x[:, prev_i+1:, :, :].view(B, -1, D))
-        return torch.cat(output, dim=1)
+        return torch.cat(output, dim=1), None
     
     def forward(
         self,
@@ -96,7 +99,8 @@ class CompressedModel(nn.Module):
 
         if use_reconstucted_state:
             x_dct = x_dct[:k, :, :]
-            x = idct(x_dct.transpose(0,2), norm='ortho').transpose(0,2).type(torch.half)
+            x = idct(x_dct.transpose(0,2), norm='ortho').transpose(0,2)
+            # print(x)
    
         return x.permute(1,0,2), x_dct.permute(1,0,2)
 
@@ -111,7 +115,6 @@ class CompressedModel(nn.Module):
         if use_reconstucted_state:
             x = self.std_filter(x, threshold, window_size=window_size, filter_strategy=filter_strategy) 
         return x, x
-
    
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -127,16 +130,14 @@ class CompressedModel(nn.Module):
             x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state, threshold=threshold) 
         elif self.compress_method == 'std':
             # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='std') 
-            x_reconstructed, energy = self.std_filter_with_r(x , r=r, window_size=window_size,filter_strategy='std') 
+            x_reconstructed, energy = self.std_filter_with_r(x , r=r, window_size=window_size,filter_strategy='std',threshold=threshold) 
         elif self.compress_method == 'mean':
             # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='mean') 
-            x_reconstructed, energy = self.std_filter_with_r(x , r=r, window_size=window_size,filter_strategy='mean') 
+            x_reconstructed, energy = self.std_filter_with_r(x , r=r, window_size=window_size,filter_strategy='mean', threshold=threshold) 
         else: 
             return x, x
 
         return  x_reconstructed, energy
-    
-    
 
     
 class CompressedHFBLIP(CompressedModel):
@@ -210,8 +211,8 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [2,4,6,8,10]
-        # self.compress_layers = [i for i in range(len(self.vision_model.blocks))]
+        self.r=0.95
+        self.compress_layers = [i for i in range(1,len(self.vision_model.blocks))]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -234,9 +235,9 @@ class CompressedLAVISBLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     x[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
-                    threshold=(0.25 + (i/len(self.vision_model.blocks)*0.5)), 
-                    window_size=8, 
-                    r=0.9
+                    window_size=10, 
+                    threshold=0.75,
+                    r=self.r,
                 )
                 x = torch.cat([cls, state], dim=1)
 
@@ -245,26 +246,25 @@ class CompressedLAVISBLIP(CompressedModel):
                     hidden_states.append(state)
                 real_mem += x.shape[1]
                 total_mem += ori_size 
-
             x = blk(x)
-        # print(x.shape[1]/ori_size)
-        x = self.vision_model.norm(x)
 
+        # with torch.no_grad():
+        x = self.vision_model.norm(x)
         vision_embed = self.vision_proj(x[:,0,:])
         return x, vision_embed, hidden_states, energy, real_mem/total_mem
 
     def get_text_features(self, input_ids, attention_mask):
-        with torch.no_grad():
-            class Text(object):
-                pass
-            text = Text() 
-            text.input_ids=input_ids
-            text.attention_mask=attention_mask
-            text_output = self.text_model.forward_text(text)
-            last_hidden_state = text_output[0] 
-            text_embed = self.text_proj(last_hidden_state[:,0,:])
+        # with torch.no_grad():
+        class Text(object):
+            pass
+        text = Text() 
+        text.input_ids=input_ids
+        text.attention_mask=attention_mask
+        text_output = self.text_model.forward_text(text)
+        last_hidden_state = text_output[0] 
+        text_embed = self.text_proj(last_hidden_state[:,0,:])
 
-            return  last_hidden_state, text_embed
+        return  last_hidden_state, text_embed
 
 
 class CompressedHFCLIP(CompressedModel):
@@ -338,11 +338,17 @@ class CompressedLAVISBLIP2(CompressedModel):
         self.text_proj = model.text_proj
         self.Qformer = model.Qformer
         self.itm_head = model.itm_head
-        self.compress_layers = [20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38]
+        # self.compress_layers = [20,22,24,26,28,30,32,34,36,38,40]
+        
+        # self.compress_layers = [24,26,28,30,32,34,36,38,40,42,44,46]
+        self.compress_layers = [i for i in range(1,len(self.visual_encoder.blocks))]
 
    
     def get_vision_features(self, pixel_values:torch.Tensor, use_compressed_hidden_state=True, return_all_hidden_state=False):
         all_hidden_states = []
+        energy = []
+        total_mem=0
+        real_mem=0
         with torch.no_grad():
             x = self.visual_encoder.patch_embed(pixel_values)
             batch_size, seq_len, _ = x.size()
@@ -352,12 +358,23 @@ class CompressedLAVISBLIP2(CompressedModel):
             if self.visual_encoder.pos_embed is not None:
                 x = x + self.visual_encoder.pos_embed
             x = self.visual_encoder.pos_drop(x)
+            ori_size = x.shape[1]
 
             rel_pos_bias = self.visual_encoder.rel_pos_bias() if self.visual_encoder.rel_pos_bias is not None else None
             for i, blk in enumerate(self.visual_encoder.blocks):
+                if i in self.compress_layers:
+                    x, cur_energy = self.compress_hidden_state(
+                        x, 
+                        use_compressed_hidden_state=use_compressed_hidden_state,
+                        window_size=12,
+                        r=0.95,
+                    )
                 x = blk(x, rel_pos_bias)
                 if return_all_hidden_state or i == len(self.visual_encoder.blocks) - 1:
+                    energy.append(cur_energy)
                     all_hidden_states.append(x)
+                real_mem += x.shape[1]
+                total_mem += ori_size 
             # vit_embeds = self.visual_encoder(pixel_values)
             vit_embeds = self.ln_vision(x)
 
@@ -375,15 +392,15 @@ class CompressedLAVISBLIP2(CompressedModel):
         )
         pooled_output = self.vision_proj(query_output.last_hidden_state)
         # return vit_embeds, pooled_output, all_hidden_states
-        return vit_embeds, pooled_output, all_hidden_states, None, 1.0 
+        return vit_embeds, pooled_output, all_hidden_states, energy, real_mem/total_mem 
 
     def get_text_features(self, input_ids, attention_mask):
-        with torch.no_grad():
-            text_output = self.Qformer.bert(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                return_dict=True,
-            )
+        # with torch.no_grad():
+        text_output = self.Qformer.bert(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            return_dict=True,
+        )
 
         pooled_output = self.text_proj(text_output.last_hidden_state[:, 0, :])
         return text_output.last_hidden_state, pooled_output

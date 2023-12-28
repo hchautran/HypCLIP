@@ -1,4 +1,4 @@
-from model.dctModel import DCTLAVISLIPWithQueue 
+from model.dctModel import CompressedLAVISBLIP2WithQueue 
 from lavis.datasets.builders import load_dataset
 from trainer_queue import MyTrainer as LavisTrainer 
 from trainer import MyTrainer as Blip2Trainer 
@@ -32,10 +32,10 @@ if __name__ == "__main__":
                 txt_processor=txt_processors['eval'],
                 tokenizer=model.tokenizer,
             )
+            blip2_model = CompressedLAVISBLIP2WithQueue(config, model)
 
-            queue_model = Blip2Trainer(config, model)
-            trainer = LavisTrainer(
-                model=queue_model,
+            trainer = Blip2Trainer(
+                model=blip2_model,
                 config=config,
                 train_loader=train_loader,
                 val_loader=val_loader,
@@ -53,6 +53,6 @@ if __name__ == "__main__":
         for distil in [False]:
             config.distil = distil 
             # for compress_method in ['std', 'none']:
-            for compress_method in ['std', 'dct']:
+            for compress_method in ['std','dct', 'none']:
                 config.compress_method = compress_method
                 inner_training_loop(config.batch_size)

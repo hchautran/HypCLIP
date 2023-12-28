@@ -253,11 +253,10 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # get momentum features
         with torch.no_grad():
-          
             self._momentum_update()
             image_embeds_m = self.model_m(
                 pixel_values=pixel_values, 
-                use_compressed_hidden_state=True,
+                use_compressed_hidden_state=not self.config.distil,
             )
 
             text_embeds_m = self.model_m(

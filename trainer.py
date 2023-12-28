@@ -89,11 +89,11 @@ class MyTrainer:
         ) = self.accelerator.prepare(
             self.optimizer, train_loader, val_loader, test_loader, self.scheduler
         )
-        self.name = f'{names[config.model_ckt]}_{config.manifold}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.batch_size}_{config.use_graph}'
+        self.name = f'{names[config.model_ckt]}_{config.compress_method}_{config.distil}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.manifold}'
         print("RUNNING:", self.name)
 
         if self.enable_log:
-            wandb.init(name=self.name, config=vars(self.config), reinit=True, project="Graph")
+             wandb.init(name=self.name, config=vars(self.config), reinit=True, project=config.dataset)
         print("trainable parameters:", self.model.num_parameters())
         self.log({"trainable parameters": self.model.num_parameters()})
 
@@ -224,30 +224,34 @@ class MyTrainer:
         vit_feats = []
         image_embeds = []
         max_len=35
+        memory_used = 0
 
         with torch.no_grad():
             for data in tqdm(loader):
-                text_feat= self.model.get_text_features(
+                text_feat, _ = self.model.get_text_features(
                     input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
                 )
-                vit_feat, image_feat = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0]
+                image_feat, _, eval_memory  = self.model.get_vision_features(
+                    pixel_values=data["pixel_values"][0], use_compressed_hidden_state=True
                 )
-                text_embeds.append(text_feat)
-                cur_len = data['input_ids'].shape[-1]
-                input_ids = F.pad(data['input_ids'][0], (0, max_len - cur_len), "constant", 0)
-                attention_mask = F.pad(data['attention_mask'][0], (0, max_len - cur_len), "constant", 0) 
-                text_ids.append(input_ids)
-                text_atts.append(attention_mask)
-                vit_feats.append(vit_feat.cpu())
-                image_embeds.append(image_feat)
+                # cur_len = data['input_ids'].shape[-1]
+                # input_ids = F.pad(data['input_ids'][0], (0, max_len - cur_len), "constant", 0)
+                # attention_mask = F.pad(data['attention_mask'][0], (0, max_len - cur_len), "constant", 0) 
+                # print(text_feat.shape)
+                # print(image_feat.shape)
+                # text_ids.append(input_ids.cpu())
+                # text_atts.append(attention_mask.cpu())
+                # vit_feats.append(vit_feat.cpu())
+                image_embeds.append(image_feat.cpu())
+                text_embeds.append(text_feat.cpu())
+                memory_used += eval_memory
 
 
         text_embeds = torch.cat(text_embeds, dim=0)
-        text_ids = torch.cat(text_ids, dim=0)
-        text_atts = torch.cat(text_atts, dim=0)
-        vit_feats = torch.cat(vit_feats, dim=0)
         image_embeds = torch.cat(image_embeds, dim=0)
+        # text_ids = torch.cat(text_ids, dim=0)
+        # text_atts = torch.cat(text_atts, dim=0)
+        # vit_feats = torch.cat(vit_feats, dim=0)
 
         sims_matrix = []
         print(image_embeds.shape)
@@ -261,19 +265,20 @@ class MyTrainer:
         print(itc_metrics)
 
 
-        score_matrix_i2t, score_matrix_t2i = self.rerank(
-            sims_matrix=sims_matrix, 
-            vit_feats=vit_feats, 
-            text_ids=text_ids, 
-            text_atts=text_atts, 
-            num_images=n_images,
-            num_texts=n_texts
-        )
-        itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
-        print(itm_metrics)
+        # score_matrix_i2t, score_matrix_t2i = self.rerank(
+        #     sims_matrix=sims_matrix, 
+        #     vit_feats=vit_feats, 
+        #     text_ids=text_ids, 
+        #     text_atts=text_atts, 
+        #     num_images=n_images,
+        #     num_texts=n_texts
+        # )
+        # itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
+        # print(itm_metrics)
 
         itc_metrics["epoch"] = self.current_epoch
-        itm_metrics["epoch"] = self.current_epoch
+        itc_metrics["eval memory"] = memory_used/len(loader)
+        # itm_metrics["epoch"] = self.current_epoch
         
         # return itc_metrics, itm_metrics
         return itc_metrics
