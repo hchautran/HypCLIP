@@ -39,18 +39,16 @@ class CompressedModel(nn.Module):
                 x_filtered.append(x[:,i:,:])
         return torch.cat(x_filtered, dim=1)
 
-    def std_filter_with_r(self, x, filter_strategy='std'):        
+    def std_filter_with_r(self, x):        
         B, T, D = x.shape
         k = math.floor((T- T*self.r)/self.window_size)
-
         first_x = x[:,:(T%self.window_size),:]
         remain_x = x[:,(T%self.window_size):,:]
         remain_x = remain_x.view(B, int(remain_x.shape[1]/self.window_size), - 1, D)
         std_array = remain_x.std(-1)
-        # max_std, _ = std_array.mean(0).max(-1) 
-        mean_std = std_array.mean(0).mean(-1) 
-        # threshold = torch.quantile(mean_std, 0.7, dim=-1, keepdim=True)
-        min_indices = torch.sort(torch.topk(mean_std, k=k, dim=-1, largest=False)[1]).values
+        max_std, _ = std_array.mean(0).max(-1) 
+       
+        min_indices = torch.sort(torch.topk(max_std, k=k, dim=-1, largest=False)[1]).values
         output = [first_x]
         prev_i = -1
         
@@ -58,8 +56,7 @@ class CompressedModel(nn.Module):
             output.append(remain_x[:, prev_i + 1:i, :, :]. view(B, -1, D))
             prev_i = i
             min_window = remain_x[:, i, :, :]
-            min_std_array = std_array[:, i, :]
-            # if min_std_array.mean(0).mean(-1) < threshold:
+            # min_std_array = std_array[:, i, :]
             # if filter_strategy == 'std':
             #     min_std_array = min_std_array - min_std_array.min()
             #     min_std_array = min_std_array/min_std_array.max()
@@ -68,11 +65,12 @@ class CompressedModel(nn.Module):
             min_window = torch.mean(min_window, dim=1, keepdim=True)
 
             output.append(min_window)
+            torch.flops
 
         output.append(remain_x[:, prev_i+1:, :, :].view(B, -1, D))
         return torch.cat(output, dim=1), None
 
-    def random_filter_with_r(self, x, filter_strategy='std'):        
+    def random_filter_with_r(self, x):        
         B, T, D = x.shape
         k = math.floor((T- T*self.r)/self.window_size)
         first_x = x[:,:(T%self.window_size),:]
@@ -106,18 +104,12 @@ class CompressedModel(nn.Module):
         else:
             return self.get_vision_features(pixel_values=pixel_values, use_compressed_hidden_state=use_compressed_hidden_state)
 
-    def dc_transform(self, x, use_reconstucted_state=False, r=None, threshold=None):
+    def dc_transform(self, x, use_reconstucted_state=False, threshold=None):
         # cufft doesn't accept fp16
         x = x.permute(1,0,2)
         x_dct = dct(x.transpose(0,2), norm='ortho').transpose(0,2)
-        if r is not None:
-            T, B, C = x_dct.size()
-            k = math.ceil(r * T)
-        else:
-            x_dct_mean = torch.abs(x_dct.permute(1,0,2).mean(0).mean(1))
-            threshold = torch.abs(torch.quantile(x_dct_mean, threshold, dim=-1, keepdim=True) )
-            indices = torch.where(x_dct_mean > threshold)
-            k = indices[0][-1].item() if indices[0].numel() > 0 else -1
+        T, B, C = x_dct.size()
+        k = math.ceil(self.r * T)
 
         if use_reconstucted_state:
             x_dct = x_dct[:k, :, :]
@@ -145,17 +137,17 @@ class CompressedModel(nn.Module):
     def get_text_features(self, input_ids, attention_mask):
         raise NotImplementedError("This method is not implemented yet")
     
-    def compress_hidden_state(self, x, use_compressed_hidden_state, r=0.9, threshold=0.7):
+    def compress_hidden_state(self, x, use_compressed_hidden_state, threshold=0.7):
         if self.compress_method == 'dct':
-            x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state, r=r) 
-        elif self.compress_method == 'dct_w_t':
-            x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state, threshold=threshold) 
+            x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state ) 
         elif self.compress_method == 'std':
             # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='std') 
-            x_reconstructed, energy = self.std_filter_with_r(x , r=r, filter_strategy='std',threshold=threshold) 
+            x_reconstructed, energy = self.random_filter_with_r(x , filter_strategy='random') 
         elif self.compress_method == 'mean':
             # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='mean') 
-            x_reconstructed, energy = self.std_filter_with_r(x , r=r, filter_strategy='mean', threshold=threshold) 
+            x_reconstructed, energy = self.std_filter_with_r(x , filter_strategy='std', threshold=threshold) 
+        elif self.compress_method == 'direct':
+            x_reconstructed, energy = self.direct(x ,use_compressed_hidden_state) 
         else: 
             return x, x
 

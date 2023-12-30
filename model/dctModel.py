@@ -102,14 +102,14 @@ def get_lora_lavis_blip(config, model):
         index = 11 - i
         target_modules.extend([
             f'visual_encoder.blocks.{index}.attn.qkv',
-            f'visual_encoder.blocks.{index}.attn.proj',
-            f'visual_encoder.blocks.{index}.mlp.fc1', 
-            f'visual_encoder.blocks.{index}.mlp.fc2', 
+            # f'visual_encoder.blocks.{index}.attn.proj',
+            # f'visual_encoder.blocks.{index}.mlp.fc1', 
+            # f'visual_encoder.blocks.{index}.mlp.fc2', 
         ])
     for i in range(config.text_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            f'text_encoder.encoder.layer.{index}.attention.output.dense', 
+            # f'text_encoder.encoder.layer.{index}.attention.output.dense', 
             f'text_encoder.encoder.layer.{index}.attention.self.query', 
             f'text_encoder.encoder.layer.{index}.attention.self.value',
             f'text_encoder.encoder.layer.{index}.attention.self.key', 
@@ -119,7 +119,7 @@ def get_lora_lavis_blip(config, model):
         inference_mode=False, 
         r=32, 
         lora_alpha=32, 
-        lora_dropout=0.3, 
+        lora_dropout=0.2, 
         target_modules=target_modules
     )
     model = get_peft_model(model, peft_config) 
