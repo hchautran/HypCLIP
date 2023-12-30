@@ -212,9 +212,9 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
         attention_mask: torch.Tensor,
         pixel_values: torch.FloatTensor,
         image_id: torch.FloatTensor,
-        epoch: int,
-        iters: int,
-        num_iters_per_epoch:int,
+        epoch: int=None,
+        iters: int=None,
+        num_iters_per_epoch:int=None,
     ):
         idx = image_id
 
@@ -239,8 +239,8 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
 
         text_feat = self.postprocess_embeds(text_embeds)
         image_feat = self.postprocess_embeds(image_embeds)
-        self.manifold.assert_check_point_on_manifold(text_feat)
-        self.manifold.assert_check_point_on_manifold(image_feat)
+        # self.manifold.assert_check_point_on_manifold(text_feat)
+        # self.manifold.assert_check_point_on_manifold(image_feat)
         bsize = text_feat.shape[0]
 
         # Image-text Contrastive Learning
@@ -328,7 +328,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             "logits/max": sims.max().item(),
             "logits/acc": (sims.argmax(-1) == in_batch_target).float().mean().item(),
             "logits/saved_memory": image_output[4],
-            "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
+            # "logits/curvature": self.manifold.k.item() if self.config.manifold != EUCLID else 0.0 
         }
 
         self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)

@@ -80,30 +80,19 @@ class BaseModel(nn.Module):
         if self.manifold_name == EUCLID:
             x = F.normalize(x,p=2, dim=-1) 
             y = F.normalize(y,p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
-            return  eu_dis, eu_dis 
+            dis = torch.matmul(x, y.t()) 
+            return  dis
         elif self.manifold_name == POINCARE: 
-            hyp_dist = -self.manifold.dist_batch(x, y, device=device)
+            dis = -self.manifold.dist_batch(x, y, device=device)
             x = F.normalize(self.manifold.logmap0(x),p=2, dim=-1) 
             y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
-            return eu_dis, hyp_dist
+            return dis 
         else: 
-            hyp_dist = -self.manifold.dist_batch(x, y)
+            dis = -self.manifold.dist_batch(x, y)
             x = F.normalize(self.manifold.logmap0(x),p=2, dim=-1) 
             y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
-            return eu_dis, hyp_dist
+            return dis
     
-    def etailment_loss(self, text_feats:torch.Tensor, image_feats:torch.Tensor):
-        entailment_loss = torch.tensor(0.0) 
-        if isinstance(self.manifold, Lorentz):
-            angle = self.manifold.oxy_angle(image_feats, text_feats)
-            aperture = self.manifold.half_aperture(image_feats)
-            entailment_loss = torch.clamp(angle - aperture, min=0).mean()
-        
-        return entailment_loss
-        
 
 
 
@@ -144,10 +133,11 @@ class BaseModel(nn.Module):
         return loss_itm
 
 
-    def margin_loss(self, sims_i2t, sims_i2i):
+    def margin_loss(self, image_idx, sims_i2t, sims_i2i):
         bsize = sims_i2t.shape[0] 
         ones = torch.ones(bsize, bsize).to(self.device)
         pos_mask = torch.eye(bsize).to(self.device) 
+    
         neg_mask = torch.ne(ones, pos_mask).float().to(self.device)
         sign = ones.masked_fill_(torch.eq(ones, pos_mask), -1.0) 
         neg_margin = self.config.euclid_neg_margin * neg_mask 
@@ -160,42 +150,41 @@ class BaseModel(nn.Module):
         loss =  torch.mean(torch.sum(sims.pow(2),dim=-1), dim=0) 
         return loss
         
-    def itc_loss(self, image_embeds , text_embeds):
+    def itc_loss(self, image_idx ,image_embeds , text_embeds):
         bsize = text_embeds.shape[0]
-        eye_mask = torch.eye(bsize).to(self.device) * 1e9
         with torch.no_grad():
             self.logit_scale.clamp_(0.001, 0.5)
 
-        eu_sims_i2t, sims_i2t = self.dist_func(image_embeds, text_embeds) 
-        eu_sims_t2i, sims_t2i = eu_sims_i2t.T, sims_i2t.T
-        eu_sims_i2i, sims_i2i = self.dist_func(image_embeds, image_embeds) 
-        eu_sims_t2t, sims_t2t = self.dist_func(text_embeds, text_embeds) 
+        sims_i2t = self.dist_func(image_embeds, text_embeds) 
+        sims_t2i = sims_i2t.T
+        sims_i2i = self.dist_func(image_embeds, image_embeds) 
+        sims_t2t = self.dist_func(text_embeds, text_embeds) 
 
         target = torch.arange(bsize).to(self.device)
-        logits_i2t = torch.cat([sims_i2t / self.logit_scale, sims_t2t /self.logit_scale - eye_mask], dim=1)
-        logits_t2i = torch.cat([sims_t2i / self.logit_scale, sims_i2i /self.logit_scale - eye_mask], dim=1)
-        margin_loss = torch.tensor(0.0)
-        entailment_loss = torch.tensor(0.0)
-        if self.config.use_margin_loss:
-            margin_loss = 0.5 * (self.margin_loss(eu_sims_i2t, eu_sims_t2t - eye_mask) + self.margin_loss(eu_sims_t2i, eu_sims_i2i - eye_mask))
+        pos_idx = torch.eq(image_idx, image_idx).float().to(self.device)
+        sim_targets = pos_idx / pos_idx.sum(1, keepdim=True)
+        mask = sim_targets * 1e9
+
+        logits_i2t = torch.cat([sims_i2t / self.logit_scale, sims_t2t /self.logit_scale - mask], dim=1)
+        logits_t2i = torch.cat([sims_t2i / self.logit_scale, sims_i2i /self.logit_scale - mask], dim=1)
+        # loss_i2t = -torch.sum(
+        #     F.log_softmax(sims_i2t / self.logit_scale, dim=1) * sim_targets, dim=-1
+        # ).mean()
+        # loss_t2i = -torch.sum(
+        #     F.log_softmax(sims_t2i / self.logit_scale, dim=1) * sim_targets, dim=-1
+        # ).mean()   
         
         itc_loss =  self.weight_i2t * F.cross_entropy(logits_i2t, target) + (1 - self.weight_i2t) * F.cross_entropy(logits_t2i, target) 
         
-        loss = itc_loss + entailment_loss + margin_loss
         
         stats = {
-            "logits/weight_t2i": 1.0 - self.weight_i2t,
-            "logits/margin_loss": margin_loss.item(),
-            "logits/etailment_loss": entailment_loss.item(),
             "logits/itc_loss": itc_loss.item(),
             "logits/min": sims_i2t.min().item(),
             "logits/mean": sims_i2t.mean().item(),
             "logits/max": sims_i2t.max().item(),
             "logits/acc": (sims_i2t.argmax(-1) == target).float().mean().item(),
-            "logits/eu_acc": (eu_sims_i2t.argmax(-1) == target).float().mean().item(),
-            # "logits/curvature": self.manifold.k.item(),
         }
-        return loss, stats, sims_i2t
+        return itc_loss, stats, sims_i2t
 
     def forward(
         self,
@@ -218,10 +207,11 @@ class BaseModel(nn.Module):
         text_embeds = text_outputs[1]
         self.manifold.assert_check_point_on_manifold(image_embeds)
         self.manifold.assert_check_point_on_manifold(text_embeds)
-        itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
-        itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
-        stats["logits/itm_loss"] = itm_loss.item() 
-        loss = itm_loss + itc_loss 
+        itc_loss, stats, _ = self.itc_loss(image_embeds, text_embeds)
+        stats["logits/saved_memory"]: vision_outputs[4]
+        # itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
+        # stats["logits/itm_loss"] = itm_loss.item() 
+        loss = itc_loss 
         return loss, stats
 
     def get_text_features(
