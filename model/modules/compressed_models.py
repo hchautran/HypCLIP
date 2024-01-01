@@ -39,7 +39,7 @@ class CompressedModel(nn.Module):
                 x_filtered.append(x[:,i:,:])
         return torch.cat(x_filtered, dim=1), None
 
-    def std_filter_with_r(self, x, temp=None):        
+    def std_filter_with_r(self, x):        
         B, T, D = x.shape
         k = math.floor((T- T*self.r)/self.window_size)
         first_x = x[:,:(T%self.window_size),:]
@@ -214,7 +214,6 @@ class CompressedLAVISBLIP(CompressedModel):
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
         self.compress_layers = [i for i in range(1,len(self.vision_model.blocks))]
-        self.temp = nn.ParameterList([nn.Parameter(torch.tensor(0.5))]*len(self.vision_model.blocks))
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -237,7 +236,6 @@ class CompressedLAVISBLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     x[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
-                    temp=self.temp[i]
                 )
                 x = torch.cat([cls, state], dim=1)
 
@@ -277,7 +275,6 @@ class CompressedHFCLIP(CompressedModel):
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
         self.compress_layers = [15, 16, 18 ,19, 20] if len(self.vision_model.encoder.layers) > 12 else [6, 7, 8]
-        self.temp = nn.ModuleList([nn.Parameter(torch.tensor(0.5))]*len(self.vision_model.encoder.layers))
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         energy = []
