@@ -48,13 +48,14 @@ if __name__ == "__main__":
             trainer.train()
 
 
-        config.epochs = 1 
+        config.epochs = 3 
         config.enable_log = True
         config.use_margin_loss = False 
 
-        for distil in [False, True]:
+        for distil in [False]:
             config.distil = distil 
             # for compress_method in ['std','dct']:
-            for compress_method in ['dct', 'std', 'direct']:
+            # for compress_method in ['std', 'dct', 'random', 'direct','none']:
+            for compress_method in ['std', 'mean', 'random', 'dct']:
                 config.compress_method = compress_method
                 inner_training_loop(config.batch_size)

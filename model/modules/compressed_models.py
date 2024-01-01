@@ -13,7 +13,7 @@ from .dct import dct, idct
 
 
 class CompressedModel(nn.Module):
-    def __init__(self, compress_method='dct', r=0.9, window_size=12):
+    def __init__(self, compress_method='dct', r=0.95, window_size=4):
         super().__init__()
         self.r = r
         self.window_size=window_size
@@ -37,58 +37,50 @@ class CompressedModel(nn.Module):
                     x_filtered.append(torch.mean(cur_window, dim=1, keepdim=True))
             else:
                 x_filtered.append(x[:,i:,:])
-        return torch.cat(x_filtered, dim=1)
+        return torch.cat(x_filtered, dim=1), None
 
-    def std_filter_with_r(self, x):        
+    def std_filter_with_r(self, x, temp=None):        
         B, T, D = x.shape
         k = math.floor((T- T*self.r)/self.window_size)
         first_x = x[:,:(T%self.window_size),:]
         remain_x = x[:,(T%self.window_size):,:]
-        remain_x = remain_x.view(B, int(remain_x.shape[1]/self.window_size), - 1, D)
+        remain_x = remain_x.view(B, -1, self.window_size, D)
         std_array = remain_x.std(-1)
         max_std, _ = std_array.mean(0).max(-1) 
        
-        min_indices = torch.sort(torch.topk(max_std, k=k, dim=-1, largest=False)[1]).values
-        output = [first_x]
-        prev_i = -1
-        
-        for i in min_indices:
-            output.append(remain_x[:, prev_i + 1:i, :, :]. view(B, -1, D))
-            prev_i = i
-            min_window = remain_x[:, i, :, :]
-            # min_std_array = std_array[:, i, :]
-            # if filter_strategy == 'std':
-            #     min_std_array = min_std_array - min_std_array.min()
-            #     min_std_array = min_std_array/min_std_array.max()
-            #     min_window = (min_window.permute(0, 2, 1) @ min_std_array.unsqueeze(2)).permute(0,2,1)
-            # else:
-            min_window = torch.mean(min_window, dim=1, keepdim=True)
+        min_indices = torch.topk(max_std, k=k, dim=-1, largest=False)[1]
+        mask_to_keep = torch.ones_like(remain_x, dtype=torch.bool)
+        mask_to_keep[:,min_indices,:,:] = False
 
-            output.append(min_window)
-            torch.flops
+        filtered_tensor = remain_x[mask_to_keep]
+        if self.compress_method == 'std':
+            min_std_array = std_array[:,min_indices,:]
+            min_std_array = min_std_array - min_std_array.min(-1)[0].unsqueeze(2)
+            min_std_array = min_std_array/min_std_array.max(-1)[0].unsqueeze(2)
+            reduced_tensor = min_std_array.unsqueeze(3).permute(0,1,3,2) @ remain_x[:,min_indices,:,:]
+        else:
+            reduced_tensor = remain_x[:,min_indices,:,:].mean(dim=2)
+        output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor.view(B,-1,D)], dim=1)
+      
+        return output, None 
 
-        output.append(remain_x[:, prev_i+1:, :, :].view(B, -1, D))
-        return torch.cat(output, dim=1), None
-
-    def random_filter_with_r(self, x):        
+    def random_filter_with_r(self, x ):        
         B, T, D = x.shape
         k = math.floor((T- T*self.r)/self.window_size)
         first_x = x[:,:(T%self.window_size),:]
         remain_x = x[:,(T%self.window_size):,:]
-        remain_x = remain_x.view(B, int(remain_x.shape[1]/self.window_size), - 1, D)
-        indices = torch.sort(torch.randint(0, remain_x.shape[1], k))
-        output = [first_x]
-        prev_i = -1
-        
-        for i in indices:
-            output.append(remain_x[:, prev_i + 1:i, :, :]. view(B, -1, D))
-            prev_i = i
-            cur_window = remain_x[:, i, :, :]
-            cur_window = torch.mean(cur_window, dim=1, keepdim=True)
-            output.append(cur_window)
+        remain_x = remain_x.view(B, -1, self.window_size, D)
+       
+        min_indices = torch.randint(0, remain_x.shape[1], (1, k)).squeeze(0)
+        mask_to_keep = torch.ones_like(remain_x, dtype=torch.bool)
+        mask_to_keep[:,min_indices,:,:] = False
 
-        output.append(remain_x[:, prev_i+1:, :, :].view(B, -1, D))
-        return torch.cat(output, dim=1), None
+        filtered_tensor = remain_x[mask_to_keep]
+  
+        reduced_tensor = remain_x[:,min_indices,:,:].mean(dim=2)
+        output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor], dim=1)
+      
+        return output, None 
     
     
     def forward(
@@ -137,17 +129,15 @@ class CompressedModel(nn.Module):
     def get_text_features(self, input_ids, attention_mask):
         raise NotImplementedError("This method is not implemented yet")
     
-    def compress_hidden_state(self, x, use_compressed_hidden_state, threshold=0.7):
+    def compress_hidden_state(self, x, use_compressed_hidden_state):
         if self.compress_method == 'dct':
             x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state ) 
+        elif self.compress_method == 'random':
+            x_reconstructed, energy = self.random_filter_with_r(x ) 
         elif self.compress_method == 'std':
-            # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='std') 
-            x_reconstructed, energy = self.random_filter_with_r(x , filter_strategy='random') 
+            x_reconstructed, energy = self.std_filter_with_r(x) 
         elif self.compress_method == 'mean':
-            # x_reconstructed, energy = self.std_based_compress(x ,use_compressed_hidden_state, threshold=threshold, window_size=window_size, filter_strategy='mean') 
-            x_reconstructed, energy = self.std_filter_with_r(x , filter_strategy='std', threshold=threshold) 
-        elif self.compress_method == 'direct':
-            x_reconstructed, energy = self.direct(x ,use_compressed_hidden_state) 
+            x_reconstructed, energy = self.std_filter_with_r(x) 
         else: 
             return x, x
 
@@ -157,8 +147,8 @@ class CompressedModel(nn.Module):
 class CompressedHFBLIP(CompressedModel):
     config_class = BlipConfig
 
-    def __init__(self, model:AutoModel, compress_method='dct'):
-        super(CompressedHFBLIP, self).__init__(compress_method)
+    def __init__(self, model:AutoModel, compress_method='dct', r=0.9):
+        super(CompressedHFBLIP, self).__init__(compress_method, r=r)
         self.vision_model = model.vision_model
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
@@ -216,14 +206,15 @@ class CompressedHFBLIP(CompressedModel):
 
 class CompressedLAVISBLIP(CompressedModel):
 
-    def __init__(self, model:BlipRetrieval, compress_method='dct'):
-        super(CompressedLAVISBLIP, self).__init__(compress_method)
+    def __init__(self, model:BlipRetrieval, compress_method='dct',r=0.9):
+        super(CompressedLAVISBLIP, self).__init__(compress_method, r=r)
 
         self.vision_model = model.visual_encoder
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
         self.compress_layers = [i for i in range(1,len(self.vision_model.blocks))]
+        self.temp = nn.ParameterList([nn.Parameter(torch.tensor(0.5))]*len(self.vision_model.blocks))
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -246,6 +237,7 @@ class CompressedLAVISBLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     x[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
+                    temp=self.temp[i]
                 )
                 x = torch.cat([cls, state], dim=1)
 
@@ -277,14 +269,15 @@ class CompressedLAVISBLIP(CompressedModel):
 
 class CompressedHFCLIP(CompressedModel):
 
-    def __init__(self, model:AutoModel, compress_method='dct'):
-        super(CompressedHFCLIP, self).__init__(compress_method)
+    def __init__(self, model:AutoModel, compress_method='dct',r=0.9):
+        super(CompressedHFCLIP, self).__init__(compress_method, r=r)
 
         self.vision_model = model.vision_model
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
         self.compress_layers = [15, 16, 18 ,19, 20] if len(self.vision_model.encoder.layers) > 12 else [6, 7, 8]
+        self.temp = nn.ModuleList([nn.Parameter(torch.tensor(0.5))]*len(self.vision_model.encoder.layers))
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         energy = []
@@ -337,8 +330,8 @@ class CompressedHFCLIP(CompressedModel):
         
 class CompressedLAVISBLIP2(CompressedModel):
 
-    def __init__(self, model:Blip2Qformer, compress_method='dct'):
-        super(CompressedLAVISBLIP2, self).__init__(compress_method)
+    def __init__(self, model:Blip2Qformer, compress_method='dct',r=0.9):
+        super(CompressedLAVISBLIP2, self).__init__(compress_method,r=r)
 
         self.ln_vision = model.ln_vision
         self.visual_encoder = model.visual_encoder

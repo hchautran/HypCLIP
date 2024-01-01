@@ -128,9 +128,9 @@ config_args = {
         "max_txt_len": (35, "max_txt_len"),
         "negative_all_rank": (False, "negative_all_rank"),
         "alpha": (0.4, "alpha"),
-        "queue_size": (100*500, "queue size"),
-        "batch_size": (100, "batch size"),
-        "eval_freq": (1000, "how often to compute val metrics (in epochs)"),
+        "queue_size": (80*1000, "queue size"),
+        "batch_size": (80, "batch size"),
+        "eval_freq": (1200, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (False, "enable log"),
         "use_margin_loss": (True, "use margin loss"),
@@ -158,7 +158,7 @@ config_args = {
         "rtol": (1e-1, "The absolute tolerance parameter"),
         "temp": (0.07, "distance temperature"),
         "clip_radius": (1.25, "clipping radius"),
-        "vision_trainable_blocks": (3, "number of trainable blocks in vision model"),
+        "vision_trainable_blocks": (5, "number of trainable blocks in vision model"),
         "text_trainable_blocks": (12, "number of trainable blocks in text model"),
         "num_vision_hidden_states": (1, "number of trainable blocks in vision model"),
         "num_text_hidden_states": (1, "number of trainable blocks in text model"),
@@ -169,7 +169,8 @@ config_args = {
         "use_last_signal": (False, "fourier"),
         "use_signal_loss": (True, "fourier"),
         "compress_method": ('std', "compress method"),
-        "distil": (True, "use distil")
+        "distil": (True, "use distil"),
+        "r": (0.90, "use distil")
     },
     "data_config": {
         "dataset": (COCO, "which dataset to use"),

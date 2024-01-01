@@ -29,8 +29,6 @@ class BaseModel(nn.Module):
         self.clip_r = config.clip_radius
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.momentum = config.momentum
-        self.queue_size = config.queue_size
-        self.use_lorentz_centroid = config.use_lorentz_centroid
 
         manifold = config.manifold
     
@@ -68,13 +66,6 @@ class BaseModel(nn.Module):
             num_params = sum(p.numel() for p in self.parameters())
         return num_params
 
-    def eval(self):
-        self.vision_model.eval()
-        self.text_model.eval()
-
-    def train(self):
-        self.vision_model.train()
-        self.text_model.train()
         
     def dist_func(self, x, y, device='gpu'):
         if self.manifold_name == EUCLID:
@@ -160,6 +151,7 @@ class BaseModel(nn.Module):
         sims_i2i = self.dist_func(image_embeds, image_embeds) 
         sims_t2t = self.dist_func(text_embeds, text_embeds) 
 
+        image_idx = image_idx.view(-1, 1)
         target = torch.arange(bsize).to(self.device)
         pos_idx = torch.eq(image_idx, image_idx).float().to(self.device)
         sim_targets = pos_idx / pos_idx.sum(1, keepdim=True)
@@ -192,13 +184,16 @@ class BaseModel(nn.Module):
         pixel_values: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         image_id: Optional[torch.LongTensor] = None,
+        epoch: int=None,
+        iters: int=None,
+        num_iters_per_epoch:int=None,
     ) -> Union[Tuple, CLIPOutput]:
 
-        vision_outputs = self.vision_model(
+        vision_outputs = self.model(
             pixel_values=pixel_values,
         )
 
-        text_outputs = self.text_model(
+        text_outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
         )
@@ -207,7 +202,8 @@ class BaseModel(nn.Module):
         text_embeds = text_outputs[1]
         self.manifold.assert_check_point_on_manifold(image_embeds)
         self.manifold.assert_check_point_on_manifold(text_embeds)
-        itc_loss, stats, _ = self.itc_loss(image_embeds, text_embeds)
+        itc_loss, stats, _ = self.itc_loss(image_id, image_embeds, text_embeds)
+
         stats["logits/saved_memory"]: vision_outputs[4]
         # itm_loss = self.itm_loss(image_embeds, text_embeds, sims_i2t=sims_i2t)
         # stats["logits/itm_loss"] = itm_loss.item() 
@@ -220,16 +216,15 @@ class BaseModel(nn.Module):
         attention_mask: torch.Tensor,
         position_ids: Optional[torch.Tensor] = None,
     ):
-        text_outputs = self.text_model(
+        text_outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            position_ids=position_ids,
         )
         text_embeds = text_outputs[1]
         return text_embeds, text_outputs[0] 
 
     def get_vision_features(self, pixel_values:torch.Tensor):
-        vision_outputs = self.vision_model(
+        vision_outputs = self.model(
             pixel_values=pixel_values,
         )
         return vision_outputs[1], vision_outputs[0]  

@@ -6,6 +6,7 @@ from peft import get_peft_model, LoraConfig, TaskType
 from typing import  Optional, Tuple, Union
 from .modules.utils import freeze_blip
 from model.baseQueueModel import BaseModelWithQueue 
+from model.baseModel import BaseModel 
 from lavis.models import load_model_and_preprocess
 import math
 
@@ -102,14 +103,14 @@ def get_lora_lavis_blip(config, model):
         index = 11 - i
         target_modules.extend([
             f'visual_encoder.blocks.{index}.attn.qkv',
-            # f'visual_encoder.blocks.{index}.attn.proj',
-            # f'visual_encoder.blocks.{index}.mlp.fc1', 
-            # f'visual_encoder.blocks.{index}.mlp.fc2', 
+            f'visual_encoder.blocks.{index}.attn.proj',
+            f'visual_encoder.blocks.{index}.mlp.fc1', 
+            f'visual_encoder.blocks.{index}.mlp.fc2', 
         ])
     for i in range(config.text_trainable_blocks): 
         index = 11 - i
         target_modules.extend([
-            # f'text_encoder.encoder.layer.{index}.attention.output.dense', 
+            f'text_encoder.encoder.layer.{index}.attention.output.dense', 
             f'text_encoder.encoder.layer.{index}.attention.self.query', 
             f'text_encoder.encoder.layer.{index}.attention.self.value',
             f'text_encoder.encoder.layer.{index}.attention.self.key', 
@@ -132,10 +133,10 @@ class DCTHFWithQueue(BaseModelWithQueue):
         model = AutoModel.from_pretrained(config.model_ckt, cache_dir=config.cache_dir)
         if 'clip' in config.model_ckt:
             model = get_lora_clip(config, model=model) 
-            self.model = CompressedHFCLIP(model, compress_method=config.compress_method)
+            self.model = CompressedHFCLIP(model, compress_method=config.compress_method, r=config.r)
         else:
             model = get_lora_blip(config, model=model) 
-            self.model = CompressedHFBLIP(model, compress_method=config.compress_method)
+            self.model = CompressedHFBLIP(model, compress_method=config.compress_method, r=config.r)
 
         
         self._init_queue(config, model.config.projection_dim)
@@ -149,7 +150,7 @@ class DCTLAVISLIPWithQueue(BaseModelWithQueue):
     def __init__(self, config, model) -> None:
         super(DCTLAVISLIPWithQueue, self).__init__(config)
         model = get_lora_lavis_blip(config, model=model) 
-        self.model = CompressedLAVISBLIP(model, compress_method=config.compress_method)
+        self.model = CompressedLAVISBLIP(model, compress_method=config.compress_method, r=config.r)
         
         self._init_queue(config, 256)
     
@@ -162,7 +163,7 @@ class CompressedLAVISBLIP2WithQueue(BaseModelWithQueue):
     def __init__(self, config, model) -> None:
         super(CompressedLAVISBLIP2WithQueue, self).__init__(config)
         model = get_lora_lavis_blip(config, model=model) 
-        self.model = CompressedLAVISBLIP2(model, compress_method=config.compress_method)
+        self.model = CompressedLAVISBLIP2(model, compress_method=config.compress_method, r=config.r)
         
         self._init_queue(config, 256)
     
