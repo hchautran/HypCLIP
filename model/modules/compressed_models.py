@@ -213,8 +213,8 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        # self.compress_layers = [i for i in range(1,len(self.vision_model.blocks))]
-        self.compress_layers = [1,7]
+        self.compress_layers = [i for i in range(1,len(self.vision_model.blocks), 6)]
+        # self.compress_layers = [1,7]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -275,7 +275,7 @@ class CompressedHFCLIP(CompressedModel):
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
-        self.compress_layers = [1, 13, 20] if len(self.vision_model.encoder.layers) > 12 else [1, 7]
+        self.compress_layers = [1, 7, 13, 19] if len(self.vision_model.encoder.layers) > 12 else [1, 7]
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         energy = []
@@ -294,11 +294,11 @@ class CompressedHFCLIP(CompressedModel):
                 )
                 hidden_states = torch.cat([cls, state], dim=1)
                 # print(hidden_states.shape)
-                if return_all_hidden_state or i == len(self.vision_model.encoder.layers)-1:
-                    energy.append(cur_energy)
-                    all_hidden_states.append(hidden_states)
-                real_mem += hidden_states.shape[1]
-                total_mem += ori_size 
+            if return_all_hidden_state or i == len(self.vision_model.encoder.layers)-1:
+                energy.append(cur_energy)
+                all_hidden_states.append(hidden_states)
+            real_mem += hidden_states.shape[1]
+            total_mem += ori_size 
 
             hidden_states = layer(
                 hidden_states,
