@@ -13,66 +13,71 @@ from utils.data_utils import get_loaders
 if __name__ == "__main__":
     from config import parser
     from config import EUCLID, LORENTZ
-    from config import COCO_PATH, FLICKR_PATH, CLIP_LARGE_PATCH_14, CLIP_BASE_PATCH_16, BLIP_BASE_FLICKR 
+    from config import COCO_PATH, FLICKR_PATH, CLIP_LARGE_PATCH_14, CLIP_BASE_PATCH_16, BLIP_BASE_FLICKR, FLICKR, COCO
     config = parser.parse_args()
-    for model_ckt in [CLIP_LARGE_PATCH_14]:
-        config.model_ckt = model_ckt
-        if "blip" in config.model_ckt:
-            print("Getting BLIP processor...")
-            processor = BlipProcessor.from_pretrained(
-                config.model_ckt, cache_dir=config.cache_dir
-            )
-        else:
-            print("Getting CLIP processor...")
-            processor = CLIPProcessor.from_pretrained(
-                config.model_ckt, cache_dir=config.cache_dir
-            )
+    for dataset in [FLICKR, COCO]:
+        config.dataset = dataset
+        for model_ckt in [CLIP_LARGE_PATCH_14]:
+            config.model_ckt = model_ckt
+            if "blip" in config.model_ckt:
+                print("Getting BLIP processor...")
+                processor = BlipProcessor.from_pretrained(
+                    config.model_ckt, cache_dir=config.cache_dir
+                )
+            else:
+                print("Getting CLIP processor...")
+                processor = CLIPProcessor.from_pretrained(
+                    config.model_ckt, cache_dir=config.cache_dir
+                )
 
-        if "flickr" in config.dataset:
-            dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
-        else:
-            dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
+            if "flickr" in config.dataset:
+                dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
+            else:
+                dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
 
 
 
-        def inner_training_loop(batch_size):
-            config.batch_size = batch_size
-            train_loader, val_loader, test_loader = get_loaders(
-                config.batch_size, 
-                dataset,
-                vis_processor=processor,
-                txt_processor=None,
-                tokenizer=processor,
-            )
+            def inner_training_loop(batch_size):
+                config.batch_size = batch_size
 
-                # model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIPWithQueue(config)
-            model = DCTHFWithQueue(config) 
-            # model = BLIPWithQueue(config) 
-            trainer = LavisTrainer(
-                model=model,
-                config=config,
-                train_loader=train_loader,
-                val_loader=val_loader,
-                test_loader=test_loader,
-            )
-            # print(trainer.evaluate('test'))
-            # print(trainer.evaluate('val'))
-            trainer.train()
+                train_loader, val_loader, test_loader, test_img2txt, test_txt2img, _, _ = get_loaders(
+                    config.batch_size, 
+                    dataset,
+                    vis_processor=processor,
+                    txt_processor=None,
+                    tokenizer=processor,
+                )
 
-        config.epochs = 6 
-        config.enable_log = True 
-        config.use_margin_loss = False 
+                    # model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIPWithQueue(config)
+                queue_model = DCTHFWithQueue(config) 
+                # model = BLIPWithQueue(config) 
+                trainer = LavisTrainer(
+                    model=queue_model,
+                    config=config,
+                    train_loader=train_loader,
+                    val_loader=val_loader,
+                    test_loader=test_loader,
+                    txt2img=test_txt2img,
+                    img2txt=test_img2txt
+                )
+                # print(trainer.evaluate('test'))
+                # print(trainer.evaluate('val'))
+                trainer.train()
 
-        # for compress_method in ['mean', 'std', 'dct','none']:
-        for compress_method in ['mean']:
-            config.compress_method = compress_method
-            for distil in [False]:
-                config.distil = distil 
-                inner_training_loop(config.batch_size)
-            # for curv in [1.0, 2.0, 10.0]:
-        #     config.curv = curv
-        #     for margin_loss in [False]:
-        #         config.margin_loss = margin_loss 
-        #         for use_graph in [True, False]:
-        #             config.use_graph=use_graph
-        # inner_training_loop(config.batch_size)
+            config.epochs = 3 
+            config.enable_log = True 
+            config.use_margin_loss = False 
+
+            for compress_method in ['std', 'dct','mean', 'random', 'none']:
+            # for compress_method in ['mean']:
+                config.compress_method = compress_method
+                for distil in [False]:
+                    config.distil = distil 
+                    inner_training_loop(config.batch_size)
+                # for curv in [1.0, 2.0, 10.0]:
+            #     config.curv = curv
+            #     for margin_loss in [False]:
+            #         config.margin_loss = margin_loss 
+            #         for use_graph in [True, False]:
+            #             config.use_graph=use_graph
+            # inner_training_loop(config.batch_size)

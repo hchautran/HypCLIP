@@ -213,7 +213,8 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [i for i in range(1,len(self.vision_model.blocks))]
+        # self.compress_layers = [i for i in range(1,len(self.vision_model.blocks))]
+        self.compress_layers = [1,7]
 
    
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -274,7 +275,7 @@ class CompressedHFCLIP(CompressedModel):
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
-        self.compress_layers = [15, 16, 18 ,19, 20] if len(self.vision_model.encoder.layers) > 12 else [6, 7, 8]
+        self.compress_layers = [1, 13, 20] if len(self.vision_model.encoder.layers) > 12 else [1, 7]
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         energy = []
@@ -290,7 +291,6 @@ class CompressedHFCLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     hidden_states[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
-                    r=self.r
                 )
                 hidden_states = torch.cat([cls, state], dim=1)
                 # print(hidden_states.shape)
@@ -339,8 +339,8 @@ class CompressedLAVISBLIP2(CompressedModel):
         self.itm_head = model.itm_head
         # self.compress_layers = [20,22,24,26,28,30,32,34,36,38,40]
         
-        # self.compress_layers = [24,26,28,30,32,34,36,38,40,42,44,46]
-        self.compress_layers = [i for i in range(1,len(self.visual_encoder.blocks))]
+        self.compress_layers = [1, 20, 40]
+        # self.compress_layers = [i for i in range(1,len(self.visual_encoder.blocks))]
 
    
     def get_vision_features(self, pixel_values:torch.Tensor, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -349,7 +349,7 @@ class CompressedLAVISBLIP2(CompressedModel):
         total_mem=0
         real_mem=0
         with torch.no_grad():
-            x = self.visual_encoder.patch_embed(pixel_values)
+            x = self.visual_encoder.patch_embed(pixel_values.squeeze(0))
             batch_size, seq_len, _ = x.size()
 
             cls_tokens = self.visual_encoder.cls_token.expand(batch_size, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
@@ -372,7 +372,6 @@ class CompressedLAVISBLIP2(CompressedModel):
                     all_hidden_states.append(x)
                 real_mem += x.shape[1]
                 total_mem += ori_size 
-            # vit_embeds = self.visual_encoder(pixel_values)
             vit_embeds = self.ln_vision(x)
 
 
@@ -392,10 +391,12 @@ class CompressedLAVISBLIP2(CompressedModel):
         return vit_embeds, pooled_output, all_hidden_states, energy, real_mem/total_mem 
 
     def get_text_features(self, input_ids, attention_mask):
+        # print(input_ids.shape)
+        # print(attention_mask.shape)
         # with torch.no_grad():
         text_output = self.Qformer.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+            input_ids=input_ids.squeeze(),
+            attention_mask=attention_mask.squeeze(),
             return_dict=True,
         )
 

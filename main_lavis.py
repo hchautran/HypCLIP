@@ -11,7 +11,7 @@ if __name__ == "__main__":
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
     config = parser.parse_args()
-    for dataset in [COCO]:
+    for dataset in [FLICKR, COCO]:
         config.dataset = dataset
 
         # tokenizer = model.tokenizer
@@ -45,9 +45,9 @@ if __name__ == "__main__":
                 txt2img=test_txt2img,
                 img2txt=test_img2txt
             )
-            # print(trainer.evaluate(test_img2txt, test_txt2img, use_1k=False))
+            print(trainer.evaluate(use_1k=False))
             # print(trainer.evaluate('val'))
-            trainer.train()
+            # trainer.train()
 
 
         config.epochs = 3 

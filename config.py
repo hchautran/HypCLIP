@@ -63,7 +63,7 @@ BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-flickr"
 BLIP_LARGE_FLICKR = "Salesforce/blip-itm-large-coco"
 LAVIS_BLIP_BASE_FLICKR = "lavis-blip-itm-base-flickr"
 LAVIS_BLIP_BASE_COCO= "lavis-blip-itm-base-coco"
-FLICKR = "nlphuji/flickr30k"
+FLICKR = "flickr"
 COCO = "coco"
 
 CACHE_DIR = '/mnt/data/.cache'
@@ -128,9 +128,9 @@ config_args = {
         "max_txt_len": (35, "max_txt_len"),
         "negative_all_rank": (False, "negative_all_rank"),
         "alpha": (0.4, "alpha"),
-        "queue_size": (50*1000, "queue size"),
+        "queue_size": (50*1500, "queue size"),
         "batch_size": (50, "batch size"),
-        "eval_freq": (10, "how often to compute val metrics (in epochs)"),
+        "eval_freq": (1450, "how often to compute val metrics (in epochs)"),
         "weight_i2t": (0.5, "weight image to text"),
         "enable_log": (False, "enable log"),
         "use_margin_loss": (True, "use margin loss"),
@@ -170,7 +170,7 @@ config_args = {
         "use_signal_loss": (True, "fourier"),
         "compress_method": ('std', "compress method"),
         "distil": (True, "use distil"),
-        "r": (0.90, "remain ratio")
+        "r": (0.8, "remain ratio")
     },
     "data_config": {
         "dataset": (COCO, "which dataset to use"),

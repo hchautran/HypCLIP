@@ -15,7 +15,7 @@ def parse_int(sample):
     return sample
 
 class EvalDataset(Dataset):
-    def __init__(self, dataset, vis_processor, tokenizer, txt_processor=None):  
+    def __init__(self, dataset, vis_processor, tokenizer, txt_processor=None, use_tokenizer=False):  
         self.dataset = dataset
         self.txt_processor = txt_processor
         self.vis_processor = vis_processor 
@@ -24,11 +24,12 @@ class EvalDataset(Dataset):
         self.txt2img = dataset.txt2img
         self.text = dataset.text
         self.image = dataset.image
+        self.use_tokenizer = use_tokenizer
 
     def __len__(self):
         return len(self.dataset) 
     
-    def __getitem__(self, index): 
+    def __getitem__(self, index, use_tokenizer=False): 
         data =  self.dataset[index]
         cap_indexes = self.dataset.img2txt[index]
         captions = []
@@ -39,19 +40,19 @@ class EvalDataset(Dataset):
             else:
                 captions.append(self.text[i])
 
-        # if isinstance(self.tokenizer, CLIPProcessor) or isinstance(self.tokenizer, BlipProcessor):
-            # text_inputs = self.tokenizer(text=captions, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
-            # output['pixel_values'] = self.vis_processor(images=data['image'], return_tensors='pt')['pixel_values']
-        # else:
-            # text_inputs = self.tokenizer(captions, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
-            # output['pixel_values'] = self.vis_processor(data['image']).unsqueeze_(0)
-
-
+        if self.use_tokenizer:
+            if isinstance(self.tokenizer, CLIPProcessor) or isinstance(self.tokenizer, BlipProcessor):
+                text_inputs = self.tokenizer(text=captions, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+                output['pixel_values'] = self.vis_processor(images=data['image'], return_tensors='pt')['pixel_values']
+            else:
+                text_inputs = self.tokenizer(captions, max_length=35, truncation=True, padding=True ,return_tensors='pt') 
+                output['pixel_values'] = self.vis_processor(data['image']).unsqueeze_(0)
+            output['input_ids'] = text_inputs['input_ids']
+            output['attention_mask'] = text_inputs['attention_mask']
+        else:
+            output['text_input'] = captions
+            output['image'] = data['image']
         output['image_id'] = data['index']
-        output['text_input'] = captions
-        output['image'] = data['image']
-        # output['input_ids'] = text_inputs['input_ids']
-        # output['attention_mask'] = text_inputs['attention_mask']
         return output
 
 class FuseEvalDataset(Dataset):
@@ -208,6 +209,7 @@ def coco_eval_collate_func(batch, vis_processor, tokenizer):
     data['attention_mask'] = text_inputs['attention_mask']
 
     return data
+
 def get_dataloader(dataset,  vis_processor, tokenizer, txt_processor=None, mode='train', batch_size=1):
     def coco_collate_func(batch):
         df = pd.DataFrame(batch)
@@ -257,7 +259,7 @@ def get_dataloader(dataset,  vis_processor, tokenizer, txt_processor=None, mode=
             shuffle=False
         ), cur_dataset.img2txt, cur_dataset.txt2img 
 
-def get_loaders(batch_size, dataset, vis_processor, tokenizer, txt_processor=None):
+def get_loaders(batch_size, dataset, vis_processor, tokenizer, txt_processor=None, eval_batch_size = 20):
     train_loader  = get_dataloader(
         dataset=dataset,
         batch_size=batch_size,
@@ -266,22 +268,27 @@ def get_loaders(batch_size, dataset, vis_processor, tokenizer, txt_processor=Non
         tokenizer=tokenizer,
         mode='train',
     ) 
-    test_loader, test_img2txt, test_txt2img  = get_dataloader(
-        dataset=dataset,
-        batch_size=batch_size,
-        vis_processor=vis_processor,
-        txt_processor=txt_processor,
-        tokenizer=tokenizer,
-        mode='test',
-    ) 
-    val_loader, val_img2txt, val_txt2img  = get_dataloader(
-        dataset=dataset,
-        batch_size=batch_size,
-        vis_processor=vis_processor,
-        txt_processor=txt_processor,
-        tokenizer=tokenizer,
-        mode='val',
-    ) 
+    if eval_batch_size == 1:
+        test_loader = EvalDataset(dataset['test'], vis_processor=vis_processor,txt_processor=txt_processor, tokenizer=tokenizer, use_tokenizer=True)
+        val_loader = EvalDataset(dataset['val'], vis_processor=vis_processor,txt_processor=txt_processor, tokenizer=tokenizer, use_tokenizer=True)
+        return  train_loader, val_loader, test_loader, test_loader.img2txt, test_loader.txt2img, val_loader.img2txt, val_loader.txt2img
+    else:
+        test_loader, test_img2txt, test_txt2img  = get_dataloader(
+            dataset=dataset,
+            batch_size=eval_batch_size,
+            vis_processor=vis_processor,
+            txt_processor=txt_processor,
+            tokenizer=tokenizer,
+            mode='test',
+        ) 
+        val_loader, val_img2txt, val_txt2img  = get_dataloader(
+            dataset=dataset,
+            batch_size=eval_batch_size,
+            vis_processor=vis_processor,
+            txt_processor=txt_processor,
+            tokenizer=tokenizer,
+            mode='val',
+        ) 
     return train_loader, val_loader, test_loader, test_img2txt, test_txt2img, val_img2txt, val_txt2img
 
 

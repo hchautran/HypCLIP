@@ -31,6 +31,7 @@ if __name__ == "__main__":
                 vis_processor=vis_processors['eval'],
                 txt_processor=txt_processors['eval'],
                 tokenizer=model.tokenizer,
+                eval_batch_size=1
             )
             blip2_model = CompressedLAVISBLIP2WithQueue(config, model)
 
@@ -43,9 +44,9 @@ if __name__ == "__main__":
                 img2txt=test_img2txt,
                 txt2img=test_txt2img
             )
-            # print(trainer.evaluate(use_1k=False))
+            print(trainer.evaluate())
             # print(trainer.evaluate('val'))
-            trainer.train()
+            # trainer.train()
 
 
         config.epochs = 2 
@@ -55,6 +56,6 @@ if __name__ == "__main__":
         for distil in [False]:
             config.distil = distil 
             # for compress_method in ['std', 'none']:
-            for compress_method in ['std','dct', 'std','random','none']:
+            for compress_method in ['std','none', 'dct','mean','random']:
                 config.compress_method = compress_method
                 inner_training_loop(config.batch_size)
