@@ -28,10 +28,8 @@ class BaseModel(nn.Module):
         self.ft_out = config.ft_out
         self.clip_r = config.clip_radius
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.momentum = config.momentum
-        self.queue_size = config.queue_size
-        self.use_lorentz_centroid = config.use_lorentz_centroid
         self.mapper = None
+        self.temp = nn.Parameter(torch.tensor(config.temp))
 
         manifold = config.manifold
     
@@ -66,25 +64,7 @@ class BaseModel(nn.Module):
         return num_params
 
         
-    def dist_func(self, x, y, device='gpu'):
-        if self.manifold_name == EUCLID:
-            x = F.normalize(x,p=2, dim=-1) 
-            y = F.normalize(y,p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
-            return  eu_dis, eu_dis 
-        elif self.manifold_name == POINCARE: 
-            hyp_dist = -self.manifold.dist_batch(x, y, device=device)
-            x = F.normalize(self.manifold.logmap0(x),p=2, dim=-1) 
-            y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
-            return eu_dis, hyp_dist
-        else: 
-            hyp_dist = -self.manifold.dist_batch(x, y)
-            x = F.normalize(self.manifold.logmap0(x),p=2, dim=-1) 
-            y = F.normalize(self.manifold.logmap0(y),p=2, dim=-1) 
-            eu_dis = torch.matmul(x, y.t()) 
-            return eu_dis, hyp_dist
-    
+
     def itm_loss(self, input_ids, attention_mask, vit_embeds, sim_t2i, sim_i2t):
         text_input_ids_world = input_ids
         bs = input_ids.size(0)
@@ -123,7 +103,7 @@ class BaseModel(nn.Module):
             dim=0,
         )
 
-        query_tokens_itm = self.query_tokens.expand(text_ids_all.shape[0], -1, -1)
+        query_tokens_itm = self.model.query_tokens.expand(text_ids_all.shape[0], -1, -1)
         query_atts_itm = torch.ones(query_tokens_itm.size()[:-1], dtype=torch.long).to(
             vit_embeds.device
         )
@@ -161,11 +141,7 @@ class BaseModel(nn.Module):
         sim_q2t = torch.matmul(
             image_embeds.unsqueeze(1), text_embeds.unsqueeze(-1)
         ).squeeze()
-        # [batch_size, batch_size*num_gpu, num_query_tokens]
-
-        # image-text similarity: aggregate across all query tokens
         sim_i2t, _ = sim_q2t.max(-1)
-        sim_i2t = sim_i2t / self.temp
 
         # text-query similarity: [batch_size, batch_size, num_query_tokens]
         sim_t2q = torch.matmul(
@@ -174,14 +150,13 @@ class BaseModel(nn.Module):
 
         # text-image similarity: aggregate across all query tokens
         sim_t2i, _ = sim_t2q.max(-1)
-        sim_t2i = sim_t2i / self.temp  # [batch_size, batch_size*num_gpu]
 
         bs = image_embeds.size(0)
         targets = torch.arange(bs).to(self.device)
 
         itc_loss= (
-            F.cross_entropy(sim_i2t, targets, label_smoothing=0.1)
-            + F.cross_entropy(sim_t2i, targets, label_smoothing=0.1)
+            F.cross_entropy(sim_i2t/self.temp, targets, label_smoothing=0.1)
+            + F.cross_entropy(sim_t2i/ self.temp , targets, label_smoothing=0.1)
         ) / 2
         stats = {
             "logits/weight_t2i": 1.0 - self.weight_i2t,
@@ -190,62 +165,54 @@ class BaseModel(nn.Module):
             "logits/mean": sim_i2t.mean().item(),
             "logits/max": sim_i2t.max().item(),
             "logits/acc": (sim_i2t.argmax(-1) == targets).float().mean().item(),
-            "logits/curvature": self.manifold.k.item(),
         }
         return itc_loss, stats, sim_i2t
     
     def postprocess_embeds(self, embed):
-        if self.mapper is not None:
-            self.manifold.assert_check_point_on_manifold(embed)
-            return embed 
-        else:
-            return F.normalize(embed, p=2, dim=-1) 
+        return F.normalize(embed, p=2, dim=-1) 
 
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
         pixel_values: Optional[torch.FloatTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
+        image_id: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CLIPOutput]:
 
-        vit_outputs, vision_outputs = self.model(
+        vision_outputs = self.model(
             pixel_values=pixel_values,
         )
 
-        _, text_outputs = self.model(
+        text_outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            position_ids=position_ids,
         )
 
-        image_embeds = vision_outputs
-        text_embeds = text_outputs
-        self.postprocess_embeds(image_embeds)
-        self.postprocess_embeds(text_embeds)
+        image_embeds = vision_outputs[1]
+        text_embeds = text_outputs[1]
+        image_embeds = F.normalize(image_embeds,p=2, dim=-1) 
+        text_embeds = F.normalize(text_embeds,p=2, dim=-1) 
         itc_loss, stats, sims_i2t = self.itc_loss(image_embeds, text_embeds)
-        itm_loss = self.itm_loss(input_ids=input_ids, attention_mask=attention_mask, vit_embeds=vit_outputs, sims_i2t=sims_i2t, sim_t2i=sims_i2t.T)
-        stats["logits/itm_loss"] = itm_loss.item() 
-        loss = itm_loss + itc_loss 
-        return loss, stats
+        # itm_loss = self.itm_loss(input_ids=input_ids, attention_mask=attention_mask, vit_embeds=vision_outputs[0], sim_i2t=sims_i2t, sim_t2i=sims_i2t.T)
+        # stats["logits/itm_loss"] = itm_loss.item() 
+        # loss = itm_loss + itc_loss 
+        return itc_loss, stats
 
     def get_text_features(
         self,
         input_ids: torch.Tensor, 
         attention_mask: torch.Tensor,
     ):
-        _, text_outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+        text_output = self.model(
+           input_ids=input_ids, 
+           attention_mask=attention_mask, 
         )
-        text_embeds = self.postprocess_embeds(text_outputs)
-        return text_embeds
+        text_feat = self.postprocess_embeds(text_output[1])
+        return text_feat, text_output[0]
 
     def get_vision_features(self, pixel_values:torch.Tensor):
-        vit_outputs, vision_outputs = self.model(
-            pixel_values=pixel_values,
-        )
-        vision_embeds = self.postprocess_embeds(vision_outputs)
-        return vit_outputs ,vision_embeds
-
+        image_output = self.model(pixel_values=pixel_values)
+        image_feat = self.postprocess_embeds(image_output[1])
+        return image_feat, image_output[0]
+    
 

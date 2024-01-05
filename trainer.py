@@ -20,7 +20,7 @@ names = {
 
 class MyTrainer:
     def __init__(
-        self, config, model, train_loader, val_loader, test_loader
+        self, config, model, train_loader, val_loader, test_loader, img2txt, txt2img
     ):
         self.config = config
         self.model_ckt = config.model_ckt
@@ -33,6 +33,8 @@ class MyTrainer:
         self.epochs = config.epochs
         self.cache_dir = config.cache_dir
         self.momentum = config.momentum
+        self.img2txt = img2txt
+        self.txt2img = txt2img 
         self.device = torch.device(
             f"cuda:{config.cuda}"
             if (torch.cuda.is_available() and config.cuda >= 0)
@@ -210,14 +212,14 @@ class MyTrainer:
         return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()
             
 
-    def evaluate(self, mode='val'):
+    def evaluate(self, mode='val',use_1k=False):
         from torch.utils.data import DataLoader
         dataset = self.val_loader if mode == "val" else self.test_loader
-        texts = dataset.text
-        image = dataset.image
-        n_texts, n_images = len(texts), len(image)
+        # texts = dataset.text
+        # image = dataset.image
+        # n_texts, n_images = len(texts), len(image)
 
-        loader = self.accelerator.prepare(DataLoader(dataset, batch_size=1, shuffle=False))
+        loader = self.accelerator.prepare(dataset)
         text_ids = []
         text_embeds = []
         text_atts = []
@@ -225,14 +227,16 @@ class MyTrainer:
         image_embeds = []
         max_len=35
         memory_used = 0
+        step = 0
 
         with torch.no_grad():
             for data in tqdm(loader):
+                if use_1k and step == 1000: break 
                 text_feat, _ = self.model.get_text_features(
-                    input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
+                    input_ids=data["input_ids"], attention_mask=data["attention_mask"]
                 )
                 image_feat, _, eval_memory  = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0], use_compressed_hidden_state=True
+                    pixel_values=data["pixel_values"], use_compressed_hidden_state=True
                 )
                 # cur_len = data['input_ids'].shape[-1]
                 # input_ids = F.pad(data['input_ids'][0], (0, max_len - cur_len), "constant", 0)
@@ -245,6 +249,7 @@ class MyTrainer:
                 image_embeds.append(image_feat.cpu())
                 text_embeds.append(text_feat.cpu())
                 memory_used += eval_memory
+                step +=1
 
 
         text_embeds = torch.cat(text_embeds, dim=0)
@@ -261,7 +266,13 @@ class MyTrainer:
             sim_i2t, _ = sim_q2t.max(0)
             sims_matrix.append(sim_i2t)
         sims_matrix = torch.stack(sims_matrix, dim=0)
-        itc_metrics = report_metrics(scores_t2i=sims_matrix.cpu().detach().T, scores_i2t=sims_matrix.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
+        itc_metrics = report_metrics(
+            scores_t2i=sims_matrix.cpu().detach().T, 
+            scores_i2t=sims_matrix.cpu().detach(), 
+            img2txt=self.img2txt, 
+            txt2img=self.txt2img, 
+            mode=mode 
+            )
         print(itc_metrics)
 
 

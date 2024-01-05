@@ -22,7 +22,7 @@ names = {
 
 class MyTrainer:
     def __init__(
-        self, config, model, train_loader, val_loader, test_loader
+        self, config, model, train_loader, val_loader, test_loader, img2txt, txt2img
     ):
         self.config = config
         self.model_ckt = config.model_ckt
@@ -35,6 +35,8 @@ class MyTrainer:
         self.epochs = config.epochs
         self.cache_dir = config.cache_dir
         self.momentum = config.momentum
+        self.img2txt= img2txt
+        self.txt2img = txt2img 
         self.device = torch.device(
             f"cuda:{config.cuda}"
             if (torch.cuda.is_available() and config.cuda >= 0)
@@ -181,52 +183,46 @@ class MyTrainer:
         return score_matrix_i2t.cpu(), score_matrix_t2i.cpu()
             
 
-    def evaluate(self, mode="val", apply_fourier=False):
-        from torch.utils.data import DataLoader
+    def evaluate(self, mode="test" ,use_1k=False):
         print("Evaluating current epoch", self.current_epoch)
         
         self.model.eval()
 
         dataset = self.val_loader if mode == "val" else self.test_loader
-        texts = dataset.text
-        image = dataset.image
 
         all_text_embeds = []
         all_vision_embeds = []
-        all_vision_embeds_w_fourier = []
         memory_used = 0
+        step = 0
 
-        loader = self.accelerator.prepare(DataLoader(dataset, batch_size=1, shuffle=False))
+        loader = self.accelerator.prepare(dataset)
         with torch.no_grad():
             for data in tqdm(loader):
+                if use_1k and step == 1000: break 
                 text_embeds, _ = self.model.get_text_features(
-                    input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
+                    input_ids=data["input_ids"], attention_mask=data["attention_mask"]
                 )
-                vision_embeds_w_fourier, _, eval_memory = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"][0], use_compressed_hidden_state=True
+                vision_embeds, _, eval_memory = self.model.get_vision_features(
+                    pixel_values=data["pixel_values"], use_compressed_hidden_state=True
                 )
-                # vision_embeds, _, _ = self.model.get_vision_features(
-                #     pixel_values=data["pixel_values"][0],  use_compressed_hidden_state=False
-                # )
                 all_text_embeds.append(text_embeds.cpu())
-                all_vision_embeds_w_fourier.append(vision_embeds_w_fourier.cpu())
-                # all_vision_embeds.append(vision_embeds.cpu())
+                all_vision_embeds.append(vision_embeds.cpu())
                 memory_used += eval_memory
+                step +=1
            
 
             all_text_embeds = torch.concat(all_text_embeds, 0)
-            # all_vision_embeds = torch.concat(all_vision_embeds, 0)
-            all_vision_embeds_w_fourier = torch.concat(all_vision_embeds_w_fourier, 0)
+            all_vision_embeds = torch.concat(all_vision_embeds, 0)
 
-
-            # sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
-            sims_t2i_w_fourer = self.model.dist_func(all_text_embeds, all_vision_embeds_w_fourier)
-            # metrics = report_metrics(scores_t2i=sims_t2i.cpu().detach(), scores_i2t=sims_t2i.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=mode )
-            metrics = report_metrics(scores_t2i=sims_t2i_w_fourer.cpu().detach(), scores_i2t=sims_t2i_w_fourer.T.cpu().detach(), img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'compressed_{mode}')
-            # metrics.update(fourier_metrics)
-            # print(metrics)
+            sims_t2i = self.model.dist_func(all_text_embeds, all_vision_embeds)
+            metrics = report_metrics(
+                scores_t2i=sims_t2i.cpu().detach(), 
+                scores_i2t=sims_t2i.T.cpu().detach(), 
+                img2txt=self.img2txt, 
+                txt2img=self.txt2img, 
+                mode=f'compressed_{mode}'
+            )
             metrics["eval memory"] = memory_used/len(loader)
-            # metrics["epoch"] = self.current_epoch
 
   
           

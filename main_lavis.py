@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
         def inner_training_loop(batch_size):
             config.batch_size = batch_size
-            train_loader, val_loader, test_loader = get_loaders(
+            train_loader, val_loader, test_loader, test_img2txt, test_txt2img, _, _ = get_loaders(
                 config.batch_size, 
                 dataset,
                 vis_processor=vis_processors['eval'],
@@ -42,20 +42,22 @@ if __name__ == "__main__":
                 train_loader=train_loader,
                 val_loader=val_loader,
                 test_loader=test_loader,
+                txt2img=test_txt2img,
+                img2txt=test_img2txt
             )
-            # print(trainer.evaluate('test'))
+            # print(trainer.evaluate(test_img2txt, test_txt2img, use_1k=False))
             # print(trainer.evaluate('val'))
             trainer.train()
 
 
         config.epochs = 3 
-        config.enable_log = True
+        config.enable_log = False
         config.use_margin_loss = False 
 
         for distil in [False]:
             config.distil = distil 
             # for compress_method in ['std','dct']:
             # for compress_method in ['std', 'dct', 'random', 'direct','none']:
-            for compress_method in ['std', 'mean', 'random', 'dct']:
+            for compress_method in ['std', 'dct', 'none','mean', 'random']:
                 config.compress_method = compress_method
                 inner_training_loop(config.batch_size)
