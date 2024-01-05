@@ -46,6 +46,7 @@ if __name__ == "__main__":
                     vis_processor=processor,
                     txt_processor=None,
                     tokenizer=processor,
+                    eval_batch_size=20
                 )
 
                     # model = HypGraphCLIPWithQueue(config) if "clip" in config.model_ckt else HypGraphBLIPWithQueue(config)
@@ -60,15 +61,21 @@ if __name__ == "__main__":
                     txt2img=test_txt2img,
                     img2txt=test_img2txt
                 )
-                # print(trainer.evaluate('test'))
+                print(trainer.evaluate('test'))
                 # print(trainer.evaluate('val'))
-                trainer.train()
+                # trainer.train()
 
-            config.epochs = 5 
+            config.epochs = 3 
             config.enable_log = True 
             config.use_margin_loss = False 
 
-            for compress_method in ['std', 'dct','mean', 'random', 'none']:
+            for compress_method in [
+                'std-weighted-merge', 
+                'bipartite-soft-matching',
+                'std-mean-merge', 
+                'random-mean-merge',
+                'dct', 
+            ]:
             # for compress_method in ['mean']:
                 config.compress_method = compress_method
                 for distil in [False]:

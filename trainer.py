@@ -271,20 +271,20 @@ class MyTrainer:
         print(itc_metrics)
 
 
-        score_matrix_i2t, score_matrix_t2i = self.rerank(
-            sims_matrix=sims_matrix, 
-            vit_feats=vit_feats, 
-            text_ids=text_ids, 
-            text_atts=text_atts, 
-            num_images=n_images,
-            num_texts=n_texts
-        )
-        itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
-        print(itm_metrics)
+        # score_matrix_i2t, score_matrix_t2i = self.rerank(
+        #     sims_matrix=sims_matrix, 
+        #     vit_feats=vit_feats, 
+        #     text_ids=text_ids, 
+        #     text_atts=text_atts, 
+        #     num_images=n_images,
+        #     num_texts=n_texts
+        # )
+        # itm_metrics = report_metrics(scores_t2i=score_matrix_t2i, scores_i2t=score_matrix_i2t, img2txt=dataset.img2txt, txt2img=dataset.txt2img, mode=f'{mode}_itm')
+        # print(itm_metrics)
 
         itc_metrics["epoch"] = self.current_epoch
         itc_metrics["eval memory"] = memory_used/len(loader)
-        itm_metrics["epoch"] = self.current_epoch
+        # itm_metrics["epoch"] = self.current_epoch
         
         # return itc_metrics, itm_metrics
         return itc_metrics

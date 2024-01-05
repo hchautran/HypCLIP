@@ -184,31 +184,41 @@ class MyTrainer:
             
 
     def evaluate(self, mode="test" ,use_1k=False):
+        from torch.utils.data import DataLoader
         print("Evaluating current epoch", self.current_epoch)
         
         self.model.eval()
 
         dataset = self.val_loader if mode == "val" else self.test_loader
+        if not isinstance(dataset, DataLoader):
+            loader = self.accelerator.prepare(DataLoader(dataset, shuffle=False))
+        else:
+            loader = self.accelerator.prepare(dataset)
 
         all_text_embeds = []
         all_vision_embeds = []
         memory_used = 0
         step = 0
 
-        loader = self.accelerator.prepare(dataset)
         with torch.no_grad():
             for data in tqdm(loader):
-                if use_1k and step == 1000: break 
-                text_embeds, _ = self.model.get_text_features(
-                    input_ids=data["input_ids"], attention_mask=data["attention_mask"]
-                )
-                vision_embeds, _, eval_memory = self.model.get_vision_features(
-                    pixel_values=data["pixel_values"], use_compressed_hidden_state=True
-                )
+                if isinstance(dataset, DataLoader): 
+                    text_embeds, _ = self.model.get_text_features(
+                        input_ids=data["input_ids"], attention_mask=data["attention_mask"]
+                    )
+                    vision_embeds, _, eval_memory = self.model.get_vision_features(
+                        pixel_values=data["pixel_values"], use_compressed_hidden_state=True
+                    )
+                else:
+                    text_embeds, _ = self.model.get_text_features(
+                        input_ids=data["input_ids"][0], attention_mask=data["attention_mask"][0]
+                    )
+                    vision_embeds, _, eval_memory = self.model.get_vision_features(
+                        pixel_values=data["pixel_values"][0], use_compressed_hidden_state=True
+                    )
                 all_text_embeds.append(text_embeds.cpu())
                 all_vision_embeds.append(vision_embeds.cpu())
                 memory_used += eval_memory
-                step +=1
            
 
             all_text_embeds = torch.concat(all_text_embeds, 0)

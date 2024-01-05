@@ -20,49 +20,116 @@ class CompressedModel(nn.Module):
         self.compress_method = compress_method
     
 
-    def std_filter(self, x, percentile_threshold, filter_strategy='std'):
-        percentile_threshold = percentile_threshold
-        std_array = x.mean(0).std(1)
-        threshold = torch.quantile(std_array, percentile_threshold, dim=-1, keepdim=True)
-        x_filtered = []
-        for i in range(0,std_array.shape[0], self.window_size):
-            if i + self.window_size <= std_array.shape[0]:
-                cur_window = x[:, i:i+self.window_size, :].clone()
-                cur_std_array = std_array[i: i+ self.window_size].clone()
-                if cur_std_array.max() > threshold:
-                    x_filtered.append(cur_window)
-                elif filter_strategy == 'std':
-                    x_filtered.append((cur_window.permute(0, 2, 1) @ cur_std_array.expand(x.shape[0], -1).unsqueeze(2)).permute(0,2,1))
-                elif filter_strategy == 'mean':
-                    x_filtered.append(torch.mean(cur_window, dim=1, keepdim=True))
-            else:
-                x_filtered.append(x[:,i:,:])
-        return torch.cat(x_filtered, dim=1), None
-
-    def std_filter_with_r(self, x):        
-        B, T, D = x.shape
-        k = math.floor((T- T*self.r)/self.window_size)
-        first_x = x[:,:(T%self.window_size),:]
-        remain_x = x[:,(T%self.window_size):,:]
-        remain_x = remain_x.view(B, -1, self.window_size, D)
-        std_array = remain_x.std(-1)
-        max_std, _ = std_array.mean(0).max(-1) 
+    # def std_filter_with_r(self, x):        
+    #     B, T, D = x.shape
+    #     with torch.no_grad():
+    #         k = math.floor((T- T*self.r)/self.window_size)
+    #         first_x = x[:,:(T%self.window_size),:]
+    #         remain_x = x[:,(T%self.window_size):,:]
+    #         remain_x = remain_x.view(B, -1, self.window_size, D)
+    #         std_array = remain_x.std(-1)
+    #         max_std = std_array.mean(0).max(-1)[0] 
        
-        min_indices = torch.topk(max_std, k=k, dim=-1, largest=False)[1]
-        mask_to_keep = torch.ones_like(remain_x, dtype=torch.bool)
-        mask_to_keep[:,min_indices,:,:] = False
+    #         min_indices = torch.topk(max_std, k=k, dim=-1, largest=False)[1]
+    #         mask_to_keep = torch.ones_like(remain_x, dtype=torch.bool)
+    #         mask_to_keep[:,min_indices,:,:] = False
 
-        filtered_tensor = remain_x[mask_to_keep]
-        if self.compress_method == 'std':
-            min_std_array = std_array[:,min_indices,:]
-            min_std_array = min_std_array - min_std_array.min(-1)[0].unsqueeze(2)
-            min_std_array = min_std_array/min_std_array.max(-1)[0].unsqueeze(2)
-            reduced_tensor = min_std_array.unsqueeze(3).permute(0,1,3,2) @ remain_x[:,min_indices,:,:]
-        else:
-            reduced_tensor = remain_x[:,min_indices,:,:].mean(dim=2)
-        output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor.view(B,-1,D)], dim=1)
+    #         filtered_tensor = remain_x[mask_to_keep]
+    #         if 'weighted' in self.compress_method:
+    #             std_array = std_array - std_array.min(-1)[0].unsqueeze(2)
+    #             std_array = std_array/std_array.max(-1)[0].unsqueeze(2)
+    #             min_std_array = std_array[:,min_indices,:]
+    #             reduced_tensor = min_std_array.unsqueeze(3).permute(0,1,3,2) @ remain_x[:,min_indices,:,:]
+    #         else:
+    #             reduced_tensor = remain_x[:,min_indices,:,:].mean(dim=2)
+    #         output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor.view(B,-1,D)], dim=1)
+      
+    #     return output, None 
+    
+    def std_filter_with_r(self, x:torch.tensor, use_mean=False):        
+        B, T, D = x.shape
+        with torch.no_grad():
+            k = math.floor(T- T*self.r)
+            std_array = x.std(-1)
+       
+            min_std_array , min_indices = torch.topk(std_array, k=k, dim=-1, largest=False)
+            mask_to_keep = torch.ones_like(x, dtype=torch.bool)
+            mask_to_keep[torch.arange(x.size(0)).unsqueeze(1), min_indices, :] = False
+            filtered_tensor = torch.masked_select(x, mask_to_keep).view(x.size(0), -1, x.size(2))
+            if not use_mean:
+                min_std_array = min_std_array - min_std_array.min(-1)[0].unsqueeze(1)
+                min_std_array = min_std_array/min_std_array.max(-1)[0].unsqueeze(1)
+                reduced_tensor = min_std_array.unsqueeze(2).permute(0,2,1) @ x[torch.arange(x.size(0)).unsqueeze(1), min_indices, :]
+            else:
+                reduced_tensor = x[torch.arange(x.size(0)).unsqueeze(1), min_indices, :].mean(dim=1, keepdim=True)
+            output = torch.cat([filtered_tensor, reduced_tensor], dim=1)
       
         return output, None 
+
+    def bipartite_soft_matching(
+        self,
+        x: torch.Tensor,
+        r: int=None,
+    ):
+        T = x.shape[1]
+
+        protected = 0
+        if r is None:
+            r = math.floor(T- T*self.r)
+            # print(r)
+    
+        # We can only reduce by a maximum of 50% tokens
+        r = min(r, (T - protected) // 2)
+
+        if r <= 0:
+            return x, x
+
+        with torch.no_grad():
+            x = F.normalize(x, p=2, dim=-1) 
+            a, b = x[..., ::2, :], x[..., 1::2, :]
+            scores = a @ b.transpose(-1, -2)
+
+       
+
+            node_max, node_idx = scores.max(dim=-1)
+            edge_idx = node_max.argsort(dim=-1, descending=True)[..., None]
+            # print(node_max)
+
+            unm_idx = edge_idx[..., r:, :]  # Unmerged Tokens
+            src_idx = edge_idx[..., :r, :]  # Merged Tokens
+            dst_idx = node_idx[..., None].gather(dim=-2, index=src_idx)
+
+
+        def merge(x: torch.Tensor, mode="mean") -> torch.Tensor:
+            src, dst = x[..., ::2, :], x[..., 1::2, :]
+            n, t1, c = src.shape
+            unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
+            src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
+            dst = dst.scatter_reduce(-2, dst_idx.expand(n, r, c), src, reduce=mode)
+
+            return torch.cat([unm, dst], dim=1)
+
+       
+
+        return merge
+
+
+    def merge_wavg(
+        self, merge, x: torch.Tensor, size: torch.Tensor = None
+    ): 
+        """
+        Applies the merge function by taking a weighted average based on token size.
+        Returns the merged tensor and the new token sizes.
+        """
+        if size is None:
+            size = torch.ones_like(x[..., 0, None])
+
+        x = merge(x * size, mode="sum")
+        size = merge(size, mode="sum")
+
+        x = x / size
+        return x, None 
+            
 
     def random_filter_with_r(self, x ):        
         B, T, D = x.shape
@@ -74,9 +141,7 @@ class CompressedModel(nn.Module):
         min_indices = torch.randint(0, remain_x.shape[1], (1, k)).squeeze(0)
         mask_to_keep = torch.ones_like(remain_x, dtype=torch.bool)
         mask_to_keep[:,min_indices,:,:] = False
-
         filtered_tensor = remain_x[mask_to_keep]
-  
         reduced_tensor = remain_x[:,min_indices,:,:].mean(dim=2)
         output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor], dim=1)
       
@@ -110,7 +175,6 @@ class CompressedModel(nn.Module):
    
         return x.permute(1,0,2), x_dct.permute(1,0,2)
 
-
     def direct(self, x, use_reconstucted_state = False):
         k = math.ceil(0.90 * x.shape[1])
         if use_reconstucted_state:
@@ -122,22 +186,24 @@ class CompressedModel(nn.Module):
             x = self.std_filter(x, threshold, filter_strategy=filter_strategy) 
         return x, x
    
-
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         raise NotImplementedError("This method is not implemented yet")
 
     def get_text_features(self, input_ids, attention_mask):
         raise NotImplementedError("This method is not implemented yet")
     
-    def compress_hidden_state(self, x, use_compressed_hidden_state):
+    def compress_hidden_state(self, x, use_compressed_hidden_state, use_mean):
         if self.compress_method == 'dct':
             x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state ) 
-        elif self.compress_method == 'random':
-            x_reconstructed, energy = self.random_filter_with_r(x ) 
-        elif self.compress_method == 'std':
-            x_reconstructed, energy = self.std_filter_with_r(x) 
-        elif self.compress_method == 'mean':
-            x_reconstructed, energy = self.std_filter_with_r(x) 
+        elif self.compress_method == 'random-mean-merge':
+            x_reconstructed, energy = self.random_filter_with_r(x) 
+        elif self.compress_method == 'std-weighted-merge':
+            x_reconstructed, energy = self.std_filter_with_r(x, use_mean=use_mean) 
+        elif self.compress_method == 'std-mean-merge':
+            x_reconstructed, energy = self.std_filter_with_r(x, use_mean=True) 
+        elif self.compress_method == 'bipartite-soft-matching':
+            merge = self.bipartite_soft_matching(x, None) 
+            x_reconstructed, energy = self.merge_wavg(merge, x) 
         else: 
             return x, x
 
@@ -171,7 +237,7 @@ class CompressedHFBLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     hidden_states[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
-                    r=0.9
+                    use_mean=i < len(self.compress_layers)/2
                 )
                 hidden_states = torch.cat([cls, state], dim=1)
                 if return_all_hidden_state or i == len(self.vision_model.encoder.layers)-1:
@@ -213,7 +279,7 @@ class CompressedLAVISBLIP(CompressedModel):
         self.text_model = model.text_encoder 
         self.vision_proj = model.vision_proj 
         self.text_proj = model.text_proj 
-        self.compress_layers = [i for i in range(1,len(self.vision_model.blocks), 6)]
+        self.compress_layers = [i for i in range(1,len(self.vision_model.blocks))]
         # self.compress_layers = [1,7]
 
    
@@ -237,6 +303,7 @@ class CompressedLAVISBLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     x[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
+                    use_mean=i < len(self.compress_layers)/2
                 )
                 x = torch.cat([cls, state], dim=1)
 
@@ -275,7 +342,8 @@ class CompressedHFCLIP(CompressedModel):
         self.text_model = model.text_model 
         self.vision_proj = model.visual_projection 
         self.text_proj = model.text_projection 
-        self.compress_layers = [1, 7, 13, 19] if len(self.vision_model.encoder.layers) > 12 else [1, 7]
+        # self.compress_layers = [1, 7, 13, 19] if len(self.vision_model.encoder.layers) > 12 else [1, 7]
+        self.compress_layers = [i for i in range(1,len(self.vision_model.encoder.layers))]
 
     def get_vision_features(self, pixel_values, use_compressed_hidden_state=True, return_all_hidden_state=False):
         energy = []
@@ -291,6 +359,7 @@ class CompressedHFCLIP(CompressedModel):
                 state, cur_energy = self.compress_hidden_state(
                     hidden_states[:, 1:, :], 
                     use_compressed_hidden_state=use_compressed_hidden_state,
+                    use_mean=i < len(self.compress_layers)/2
                 )
                 hidden_states = torch.cat([cls, state], dim=1)
                 # print(hidden_states.shape)
@@ -339,8 +408,7 @@ class CompressedLAVISBLIP2(CompressedModel):
         self.itm_head = model.itm_head
         # self.compress_layers = [20,22,24,26,28,30,32,34,36,38,40]
         
-        self.compress_layers = [1, 20, 40]
-        # self.compress_layers = [i for i in range(1,len(self.visual_encoder.blocks))]
+        self.compress_layers = [i for i in range(1,len(self.visual_encoder.blocks))]
 
    
     def get_vision_features(self, pixel_values:torch.Tensor, use_compressed_hidden_state=True, return_all_hidden_state=False):
@@ -365,6 +433,7 @@ class CompressedLAVISBLIP2(CompressedModel):
                     x, cur_energy = self.compress_hidden_state(
                         x, 
                         use_compressed_hidden_state=use_compressed_hidden_state,
+                        use_mean=i<len(self.compress_layers)/2
                     )
                 x = blk(x, rel_pos_bias)
                 if return_all_hidden_state or i == len(self.visual_encoder.blocks) - 1:
@@ -391,8 +460,6 @@ class CompressedLAVISBLIP2(CompressedModel):
         return vit_embeds, pooled_output, all_hidden_states, energy, real_mem/total_mem 
 
     def get_text_features(self, input_ids, attention_mask):
-        # print(input_ids.shape)
-        # print(attention_mask.shape)
         # with torch.no_grad():
         text_output = self.Qformer.bert(
             input_ids=input_ids.squeeze(),

@@ -11,7 +11,8 @@ if __name__ == "__main__":
     COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
     FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
     config = parser.parse_args()
-    for dataset in [COCO]:
+    for dataset in [FLICKR]:
+        config.dataset =dataset
 
         model, vis_processors, txt_processors = load_model_and_preprocess("blip2", "coco", is_eval=False)
         # tokenizer = model.tokenizer
@@ -56,6 +57,13 @@ if __name__ == "__main__":
         for distil in [False]:
             config.distil = distil 
             # for compress_method in ['std', 'none']:
-            for compress_method in ['std','none', 'dct','mean','random']:
+            # for compress_method in ['std','none', 'dct','mean','random']:
+            for compress_method in [
+                'std-weighted-merge', 
+                'bipartite-soft-matching',
+                'std-mean-merge', 
+                'random-mean-merge'
+                'dct', 
+            ]:
                 config.compress_method = compress_method
                 inner_training_loop(config.batch_size)
