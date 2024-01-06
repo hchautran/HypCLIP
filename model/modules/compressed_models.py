@@ -18,66 +18,41 @@ class CompressedModel(nn.Module):
         self.r = r
         self.window_size=window_size
         self.compress_method = compress_method
-        self.num_reduced_token = self.window_size * 15 
+        self.num_reduced_token = self.window_size * 4 
     
 
     def std_filter_with_r(self, x, use_mean=False, k = 2):        
         B, T, D = x.shape
-        with torch.no_grad():
-            if k is None:
-                k = math.floor((T- T*self.r)/self.window_size)
-            batch_idx = torch.arange(x.shape[0]).unsqueeze(1)
+        if k is None or k * self.window_size > T:
+            k = math.floor((T- T*self.r)/self.window_size)
+        first_x = x[:,:(T%self.window_size),:]
+        remain_x = x[:,(T%self.window_size):,:]
+        # with torch.no_grad():
+        batch_idx = torch.arange(x.shape[0]).unsqueeze(1)
+        remain_x = remain_x.view(B, -1, self.window_size, D)
+        std_array = remain_x.std(-1)
+        max_std = std_array.max(-1)[0] 
+    
+        _, min_indices = torch.topk(max_std, k=k, dim=-1, largest=False)
+        mask_to_keep = torch.ones_like(remain_x, dtype=torch.bool)
+        mask_to_keep[batch_idx, min_indices, :, :] = False
+        min_std_array = std_array[batch_idx, min_indices, :] 
+        filtered_tensor = torch.masked_select(remain_x, mask_to_keep).view(remain_x.size(0), -1, remain_x.size(2), remain_x.size(3))
 
-            first_x = x[:,:(T%self.window_size),:]
-            remain_x = x[:,(T%self.window_size):,:]
-            remain_x = remain_x.view(B, -1, self.window_size, D)
-            std_array = remain_x.std(-1)
-            max_std = std_array.max(-1)[0] 
-       
-            _, min_indices = torch.topk(max_std, k=k, dim=-1, largest=False)
-            mask_to_keep = torch.ones_like(remain_x, dtype=torch.bool)
-            mask_to_keep[batch_idx, min_indices, :, :] = False
-            min_std_array = std_array[batch_idx, min_indices, :] 
-
-            filtered_tensor = torch.masked_select(remain_x, mask_to_keep).view(remain_x.size(0), -1, remain_x.size(2), remain_x.size(3))
-
-            if not use_mean:
-                # min_std_array = F.softmax(min_std_array, dim=-1)
-                # reduced_tensor = min_std_array.unsqueeze(3).transpose(-1,-2) @ remain_x[batch_idx, min_indices, :, :]
-                # reduced_tensor = remain_x[batch_idx, min_indices, :, :].mean(dim=2, keepdim=True)
-                reduced_tensor = remain_x[batch_idx, min_indices, :, :]
-                # min_std_array = F.softmax(reduced_tensor.std(-1), dim=-1).view(B,-1)
-                min_std_array = reduced_tensor.std(-1).view(B,-1)
-                min_std_array = (min_std_array - min_std_array.min(-1, keepdim=True)[0])/min_std_array.min(-1, keepdim=True)[0]
-                # print(min_std_array.shape)
-                # min_std_array = F.softmax(reduced_tensor.std(-1), dim=-1).view(B,-1).unsqueeze(2)
-                reduced_tensor = min_std_array.unsqueeze_(2).transpose(-1,-2) @ reduced_tensor.view(B,-1,D)
-                output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor], dim=1)
-            else:
-                reduced_tensor = remain_x[batch_idx, min_indices, :, :].mean(dim=2, keepdim=True)
-                output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor.view(B,-1,D).mean(dim=1, keepdim=True)], dim=1)
+        if not use_mean:
+            reduced_tensor = remain_x[batch_idx, min_indices, :, :].mean(dim=2)
+            min_std_array = reduced_tensor.std(-1).view(B,-1)
+            with torch.no_grad():
+                min_std_array = F.softmax(min_std_array, dim=-1) 
+            reduced_tensor = min_std_array.unsqueeze_(2).transpose(-1,-2) @ reduced_tensor
+            output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor], dim=1)
+        else:
+            reduced_tensor = remain_x[batch_idx, min_indices, :, :].mean(dim=2, keepdim=True)
+            output = torch.cat([first_x, filtered_tensor.view(B,-1,D), reduced_tensor.view(B,-1,D).mean(dim=1, keepdim=True)], dim=1)
       
         return output, None 
     
-    # def std_filter_with_r(self, x:torch.tensor, use_mean=False):        
-    #     B, T, D = x.shape
-    #     with torch.no_grad():
-    #         k = math.floor(T- T*self.r)
-    #         std_array = x.std(-1)
-       
-    #         min_std_array , min_indices = torch.topk(std_array, k=k, dim=-1, largest=False)
-    #         mask_to_keep = torch.ones_like(x, dtype=torch.bool)
-    #         mask_to_keep[torch.arange(x.size(0)).unsqueeze(1), min_indices, :] = False
-    #         filtered_tensor = torch.masked_select(x, mask_to_keep).view(x.size(0), -1, x.size(2))
-    #         if not use_mean:
-    #             min_std_array = min_std_array - min_std_array.min(-1)[0].unsqueeze(1)
-    #             min_std_array = min_std_array/min_std_array.max(-1)[0].unsqueeze(1)
-    #             reduced_tensor = min_std_array.unsqueeze(2).permute(0,2,1) @ x[torch.arange(x.size(0)).unsqueeze(1), min_indices, :]
-    #         else:
-    #             reduced_tensor = x[torch.arange(x.size(0)).unsqueeze(1), min_indices, :].mean(dim=1, keepdim=True)
-    #         output = torch.cat([filtered_tensor, reduced_tensor], dim=1)
-      
-    #     return output, None 
+    
 
     def bipartite_soft_matching(
         self,
