@@ -91,7 +91,7 @@ class MyTrainer:
         ) = self.accelerator.prepare(
             self.optimizer, train_loader, val_loader, test_loader, self.scheduler
         )
-        self.name = f'{names[config.model_ckt]}_{config.compress_method}_{config.distil}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.manifold}'
+        self.name = f'blip2_{config.compress_method}_{config.distil}_{config.vision_trainable_blocks}_{config.text_trainable_blocks}_{config.manifold}'
         print("RUNNING:", self.name)
 
         if self.enable_log:

@@ -33,7 +33,7 @@ if __name__ == "__main__":
                 vis_processor=vis_processors['eval'],
                 txt_processor=txt_processors['eval'],
                 tokenizer=model.tokenizer,
-                eval_batch_size=5
+                eval_batch_size=20
             )
 
             queue_model = DCTLAVISLIPWithQueue(config, model)
@@ -46,13 +46,13 @@ if __name__ == "__main__":
                 txt2img=test_txt2img,
                 img2txt=test_img2txt
             )
-            # print(trainer.evaluate(use_1k=False))
+            print(trainer.evaluate(use_1k=False))
             # print(trainer.evaluate('val'))
-            trainer.train()
+            # trainer.train()
 
 
         config.epochs = 3 
-        config.enable_log = True
+        config.enable_log = False
         config.use_margin_loss = False 
 
         for distil in [False]:
@@ -60,11 +60,13 @@ if __name__ == "__main__":
             # for compress_method in ['std','dct']:
             # for compress_method in ['std', 'dct', 'random', 'direct','none']:
             for compress_method in [
+                # 'none',
+                # 'random-mean-merge',
+                # 'random-std-merge',
                 'std-weighted-merge', 
                 'bipartite-soft-matching',
                 'std-mean-merge', 
                 'dct', 
-                'random-mean-merge',
             ]:
                 config.compress_method = compress_method
                 inner_training_loop(config.batch_size)

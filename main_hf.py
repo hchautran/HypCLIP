@@ -17,7 +17,10 @@ if __name__ == "__main__":
     config = parser.parse_args()
     for dataset in [FLICKR, COCO]:
         config.dataset = dataset
-        for model_ckt in [CLIP_LARGE_PATCH_14]:
+        for model_ckt in [
+            CLIP_BASE_PATCH_16,
+            CLIP_LARGE_PATCH_14 ,
+        ]:
             config.model_ckt = model_ckt
             if "blip" in config.model_ckt:
                 print("Getting BLIP processor...")
@@ -66,14 +69,15 @@ if __name__ == "__main__":
                 # trainer.train()
 
             config.epochs = 3 
-            config.enable_log = True 
+            config.enable_log = False 
             config.use_margin_loss = False 
 
             for compress_method in [
+                # 'none', 
                 'std-weighted-merge', 
                 'bipartite-soft-matching',
-                'std-mean-merge', 
-                'random-mean-merge',
+                # 'std-mean-merge', 
+                # 'random-mean-merge',
                 'dct', 
             ]:
             # for compress_method in ['mean']:
