@@ -46,9 +46,9 @@ if __name__ == "__main__":
                 txt2img=test_txt2img,
                 img2txt=test_img2txt
             )
-            print(trainer.evaluate(use_1k=False))
+            # print(trainer.evaluate(use_1k=False))
             # print(trainer.evaluate('val'))
-            # trainer.train()
+            trainer.train()
 
 
         config.epochs = 3 

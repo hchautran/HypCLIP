@@ -256,7 +256,7 @@ class BaseModelWithQueue(BlipBase, MomentumDistilationMixin, SharedQueueMixin):
             self._momentum_update()
             image_embeds_m = self.model_m(
                 pixel_values=pixel_values, 
-                use_compressed_hidden_state=not self.config.distil,
+                use_compressed_hidden_state=True,
             )
 
             text_embeds_m = self.model_m(
