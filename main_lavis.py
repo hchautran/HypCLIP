@@ -46,12 +46,12 @@ if __name__ == "__main__":
                 txt2img=test_txt2img,
                 img2txt=test_img2txt
             )
-            # print(trainer.evaluate(use_1k=False))
+            print(trainer.evaluate(use_1k=False))
             # print(trainer.evaluate('val'))
-            trainer.train()
+            # trainer.train()
 
 
-        config.epochs = 3 
+        config.epochs = 1 
         config.enable_log = False
         config.use_margin_loss = False 
 
@@ -62,10 +62,10 @@ if __name__ == "__main__":
             for compress_method in [
                 # 'none',
                 # 'random-mean-merge',
-                # 'random-std-merge',
                 'std-weighted-merge', 
                 'bipartite-soft-matching',
                 'std-mean-merge', 
+                # 'random-std-merge',
                 'dct', 
             ]:
                 config.compress_method = compress_method

@@ -215,11 +215,14 @@ class MyTrainer:
     def evaluate(self, mode='test'):
         from torch.utils.data import DataLoader
         dataset = self.val_loader if mode == "val" else self.test_loader
-        texts = dataset.text
-        image = dataset.image
-        n_texts, n_images = len(texts), len(image)
+        # texts = dataset.text
+        # image = dataset.image
+        # n_texts, n_images = len(texts), len(image)
 
-        loader = self.accelerator.prepare(DataLoader(dataset, shuffle=False))
+        if not isinstance(dataset, DataLoader):
+            loader = self.accelerator.prepare(DataLoader(dataset, shuffle=False))
+        else:
+            loader = self.accelerator.prepare(dataset)
         text_ids = []
         text_embeds = []
         text_atts = []
@@ -236,12 +239,12 @@ class MyTrainer:
                 image_feat, vit_feat, eval_memory  = self.model.get_vision_features(
                     pixel_values=data["pixel_values"], use_compressed_hidden_state=True
                 )
-                cur_len = data['input_ids'].shape[-1]
-                input_ids = F.pad(data['input_ids'][0], (0, max_len - cur_len), "constant", 0)
-                attention_mask = F.pad(data['attention_mask'][0], (0, max_len - cur_len), "constant", 0) 
-                text_ids.append(input_ids.cpu())
-                text_atts.append(attention_mask.cpu())
-                vit_feats.append(vit_feat.cpu())
+                # cur_len = data['input_ids'].shape[-1]
+                # input_ids = F.pad(data['input_ids'][0], (0, max_len - cur_len), "constant", 0)
+                # attention_mask = F.pad(data['attention_mask'][0], (0, max_len - cur_len), "constant", 0) 
+                # text_ids.append(input_ids.cpu())
+                # text_atts.append(attention_mask.cpu())
+                # vit_feats.append(vit_feat.cpu())
                 image_embeds.append(image_feat.cpu())
                 text_embeds.append(text_feat.cpu())
                 memory_used += eval_memory
@@ -249,9 +252,9 @@ class MyTrainer:
 
         text_embeds = torch.cat(text_embeds, dim=0)
         image_embeds = torch.cat(image_embeds, dim=0)
-        text_ids = torch.cat(text_ids, dim=0)
-        text_atts = torch.cat(text_atts, dim=0)
-        vit_feats = torch.cat(vit_feats, dim=0)
+        # text_ids = torch.cat(text_ids, dim=0)
+        # text_atts = torch.cat(text_atts, dim=0)
+        # vit_feats = torch.cat(vit_feats, dim=0)
 
         sims_matrix = []
         print(image_embeds.shape)

@@ -32,7 +32,7 @@ if __name__ == "__main__":
                 vis_processor=vis_processors['eval'],
                 txt_processor=txt_processors['eval'],
                 tokenizer=model.tokenizer,
-                eval_batch_size=1
+                eval_batch_size=20
             )
             blip2_model = CompressedLAVISBLIP2WithQueue(config, model)
 
@@ -59,10 +59,10 @@ if __name__ == "__main__":
             # for compress_method in ['std', 'none']:
             # for compress_method in ['std','none', 'dct','mean','random']:
             for compress_method in [
+                # 'std-mean-merge', 
                 'std-weighted-merge', 
                 'bipartite-soft-matching',
-                'std-mean-merge', 
-                'random-mean-merge'
+                # 'std-mean-merge',
                 'dct', 
             ]:
                 config.compress_method = compress_method

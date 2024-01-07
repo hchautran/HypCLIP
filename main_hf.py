@@ -20,6 +20,7 @@ if __name__ == "__main__":
         for model_ckt in [
             CLIP_LARGE_PATCH_14,
             CLIP_BASE_PATCH_16,
+            # CLIP_BASE_PATCH_16,
         ]:
             config.model_ckt = model_ckt
             if "blip" in config.model_ckt:
@@ -68,15 +69,15 @@ if __name__ == "__main__":
                 # print(trainer.evaluate('val'))
                 trainer.train()
 
-            config.epochs = 2
+            config.epochs = 1
             config.enable_log = True 
             config.use_margin_loss = False 
 
             for compress_method in [
                 # 'none', 
+                # 'std-mean-merge', 
                 'std-weighted-merge', 
                 'bipartite-soft-matching',
-                # 'std-mean-merge', 
                 # 'random-mean-merge',
                 'dct', 
             ]:
