@@ -18,7 +18,7 @@ class CompressedModel(nn.Module):
         self.r = r
         self.window_size=window_size
         self.compress_method = compress_method
-        self.num_reduced_token =8 
+        self.num_reduced_token =  32
     
 
     def std_filter_with_r(self, x, k = 2):        
@@ -147,18 +147,22 @@ class CompressedModel(nn.Module):
             return x, x
 
         with torch.no_grad():
-            min_indices = torch.argsort( x.std(-1),dim=-1)
             batch_idx = torch.arange(x.shape[0]).unsqueeze(1)
+            min_indices = torch.argsort(x.std(-1),dim=-1)
             x = F.normalize(x, p=2, dim=-1) 
-            a, b = x[batch_idx, min_indices[:, :x.shape[1]//2], :], x[batch_idx,  min_indices[:,x.shape[1]//2:], :]
-            # a, b = x[..., ::2, :], x[..., 1::2, :]
-            b_std = b.std(-1)
+            a_idx, b_idx = min_indices[..., ::2], min_indices[..., 1::2]
+            a, b = x[batch_idx, a_idx, :], x[batch_idx,  b_idx, :]
+            # a, b= x[..., ::2, :], x[..., 1::2, :]
+
+
             
-            scores = a @ b.transpose(-1, -2) - b_std.unsqueeze_(1)
+            scores = a @ b.transpose(-1, -2) 
+            scores = (scores.transpose(-1,-2) - a.std(-1).unsqueeze(1)).transpose(-1,-2)
 
        
 
-            node_max, node_idx = scores.max(dim=-1)
+            node_max, node_idx = scores.max(dim=-1) 
+            # print(node_idx[0])
             edge_idx = node_max.argsort(dim=-1, descending=True)[..., None]
             # print(node_max)
 
@@ -169,17 +173,19 @@ class CompressedModel(nn.Module):
 
         def merge(x: torch.Tensor, mode="mean") -> torch.Tensor:
             # src, dst = x[..., ::2, :], x[..., 1::2, :]
-            src, dst = x[batch_idx, min_indices[:, :x.shape[1]//2], :], x[batch_idx,  min_indices[:,x.shape[1]//2:], :]
+            src, dst = x[batch_idx, a_idx, :], x[batch_idx,  b_idx, :]
             n, t1, c = src.shape
             unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
             src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
             dst = dst.scatter_reduce(-2, dst_idx.expand(n, r, c), src, reduce=mode)
 
+            # return torch.cat([unm, dst, ori_dst], dim=1)
             return torch.cat([unm, dst], dim=1)
 
        
 
         return merge
+
 
 
     def merge_wavg(
@@ -280,20 +286,21 @@ class CompressedModel(nn.Module):
         if self.compress_method == 'dct':
             x_reconstructed, energy = self.dc_transform(x ,use_compressed_hidden_state ) 
         elif self.compress_method == 'random-mean-merge':
-            x_reconstructed, energy = self.random_filter_with_r(x, k=self.num_reduced_token, use_mean=True) 
-            # x_reconstructed, energy = self.random_filter_with_r(x, k=None)  
+            # x_reconstructed, energy = self.random_filter_with_r(x, k=self.num_reduced_token, use_mean=True) 
+            x_reconstructed, energy = self.random_filter_with_r(x, k=None)  
         elif self.compress_method == 'random-std-merge':
-            x_reconstructed, energy = self.random_filter_with_r(x, k=self.num_reduced_token, use_mean=False) 
-            # x_reconstructed, energy = self.random_filter_with_r(x, k=None) 
+            # x_reconstructed, energy = self.random_filter_with_r(x, k=self.num_reduced_token, use_mean=False) 
+            x_reconstructed, energy = self.random_filter_with_r(x, k=None) 
         elif self.compress_method == 'std-weighted-merge':
-            merge = self.std_based_bipartite_soft_matching(x, self.num_reduced_token) 
+            # merge = self.std_based_bipartite_soft_matching(x, self.num_reduced_token) 
+            merge = self.std_based_bipartite_soft_matching(x, None) 
             x_reconstructed, energy = self.merge_wavg(merge, x) 
         elif self.compress_method == 'std-mean-merge':
-            x_reconstructed, energy = self.std_filter_with_r(x, k=self.num_reduced_token) 
-            # x_reconstructed, energy = self.std_filter_with_r(x,k=None) 
+            # x_reconstructed, energy = self.std_filter_with_r(x, k=self.num_reduced_token) 
+            x_reconstructed, energy = self.std_filter_with_r(x,k=None) 
         elif self.compress_method == 'bipartite-soft-matching':
-            merge = self.bipartite_soft_matching(x, self.num_reduced_token) 
-            # merge = self.bipartite_soft_matching(x, None) 
+            # merge = self.bipartite_soft_matching(x, self.num_reduced_token) 
+            merge = self.bipartite_soft_matching(x, None) 
             x_reconstructed, energy = self.merge_wavg(merge, x) 
         else: 
             return x, x

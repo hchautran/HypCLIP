@@ -23,7 +23,6 @@ import torch.utils.checkpoint
 from torch import nn
 from transformers.activations import ACT2FN
 from transformers.pytorch_utils import apply_chunking_to_forward, find_pruneable_heads_and_indices, meshgrid, prune_linear_layer
-import bitsandbytes.nn as bnn
 from torch.cuda.amp import autocast
 
 

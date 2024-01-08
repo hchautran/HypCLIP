@@ -7,8 +7,8 @@ from tqdm.auto import tqdm
 import torch
 from config import CLIP_BASE_PATCH_16, CLIP_BASE_PATCH_32, CLIP_LARGE_PATCH_14, BLIP_BASE_FLICKR, BLIP_BASE_COCO, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO
 import time
-import torch.nn.functional as F
-from bitsandbytes.optim import Adam8bit
+# import torch.nn.functional as F
+# from bitsandbytes.optim import Adam8bit
 
 names = {
    CLIP_BASE_PATCH_32: 'clip_base_32', 
@@ -50,7 +50,7 @@ class MyTrainer:
         self.current_epoch = 0
         self.model = self.accelerator.prepare(model)
 
-        self.optimizer = Adam8bit(
+        self.optimizer = torch.optim.Adam(
             self.model.parameters(),
             lr=config.lr,
         )
