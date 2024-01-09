@@ -72,7 +72,6 @@ class ManifoldMapper(nn.Module):
     def __init__(self, manifold:Union[PoincareBall,CustomLorentz], curv, clip_r=None):
         super().__init__()
         self.manifold = manifold
-        self.curv = curv
         self.clip_r = clip_r
 
     def forward(self, x, use_normalized=False):

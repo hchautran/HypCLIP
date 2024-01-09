@@ -46,13 +46,13 @@ if __name__ == "__main__":
                 txt2img=test_txt2img,
                 img2txt=test_img2txt
             )
-            # print(trainer.evaluate(use_1k=False))
+            print(trainer.evaluate(use_1k=False))
             # print(trainer.evaluate('val'))
-            trainer.train()
+            # trainer.train()
 
 
         config.epochs = 3 
-        config.enable_log = True
+        config.enable_log = False
         config.use_margin_loss = False 
 
         for distil in [False]:

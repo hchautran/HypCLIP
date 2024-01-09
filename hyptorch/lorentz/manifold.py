@@ -30,7 +30,7 @@ class CustomLorentz(Lorentz):
     def bmm(self, x: torch.Tensor, y: torch.Tensor):
         x = x.clone()
         x.narrow(-1, 0, 1).mul_(-1)
-        return x @ y.T
+        return x @ y.transpose(-1, -2)
 
     def centroid(self, x, w=None, eps=1e-8):
         """Centroid implementation. Adapted the code from Chen et al. (2022)"""
