@@ -18,7 +18,6 @@ if __name__ == "__main__":
     for dataset in [FLICKR, COCO]:
         config.dataset = dataset
         for model_ckt in [
-            CLIP_BASE_PATCH_16,
             CLIP_LARGE_PATCH_14,
             # CLIP_BASE_PATCH_16,
         ]:
