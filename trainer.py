@@ -290,6 +290,8 @@ class MyTrainer:
         # itm_metrics["epoch"] = self.current_epoch
         
         # return itc_metrics, itm_metrics
+        self.accelerator.clear()
+        self.model.to('cpu')
         return itc_metrics
         
 

@@ -60,8 +60,8 @@ if __name__ == "__main__":
             # for compress_method in ['std','none', 'dct','mean','random']:
             for compress_method in [
                 # 'std-mean-merge', 
-                'std-weighted-merge', 
-                'bipartite-soft-matching',
+                'PiToMe', 
+                'ToMe',
                 # 'std-mean-merge',
                 'dct', 
             ]:

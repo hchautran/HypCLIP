@@ -75,8 +75,8 @@ if __name__ == "__main__":
             for compress_method in [
                 # 'none', 
                 # 'std-mean-merge', 
-                'std-weighted-merge', 
-                'bipartite-soft-matching',
+                'PiToMe', 
+                'ToMe',
                 # 'random-mean-merge',
                 'dct', 
             ]:
@@ -85,10 +85,4 @@ if __name__ == "__main__":
                 for distil in [False]:
                     config.distil = distil 
                     inner_training_loop(config.batch_size)
-                # for curv in [1.0, 2.0, 10.0]:
-            #     config.curv = curv
-            #     for margin_loss in [False]:
-            #         config.margin_loss = margin_loss 
-            #         for use_graph in [True, False]:
-            #             config.use_graph=use_graph
-            # inner_training_loop(config.batch_size)
+

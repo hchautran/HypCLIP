@@ -4,12 +4,12 @@ from trainer_queue import MyTrainer as LavisTrainer
 from trainer import MyTrainer as Blip2Trainer 
 from utils.data_utils import  get_loaders
 from lavis.models import load_model_and_preprocess
+from config import parser
+from config import POINCARE, EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO, COCO, FLICKR
+COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
+FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
 if __name__ == "__main__":
-    from config import parser
-    from config import POINCARE, EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO, COCO, FLICKR
-    COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
-    FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
     config = parser.parse_args()
     for dataset in [FLICKR, COCO]:
         config.dataset = dataset
@@ -62,9 +62,8 @@ if __name__ == "__main__":
             for compress_method in [
                 # 'none',
                 # 'random-mean-merge',
-                'std-weighted-merge', 
-                'bipartite-soft-matching',
-                'std-mean-merge', 
+                'PiToMe', 
+                'ToMe',
                 # 'random-std-merge',
                 'dct', 
             ]:

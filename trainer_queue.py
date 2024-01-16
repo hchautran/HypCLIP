@@ -130,11 +130,11 @@ class MyTrainer:
                         print(test_metrics)
                         # print(val_metrics)
 
-                        self.scheduler.step(test_metrics["compressed_test/r_all"])
-                        if best_r_all < test_metrics["compressed_test/r_all"]:
-                            best_r_all = test_metrics["compressed_test/r_all"]
+                        self.scheduler.step(test_metrics["test/r_all"])
+                        if best_r_all < test_metrics["test/r_all"]:
+                            best_r_all = test_metrics["test/r_all"]
                             # self.log({"r_all": test_metrics["test/r_all"]})
-                            self.log({"compressed r all": test_metrics["compressed_test/r_all"]})
+                            self.log({"compressed r all": test_metrics["test/r_all"]})
                             print("best compressed r all", best_r_all)
 
                         self.model.train()
@@ -233,6 +233,7 @@ class MyTrainer:
                 mode=f'compressed_{mode}'
             )
             metrics["eval memory"] = memory_used/len(loader)
+            self.accelerator.free_memory()
 
   
           
