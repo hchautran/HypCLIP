@@ -32,7 +32,7 @@ if __name__ == "__main__":
                 vis_processor=vis_processors['eval'],
                 txt_processor=txt_processors['eval'],
                 tokenizer=model.tokenizer,
-                eval_batch_size=20
+                eval_batch_size=50
             )
             blip2_model = CompressedLAVISBLIP2WithQueue(config, model)
 
