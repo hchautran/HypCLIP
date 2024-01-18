@@ -53,9 +53,9 @@ class CompressedModel(nn.Module):
         if r is None:
             r = math.floor(T- T*self.r)
             # print(r)
-    
-        # We can only reduce by a maximum of 50% tokens
-        r = min(r, (T - protected) // 2)
+        else:
+            # We can only reduce by a maximum of 50% tokens
+            r = min(r, (T - protected) // 2)
 
         if r <= 0:
             return x, x
@@ -89,29 +89,26 @@ class CompressedModel(nn.Module):
     
 
     def pitome(self, x: torch.Tensor, r: int=None, margin:float=0.5):
-        B,T,C = x.shape
+        B,T,_ = x.shape
         r = math.floor(T- T*self.r)
         with torch.no_grad():
             batch_idx = torch.arange(B).unsqueeze_(1)
             x_std =  x.std(-1, keepdim=True)
 
             x = F.normalize(x, p=2, dim=-1)
-            ori_score =x@x.transpose(-1,-2) - torch.eye(T).unsqueeze(0).to(x.device)
-            # ori_score = torch.where(ori_score > margin, ori_score, -1.0)
-            ori_score = torch.where(ori_score > margin, ori_score, -1.0 * x_std)
-            indices =  torch.argsort(ori_score.mean(dim=-2), descending=True)
-            
-            merged_idx =  indices[..., :2*r]
-            protected_idx =  indices[..., 2*r:]
-            a_idx, b_idx = merged_idx[...,::2], merged_idx[..., 1::2]
+            ori_score =x@x.transpose(-1,-2) 
+            ori_score = torch.where(ori_score > margin, ori_score - margin, -1.0 * x_std)
+            min_indices =  torch.argsort(ori_score.mean(dim=-2), descending=True)[..., :2*r]
+            mask_to_keep = torch.ones_like(x, dtype=torch.bool).to(x.device)
+            mask_to_keep[batch_idx, min_indices,  :] = False
+            a_idx, b_idx = min_indices[..., ::2], min_indices[..., 1::2]
             a, b = x[batch_idx, a_idx, :], x[batch_idx,  b_idx, :]
             scores = a@b.transpose(-1,-2) 
             _, dst_idx = scores.max(dim=-1) 
 
         def merge(x: torch.Tensor, mode="mean") -> torch.Tensor:
-            B, T, C = x.shape
-            # ori = torch.masked_select(x, mask_to_keep.unsqueeze(2).expand(B, T, C)).view(B, -1, C)
-            ori = x[batch_idx, protected_idx, :] 
+            B, _, C = x.shape
+            ori = torch.masked_select(x, mask_to_keep).view(B, -1, C)
             src, dst = x[batch_idx, a_idx, :], x[batch_idx,  b_idx, :]
             dst = dst.scatter_reduce(-2, dst_idx.unsqueeze(2).expand(B, -1, C), src, reduce=mode)
             return torch.cat([ori, dst], dim=1)

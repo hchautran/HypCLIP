@@ -6,7 +6,8 @@ from utils.data_utils import  get_loaders
 from lavis.models import load_model_and_preprocess
 from config import parser
 from config import POINCARE, EUCLID, LORENTZ, LAVIS_BLIP_BASE_FLICKR, LAVIS_BLIP_BASE_COCO, COCO, FLICKR
-COCO_PATH = "/mnt/data/itr_dataset/dataset/coco/images"
+DATA_PATH = "/mnt/data/itr_dataset/dataset"
+COCO_PATH = "/coco/images"
 FLICKR_PATH = "/mnt/data/itr_dataset/dataset/flickr30k/flickr30k_images"
 
 if __name__ == "__main__":
@@ -17,10 +18,10 @@ if __name__ == "__main__":
         # tokenizer = model.tokenizer
         if "flickr" in config.dataset:
             config.model_ckt = LAVIS_BLIP_BASE_FLICKR
-            model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
+            model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
             dataset = load_dataset("flickr30k", vis_path=FLICKR_PATH, cfg_path=None)
         else:
-            model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "flickr", is_eval=False)
+            model, vis_processors, txt_processors = load_model_and_preprocess("blip_retrieval", "coco", is_eval=False)
             config.model_ckt = LAVIS_BLIP_BASE_COCO 
             dataset = load_dataset("coco_retrieval", vis_path=COCO_PATH, cfg_path=None)
 
@@ -51,7 +52,7 @@ if __name__ == "__main__":
             trainer.train()
 
 
-        config.epochs = 2 
+        config.epochs = 1 
         config.enable_log = True
         config.use_margin_loss = False 
 
@@ -62,7 +63,7 @@ if __name__ == "__main__":
             for compress_method in [
                 # 'none',
                 # 'random-mean-merge',
-                # 'PiToMe', 
+                'PiToMe', 
                 'ToMe',
                 # 'random-std-merge',
                 'dct', 
