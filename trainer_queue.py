@@ -230,7 +230,7 @@ class MyTrainer:
                 scores_i2t=sims_t2i.T.cpu().detach(), 
                 img2txt=self.img2txt, 
                 txt2img=self.txt2img, 
-                mode=f'compressed_{mode}'
+                mode=f'{mode}'
             )
             metrics["eval memory"] = memory_used/len(loader)
             self.accelerator.free_memory()
